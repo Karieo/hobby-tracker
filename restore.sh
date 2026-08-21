@@ -115,11 +115,38 @@ if empty:
 # data can always be re-imported; "which of my Boyz are primed" cannot.
 irreplaceable = sum(counts.get(t, 0) for t in
                     ('armies', 'kits', 'units', 'models', 'stage_events'))
-if not irreplaceable:
-    problems.append('the snapshot holds no collection data at all '
-                    '(armies/kits/units/models/stage_events are all empty)')
-else:
+if irreplaceable:
     print(f'  irreplaceable rows (collection + history): {irreplaceable}')
+else:
+    # An empty collection is either a fresh install or a catastrophe, and the
+    # snapshot alone cannot tell you which. Ask the live database. Calling it a
+    # failure unconditionally means the first verification anyone ever runs, on
+    # the day they deploy, fails — which teaches them to ignore this check
+    # before it has ever told them anything true.
+    live_path = os.path.join(app_dir, 'data', 'hobby_tracker.db')
+    live = None
+    if os.path.exists(live_path):
+        try:
+            lc = sqlite3.connect(f'file:{live_path}?mode=ro', uri=True)
+            live = sum(lc.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
+                       for t in ('armies', 'kits', 'units', 'models', 'stage_events'))
+            lc.close()
+        except sqlite3.Error:
+            # Unreadable live database — mid-restore, locked, wrong schema.
+            # Not knowing is not the same as knowing something is wrong.
+            live = None
+
+    if live:
+        problems.append(
+            f'the snapshot holds no collection data, but the live database has '
+            f'{live} rows (armies/kits/units/models/stage_events). This '
+            f'snapshot would lose all of it — do not restore from it.')
+    elif live == 0:
+        print('  no collection data yet — matches the live database, so this '
+              'is a fresh install, not a loss.')
+    else:
+        print('  no collection data. Could not read the live database to '
+              'compare, so this is unverified rather than wrong.')
 
 if problems:
     print('\n  \033[31mPROBLEMS\033[0m')

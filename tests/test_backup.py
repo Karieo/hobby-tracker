@@ -195,19 +195,54 @@ def test_check_rejects_a_corrupt_snapshot(tmp_path):
     assert 'intact and restorable' not in result.stdout
 
 
-def test_check_rejects_a_snapshot_with_no_collection_data(tmp_path):
-    """Rules data can be re-imported; the collection cannot. An empty
-    collection means the backup captured nothing worth keeping."""
-    backup_dir = tmp_path / 'backups'
-    app = _install(tmp_path, [f'BACKUP_DIR={backup_dir}'])
+def _empty_the_collection(app):
     with sqlite3.connect(app / 'data' / 'hobby_tracker.db') as conn:
         conn.execute('PRAGMA foreign_keys = OFF')
         for table in ('stage_events', 'models', 'units', 'kits', 'armies'):
             conn.execute(f'DELETE FROM {table}')
+
+
+def test_check_rejects_an_empty_snapshot_when_the_live_database_has_data(tmp_path):
+    """Rules data can be re-imported; the collection cannot.
+
+    A snapshot with no collection behind a live database that has one is the
+    real catastrophe: restoring it silently discards everything Clay recorded.
+    """
+    backup_dir = tmp_path / 'backups'
+    app = _install(tmp_path, [f'BACKUP_DIR={backup_dir}'])
+    _empty_the_collection(app)
     assert _run(app, 'backup.sh').returncode == 0
+
+    # The collection comes back to the live database after the snapshot was
+    # taken, so the newest snapshot is now the one that would lose it.
+    import database as db
+    conn = db.connect(str(app / 'data' / 'hobby_tracker.db'))
+    try:
+        conn.execute("INSERT INTO armies (name, sort_order, created_at) "
+                     "VALUES ('Da Boyz', 1, ?)", (db.now(),))
+        conn.commit()
+    finally:
+        conn.close()
+
     result = _run(app, 'restore.sh', '--check')
     assert result.returncode != 0
     assert 'no collection data' in result.stdout
+    assert 'do not restore from it' in result.stdout
+
+
+def test_check_accepts_an_empty_snapshot_on_a_fresh_install(tmp_path):
+    """The first backup after a deploy has no collection in it, because there
+    is no collection yet. Failing that is crying wolf on day one, which teaches
+    the one person who reads this output to stop reading it."""
+    backup_dir = tmp_path / 'backups'
+    app = _install(tmp_path, [f'BACKUP_DIR={backup_dir}'])
+    _empty_the_collection(app)
+    assert _run(app, 'backup.sh').returncode == 0
+
+    result = _run(app, 'restore.sh', '--check')
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'fresh install' in result.stdout
+    assert 'Snapshot is intact and restorable' in result.stdout
 
 
 def test_restore_brings_back_a_destroyed_database(tmp_path):
