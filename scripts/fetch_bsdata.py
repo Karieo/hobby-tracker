@@ -26,17 +26,40 @@ BSDATA_REPO = 'https://github.com/BSData/wh40k-11e'
 BSDATA_SHA = '13f3c4e54d15f96baebdc48c3a8c10431db2990f'
 
 
+def git(*args):
+    """A git command line scoped with safe.directory.
+
+    The checkout gets created by one user and read by another routinely: a
+    host-side fetch leaves it owned by the login user, and the same directory
+    is bind-mounted into the container where git runs as root. Git refuses to
+    touch a repository owned by someone else ("detected dubious ownership"),
+    which says nothing at all about whether the checkout is good.
+
+    Scoped per invocation rather than written into global git config: the
+    exemption covers this one directory, and nothing is left behind on the box.
+    """
+    return ['git', '-c', f'safe.directory={DEST}', *args]
+
+
 def run(cmd, **kw):
     return subprocess.run(cmd, check=True, **kw)
 
 
 def current_sha(path):
-    try:
-        out = subprocess.check_output(['git', '-C', path, 'rev-parse', 'HEAD'],
-                                      stderr=subprocess.DEVNULL)
-        return out.decode().strip()
-    except Exception:
-        return None
+    """(sha, error). sha is None when git could not read the directory.
+
+    The error comes back rather than going to DEVNULL because the two reasons
+    git fails here need completely different responses — "this is not a
+    repository" means re-fetch, "dubious ownership" means the data is fine and
+    git is the problem — and a caller that cannot tell them apart gives the
+    wrong advice. This function used to swallow it, and the script told a user
+    with a perfectly good checkout to move it aside.
+    """
+    proc = subprocess.run(git('-C', path, 'rev-parse', 'HEAD'),
+                          capture_output=True, text=True)
+    if proc.returncode == 0:
+        return proc.stdout.strip(), None
+    return None, proc.stderr.strip()
 
 
 def main(argv=None):
@@ -46,7 +69,7 @@ def main(argv=None):
                     help='re-clone even if the checkout is already at the pin')
     args = ap.parse_args(argv)
 
-    have = current_sha(DEST)
+    have, git_error = current_sha(DEST)
     if have == BSDATA_SHA and not args.force:
         n = len([f for f in os.listdir(DEST) if f.endswith('.json')])
         print(f'Already at pinned {BSDATA_SHA[:12]} ({n} catalogues) — nothing to do.')
@@ -54,10 +77,27 @@ def main(argv=None):
 
     if os.path.exists(DEST):
         if have is None and os.listdir(DEST):
-            # Something that is not a git checkout is sitting in the way. Do not
-            # delete data this script did not create.
-            print(f'{DEST} exists but is not a BSData checkout. '
-                  'Move it aside and re-run.', file=sys.stderr)
+            # Something this script did not create is in the way. Never delete
+            # it — but do say which of the two cases it is, because the advice
+            # is opposite. Catalogues present means the data is very likely
+            # fine and git simply cannot read the directory as this user; the
+            # importer reads the JSON directly and does not care.
+            catalogues = len([f for f in os.listdir(DEST) if f.endswith('.json')])
+            print(f'{DEST} exists and git cannot read it as a repository.',
+                  file=sys.stderr)
+            if git_error:
+                print(f'  git said: {git_error}', file=sys.stderr)
+            if catalogues:
+                print(f'  It holds {catalogues} catalogues, so the data is '
+                      'probably intact — do not move or delete it.\n'
+                      '  The importer reads the JSON directly and needs no '
+                      'git:\n'
+                      '    python3 scripts/import_bsdata.py\n'
+                      '  Re-fetch only if you want the pin verified, with '
+                      '--force.', file=sys.stderr)
+            else:
+                print('  It holds no catalogues. Move it aside and re-run.',
+                      file=sys.stderr)
             return 1
         print(f'Removing previous checkout at {have[:12] if have else "?"}')
         shutil.rmtree(DEST)
@@ -66,12 +106,12 @@ def main(argv=None):
     print(f'Cloning {BSDATA_REPO} @ {BSDATA_SHA[:12]}')
     # Fetch just the pinned commit rather than cloning full history: the repo
     # gets daily commits and none of that history is useful here.
-    run(['git', 'init', '--quiet', DEST])
-    run(['git', '-C', DEST, 'remote', 'add', 'origin', BSDATA_REPO])
-    run(['git', '-C', DEST, 'fetch', '--quiet', '--depth', '1', 'origin', BSDATA_SHA])
-    run(['git', '-C', DEST, 'checkout', '--quiet', 'FETCH_HEAD'])
+    run(git('init', '--quiet', DEST))
+    run(git('-C', DEST, 'remote', 'add', 'origin', BSDATA_REPO))
+    run(git('-C', DEST, 'fetch', '--quiet', '--depth', '1', 'origin', BSDATA_SHA))
+    run(git('-C', DEST, 'checkout', '--quiet', 'FETCH_HEAD'))
 
-    got = current_sha(DEST)
+    got, _ = current_sha(DEST)
     if got != BSDATA_SHA:
         print(f'Checked out {got}, expected {BSDATA_SHA} — refusing to continue.',
               file=sys.stderr)
