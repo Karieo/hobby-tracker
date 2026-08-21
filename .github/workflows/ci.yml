@@ -57,12 +57,12 @@ jobs:
 
       - name: Check syntax
         run: |
-          for script in backup.sh restore.sh; do
+          for script in backup.sh restore.sh deploy.sh; do
             bash -n "$script"
           done
 
       - name: ShellCheck
-        run: shellcheck backup.sh restore.sh
+        run: shellcheck backup.sh restore.sh deploy.sh
 
   # Catches a Dockerfile or dependency break at PR time rather than at deploy
   # time on the Jetson, where the feedback loop is a great deal slower.

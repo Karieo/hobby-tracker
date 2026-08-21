@@ -29,10 +29,12 @@ python3 app.py                # http://localhost:3100
 Docker, on `bastion`:
 
 ```bash
-docker compose up -d --build
-docker compose exec tracker python3 scripts/fetch_bsdata.py
-docker compose exec tracker python3 scripts/import_bsdata.py
+cp .env.example .env    # then set OWNER_PASSWORD
+./deploy.sh             # preflight, build, start, fetch + import rules data
 ```
+
+See [DEPLOY.md](DEPLOY.md) — it covers the three things that go wrong on a first
+deploy, two of which are silent.
 
 Tests: `pip install -r requirements-dev.txt && python3 -m pytest`
 
@@ -59,6 +61,7 @@ and builds and boots the Docker image on every push and pull request
 | `templates/`, `static/` | Server-rendered Jinja + vanilla JS, no build step |
 | `backup.sh` | Nightly snapshot + CSV export + off-box copy |
 | `restore.sh` | Verify a snapshot (`--check`) or restore one |
+| `deploy.sh` | Preflight + build + start + first-run rules import |
 
 ## Using it
 
