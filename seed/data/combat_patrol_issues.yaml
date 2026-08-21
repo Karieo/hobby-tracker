@@ -1,0 +1,63 @@
+# Warhammer 40,000: Combat Patrol — the Hachette partwork, issues 1-90.
+#
+# ────────────────────────────────────────────────────────────────────────
+# THIS FILE IS DELIBERATELY EMPTY OF ISSUE DATA.
+#
+# The contents belong here, derived from a published source and reviewed —
+# never written from memory. A partwork list recalled rather than read would
+# be fluent, plausible, and wrong in places with no signal about which, and
+# it would be imported as trusted seed data covering the whole magazine
+# collection. A missing issue costs two minutes at the review screen; a wrong
+# one quietly corrupts ownership and purchase advice for months.
+#
+# See seed/data/README.md for where to get the data and how to fill this in.
+# `python3 seed/combat_patrol_magazine.py --status` reports what is missing.
+# ────────────────────────────────────────────────────────────────────────
+
+# Provenance travels with the data, so a later "buy this" can be traced back
+# to where the claim came from. The importer refuses to run without it.
+source:
+  retrieved_on:            # YYYY-MM-DD
+  confidence:              # high | medium | low
+  urls: []                 # every page the contents were taken from
+  corroborated_by: []      # a second, independent source that agrees
+
+# The nine Combat Patrols and four premium kits the 90 issues build up to.
+# These come from the spec (§11) rather than from a web source, which is why
+# they are here and the per-issue contents are not.
+collections:
+  space-marines:      {name: "Combat Patrol: Space Marines",      faction: space-marines}
+  tyranids:           {name: "Combat Patrol: Tyranids",           faction: tyranids}
+  aeldari:            {name: "Combat Patrol: Aeldari",            faction: aeldari}
+  chaos-space-marines: {name: "Combat Patrol: Chaos Space Marines", faction: chaos-space-marines}
+  orks:               {name: "Combat Patrol: Orks",               faction: orks}
+  leagues-of-votann:  {name: "Combat Patrol: Leagues of Votann",  faction: leagues-of-votann}
+  genestealer-cults:  {name: "Combat Patrol: Genestealer Cults",  faction: genestealer-cults}
+  astra-militarum:    {name: "Combat Patrol: Astra Militarum",    faction: astra-militarum}
+  world-eaters:       {name: "Combat Patrol: World Eaters",       faction: world-eaters}
+
+  premium-brutalis:   {name: "Premium: Brutalis Dreadnought + Hive Tyrant",        premium: true}
+  premium-daemon:     {name: "Premium: Daemon Prince + Howling Banshees",          premium: true}
+  premium-thunderkyn: {name: "Premium: Brôkhyr Thunderkyn + Killa Kans",           premium: true}
+  premium-broodcoven: {name: "Premium: GSC Broodcoven + Rogal Dorn Battle Tank",   premium: true}
+
+# One entry per issue. Shape:
+#
+#   - issue: 43
+#     collection: orks            # a key from `collections` above
+#     contents:
+#       - unit: Boyz              # must match a BSData datasheet exactly
+#         models: 10
+#
+# A sprue split across several issues names them all, and the kit is attached
+# to the last issue in the span — half a Maulerfiend is not a model you own:
+#
+#   - issue: 89
+#     collection: chaos-space-marines
+#     contents:
+#       - unit: Maulerfiend
+#         models: 1
+#         spans: [89, 90]
+#
+# Issue 89 then yields no kit of its own and is reported as parts-only.
+issues: []

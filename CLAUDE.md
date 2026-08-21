@@ -29,6 +29,7 @@ python3 migrate.py [--status]        # apply / inspect migrations
 python3 scripts/fetch_bsdata.py      # fetch BSData at the pinned SHA
 python3 scripts/import_bsdata.py [--dry-run]   # import + report
 python3 app.py                       # http://localhost:3100
+python3 seed/combat_patrol_magazine.py --status   # magazine seed
 python3 -m pytest                    # tests
 shellcheck backup.sh restore.sh      # the shell half, linted in CI too
 ```
@@ -66,9 +67,13 @@ anyone notices.
   a manual picker. A silently dropped line is a shortfall Clay discovers at the
   till months later.
 - **Seed data is derived and reviewed, or it doesn't ship.** Never write a kit
-  catalogue from memory — it would be fluent, plausible, and wrong in places
-  with no signal about which. A missing template costs two minutes; a wrong one
-  corrupts ownership and purchase advice for months.
+  catalogue *or a partwork contents list* from memory — it would be fluent,
+  plausible, and wrong in places with no signal about which. A missing template
+  costs two minutes; a wrong one corrupts ownership and purchase advice for
+  months. `seed/data/combat_patrol_issues.yaml` ships empty for this reason and
+  the importer refuses to run without provenance. Filling it in from a model's
+  recall, rather than from a source, is the one change to this repo that would
+  do real damage — `tests/test_combat_patrol_seed.py` asserts it stays empty.
 - **No scraping** GW for prices, eBay for resale values, or any site for points.
 - **`box_state` is not a model stage.** A sealed box and an opened one both hold
   models "On sprue", but only one carries a resale premium. Keep it on the kit.
