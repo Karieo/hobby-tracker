@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Paint · Collection Tracker{% endblock %}
+{% block body %}
+{# Session mode. One screen, big targets, no forms and no navigation — this
+   runs on a phone propped against a paint pot with wet brushes in hand. If
+   updating costs more than a tap, it stops happening, and that gap is where
+   the last tracker died. #}
+{% if not unit %}
+  <h1>Paint session</h1>
+  <p class="hint">Pick what you're working on. Most recent first.</p>
+  {% if not units %}
+    <div class="panel empty">
+      <p>Nothing left to paint.</p>
+      <p class="muted">Every model you own is battle ready. Genuinely, well done.</p>
+    </div>
+  {% endif %}
+  <ul class="cards">
+    {% for u in units %}
+      <li class="card">
+        <a href="/paint/{{ u.id }}">
+          <div class="card-head">
+            <h2>{{ u.display_name }}</h2>
+            <span class="pct">{{ u.completion }}%</span>
+          </div>
+          <p class="muted">
+            {{ u.army_name or 'Unassigned' }} ·
+            {{ u.done_count }}/{{ u.model_count }} done
+          </p>
+        </a>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <div class="session" data-unit="{{ unit.id }}">
+    <p class="crumb"><a href="/paint">← Pick another</a></p>
+    <h1>{{ unit.display_name }}</h1>
+    <p class="muted">{{ unit.army_name or 'Unassigned' }}</p>
+
+    <ul class="pipe big" id="session-pipe">
+      {% for s in breakdown %}
+        <li class="{% if not s.count %}zero{% endif %} {% if s.is_terminal %}terminal{% endif %}"
+            data-stage="{{ s.id }}">
+          <span class="dot s{{ s.position }}"></span>
+          <span class="pipe-name">{{ s.name }}</span>
+          <span class="pipe-count"><b>{{ s.count }}</b></span>
+          <button class="tick big" data-unit="{{ unit.id }}" data-from="{{ s.id }}"
+                  {% if not s.can_advance %}disabled{% endif %}
+                  aria-label="advance one model from {{ s.name }}">+1 →</button>
+        </li>
+      {% endfor %}
+    </ul>
+
+    <button class="advance primary huge" data-unit="{{ unit.id }}">
+      Advance all →
+    </button>
+    <p class="hint centre">Every tap saves immediately.</p>
+  </div>
+{% endif %}
+{% endblock %}

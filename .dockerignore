@@ -1,0 +1,17 @@
+# Keep the image small and never bake in local state or secrets.
+.git
+.gitignore
+venv/
+.venv/
+__pycache__/
+*.pyc
+tests/
+.pytest_cache/
+.env
+*.db
+*.db-wal
+*.db-shm
+data/*.db*
+.DS_Store
+*.log
+handoff.md

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% from "_macros.html" import stage_bar, progress, staleness %}
+{% block title %}{{ army.name if army else 'Unassigned' }} · Collection Tracker{% endblock %}
+{% block body %}
+  <header class="page">
+    <div>
+      <p class="crumb"><a href="/">← Armies</a></p>
+      <h1>{{ army.name if army else 'Unassigned' }}</h1>
+      {% if army and army.faction_name %}<p class="muted">{{ army.faction_name }}</p>{% endif %}
+      {% if not army %}
+        <p class="hint">Units you haven't committed to an army yet.</p>
+      {% endif %}
+    </div>
+    <button class="ghost" data-toggle="#new-unit">+ Unit</button>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><b>{{ stats.completion }}%</b><span>effort complete</span></div>
+    <div class="stat"><b>{{ stats.effort_done }}/{{ stats.effort_total }}</b><span>effort</span></div>
+    <div class="stat"><b>{{ stats.done_count }}/{{ stats.model_count }}</b><span>battle ready</span></div>
+    <div class="stat"><b>{{ stats.unit_count }}</b><span>units</span></div>
+  </div>
+
+  <form class="panel stack hidden" id="new-unit" data-post="/api/units"
+        data-army="{{ army.id if army else '' }}">
+    <label>Datasheet
+      <input name="datasheet_q" class="picker" autocomplete="off"
+             data-target="#unit-datasheet" placeholder="Start typing — Killa Kans…">
+      <input type="hidden" name="datasheet_id" id="unit-datasheet">
+    </label>
+    <ul class="results" hidden></ul>
+    <div class="row">
+      <label>Models<input name="model_count" type="number" min="1" value="1" required></label>
+      <label>Stage
+        <select name="stage_id">
+          {% for s in stages %}
+            <option value="{{ s.id }}" {% if s.name == 'On sprue' %}selected{% endif %}>
+              {{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <label>Nickname <span class="muted">optional</span><input name="nickname"></label>
+    {% if army %}<input type="hidden" name="army_id" value="{{ army.id }}">{% endif %}
+    <button type="submit">Add unit</button>
+  </form>
+
+  {% if not units %}
+    <div class="panel empty">
+      <p>Nothing here yet.</p>
+      <p class="muted">Add a unit above, or add a kit and its models come with it.</p>
+    </div>
+  {% endif %}
+
+  <ul class="units">
+    {% for u in units %}
+      <li class="unit" data-unit="{{ u.id }}">
+        <div class="unit-head">
+          <a href="/units/{{ u.id }}">
+            <b>{{ u.display_name }}</b>
+            {% if u.nickname %}<span class="muted">{{ u.datasheet_name }}</span>{% endif %}
+          </a>
+          <span class="pct">{{ u.completion }}%</span>
+        </div>
+        {{ stage_bar(u) }}
+        <p class="muted">
+          {{ u.model_count }} model{{ '' if u.model_count == 1 else 's' }} ·
+          effort {{ u.effort }}/model
+          {% if u.kit_name %} · {{ u.kit_name }}{% endif %}
+          {% if u.kit_status == 'listed' %}<span class="flag">listed for sale</span>{% endif %}
+          {{ staleness(u.last_activity) }}
+        </p>
+        {# The primary control: one tap, no selection, no thinking about which
+           models. "Advance N" is second because half-finished squads are normal. #}
+        <div class="actions">
+          <button class="advance" data-unit="{{ u.id }}"
+                  {% if u.done_count == u.model_count %}disabled{% endif %}>
+            Advance all →
+          </button>
+          <div class="stepper">
+            <input type="number" min="1" max="{{ u.model_count }}" value="1"
+                   aria-label="how many models">
+            <button class="advance-n" data-unit="{{ u.id }}"
+                    {% if u.done_count == u.model_count %}disabled{% endif %}>
+              Advance
+            </button>
+          </div>
+          <a class="ghost" href="/paint/{{ u.id }}">Paint</a>
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+{% endblock %}

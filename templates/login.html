@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · Collection Tracker</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/css/app.css?v={{ asset_version }}">
+<main class="login">
+  <h1>Collection Tracker</h1>
+  <p class="sub">Sign in as {{ owner }}.</p>
+  <form class="panel" id="f">
+    <label>Name<input name="login" value="{{ owner }}" autocomplete="username"></label>
+    <label>Password<input name="password" type="password" autocomplete="current-password"></label>
+    <p class="error" id="err"></p>
+    <button type="submit">Sign in</button>
+  </form>
+</main>
+<script>
+document.getElementById('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = Object.fromEntries(new FormData(e.target));
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (res.ok) { location.href = '/'; return; }
+  const data = await res.json().catch(() => ({}));
+  document.getElementById('err').textContent = data.error || 'Sign in failed';
+});
+</script>

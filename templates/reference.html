@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Rules data · Collection Tracker{% endblock %}
+{% block body %}
+  <h1>Rules data</h1>
+  <p class="hint">
+    Datasheets from BSData, points from the Munitorum Field Manual. Re-running
+    the importer is safe — hand corrections are never overwritten.
+  </p>
+
+  <div class="stats">
+    <div class="stat"><b>{{ summary.factions }}</b><span>factions</span></div>
+    <div class="stat"><b>{{ summary.datasheets }}</b><span>datasheets</span></div>
+    <div class="stat"><b>{{ summary.datasheet_points }}</b><span>points rows</span></div>
+    <div class="stat {% if summary.unresolved %}flag{% endif %}">
+      <b>{{ summary.unresolved }}</b><span>unresolved</span>
+    </div>
+  </div>
+
+  <h2>Stage pipeline</h2>
+  <ul class="pipeline">
+    {% for s in stages %}
+      <li class="{% if s.is_owned %}owned{% endif %} {% if s.is_terminal %}terminal{% endif %}">
+        {{ s.position }} · {{ s.name }}
+      </li>
+    {% endfor %}
+  </ul>
+
+  <h2>Unresolved imports {% if unresolved %}({{ unresolved|length }}){% endif %}</h2>
+  {% if unresolved %}
+    <p class="hint">
+      Nothing here was guessed at or dropped. Each row needs a human decision;
+      the manual picker that resolves them lands with the admin page.
+    </p>
+    <div class="panel wrap">
+      <table>
+        <tr><th>Kind</th><th>Name</th><th>Why</th><th>Source</th></tr>
+        {% for u in unresolved %}
+          <tr>
+            <td>{{ u.kind }}</td><td>{{ u.raw_name }}</td>
+            <td>{{ u.detail }}</td><td>{{ u.source_ref or '' }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    </div>
+  {% else %}
+    <p class="hint">
+      Nothing unresolved — but if the counts above are zero the importer hasn't
+      run. <code>python3 scripts/fetch_bsdata.py</code> then
+      <code>python3 scripts/import_bsdata.py</code>.
+    </p>
+  {% endif %}
+{% endblock %}
