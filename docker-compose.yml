@@ -1,0 +1,30 @@
+# Warhammer Collection Tracker on bastion (Jetson TX2), behind the existing
+# Cloudflare Tunnel.
+#
+#   cp .env.example .env      # then edit SESSION_SECRET, OWNER_*, TIMEZONE
+#   docker compose up -d --build
+#   docker compose exec tracker python3 scripts/fetch_bsdata.py
+#   docker compose exec tracker python3 scripts/import_bsdata.py
+#
+# The tunnel supplies HTTPS, which getUserMedia requires — barcode scanning
+# will not work over plain http on a Tailscale IP.
+services:
+  tracker:
+    build: .
+    image: hobby-tracker:latest
+    container_name: hobby-tracker
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    environment:
+      - PORT=3100
+    volumes:
+      - ./data:/app/data      # SQLite DB + the fetched BSData checkout
+      - ./.env:/app/.env
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:3100/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
