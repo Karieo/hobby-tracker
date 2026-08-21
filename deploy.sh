@@ -165,30 +165,55 @@ curl -fsS "http://localhost:$(env_value PORT || echo 3100)/healthz" >/dev/null 2
 # Fetched rather than vendored (65 MB, no licence), so a fresh box has none.
 # Without it there are no datasheets, and a unit cannot be added against
 # nothing.
-if [ ! -d data/bsdata ] || [ -z "$(ls -A data/bsdata 2>/dev/null)" ]; then
-  bold ""
-  bold "── Rules data ──"
-  note "No data/bsdata yet — fetching and importing (a few minutes)"
-  # Both steps run in the container, so both failure modes are the container's:
-  # no outbound route to github.com, or a tool missing from the image. Say so —
-  # the traceback above this line is a Python one and reads like a bug in the
-  # script when it is neither.
-  if ! "${COMPOSE[@]}" exec -T tracker python3 scripts/fetch_bsdata.py; then
-    fail "Could not fetch BSData (see the error above).
+#
+# Fetch and import are gated separately, because they can only be checked
+# separately. An earlier version gated both on `data/bsdata` being non-empty
+# and got it wrong in the one case that matters: a checkout on disk with an
+# import that never ran leaves the app with no datasheets AND a deploy script
+# that has decided there is nothing to do — silent, and permanent until someone
+# notices they cannot add a unit. The checkout says nothing about the database.
+bold ""
+bold "── Rules data ──"
+
+# fetch_bsdata.py already no-ops when the checkout is at the pin, so let it
+# decide rather than re-implementing the check here in shell and drifting.
+# Both failure modes are the container's: no outbound route to github.com, or
+# a tool missing from the image. Say so — the traceback it leaves above is a
+# Python one and reads like a bug in the script when it is neither.
+if ! "${COMPOSE[@]}" exec -T tracker python3 scripts/fetch_bsdata.py; then
+  fail "Could not fetch BSData (see the error above).
     The app itself is up and healthy on port $(env_value PORT || echo 3100) —
     it just has no datasheets yet, so units cannot be added.
     Retry the fetch alone once the cause is fixed:
       ${COMPOSE[*]} exec tracker python3 scripts/fetch_bsdata.py
       ${COMPOSE[*]} exec tracker python3 scripts/import_bsdata.py"
-  fi
+fi
+
+# tr -dc keeps digits only: the exec carries a \r, and any warning on stdout
+# would otherwise reach the arithmetic test as a syntax error under set -e.
+datasheet_count() {
+  local out=''
+  out="$("${COMPOSE[@]}" exec -T tracker python3 -c \
+    "import database; print(database.connect().execute(
+       'select count(*) from datasheets').fetchone()[0])" \
+    2>/dev/null | tr -dc '0-9')" || true
+  printf '%s' "${out:-0}"
+}
+
+if [ "$(datasheet_count)" -eq 0 ]; then
+  note "No datasheets in the database — importing (a few minutes)"
   if ! "${COMPOSE[@]}" exec -T tracker python3 scripts/import_bsdata.py; then
     fail "BSData fetched but the import failed (see the error above).
     Re-run it alone — the fetch is idempotent and will not repeat:
       ${COMPOSE[*]} exec tracker python3 scripts/import_bsdata.py"
   fi
-else
-  ok "Rules data present"
+  if [ "$(datasheet_count)" -eq 0 ]; then
+    fail "The import reported success and the datasheets table is still empty.
+    Do not trust this deploy — check ${COMPOSE[*]} exec tracker \
+      python3 scripts/import_bsdata.py --dry-run"
+  fi
 fi
+ok "Rules data imported ($(datasheet_count) datasheets)"
 
 bold ""
 bold "Deployed."
