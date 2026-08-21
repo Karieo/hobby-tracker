@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Kit templates · Collection Tracker{% endblock %}
+{% block body %}
+  <header class="page">
+    <div>
+      <h1>Kit templates</h1>
+      <p class="hint">
+        What's inside a box, defined once. Scanning a known barcode turns one
+        into a kit and all its models in a single action.
+      </p>
+    </div>
+    <button class="ghost" data-toggle="#new-template">+ Template</button>
+  </header>
+
+  {# Opened automatically when arriving from an unknown scan, with the code
+     pre-filled so linking it is not a second step Clay has to remember. #}
+  <form class="panel stack {% if not request.args.get('code') %}hidden{% endif %}"
+        id="new-template">
+    {% if request.args.get('code') %}
+      <p class="hint">
+        Defining <span class="code">{{ request.args.get('code') }}</span>. Every
+        other copy of this box on the shelf resolves behind it.
+      </p>
+    {% endif %}
+    <label>Name<input name="name" required placeholder="Combat Patrol: Orks"></label>
+    <div class="row">
+      <label>Faction
+        <select name="faction_id">
+          <option value="">— none —</option>
+          {% for f in factions %}<option value="{{ f.id }}">{{ f.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Year<input name="year" type="number" min="1987" max="2100"
+                        placeholder="2024"></label>
+      <label>RRP<input name="rrp" type="number" step="0.01" min="0"
+                       placeholder="0.00"></label>
+    </div>
+    <p class="hint">
+      Year is not cosmetic. Combat Patrol: Orks is both a 2021 and a 2024 box
+      with entirely different contents — the year and the barcode are what tell
+      them apart.
+    </p>
+    <label>Barcode
+      <input name="code" inputmode="numeric" autocomplete="off"
+             value="{{ request.args.get('code') or '' }}"
+             placeholder="5011921204021">
+    </label>
+
+    <h2>What's in the box</h2>
+    <p class="hint">
+      Every line has to match a datasheet the importer loaded. A made-up unit
+      name here becomes wrong purchase advice months from now.
+    </p>
+    <ul class="contents" id="contents"></ul>
+    <div class="row">
+      <label>Add unit
+        <input class="picker" autocomplete="off" data-target="#pick-datasheet"
+               placeholder="Start typing — Beast Snagga Boyz…">
+        <input type="hidden" id="pick-datasheet">
+      </label>
+      <label>Models<input type="number" id="pick-count" min="1" value="1"></label>
+      <button type="button" class="ghost" id="add-line">Add</button>
+    </div>
+    <ul class="results" hidden></ul>
+
+    <button type="submit">Save template</button>
+  </form>
+
+  <form class="row" method="get" action="/templates">
+    <label>Search<input name="q" value="{{ query }}" placeholder="Combat Patrol"></label>
+    <button type="submit">Find</button>
+  </form>
+
+  {% if not templates %}
+    <div class="panel empty">
+      <p>No templates yet.</p>
+      <p class="muted">
+        The catalogue seed job lands in step 5. Until then they're defined here,
+        once per box.
+      </p>
+    </div>
+  {% endif %}
+
+  <div class="wrap">
+    <table>
+      <tr><th>Kit</th><th>Year</th><th>Contents</th><th>Barcodes</th><th>RRP</th></tr>
+      {% for t in templates %}
+        <tr>
+          <td><a href="/templates/{{ t.id }}"><b>{{ t.name }}</b></a>
+            {% if t.faction_name %}<br><span class="muted">{{ t.faction_name }}</span>{% endif %}
+          </td>
+          <td>{{ t.year or '—' }}</td>
+          <td>{{ t.unit_count }} unit{{ '' if t.unit_count == 1 else 's' }},
+              {{ t.model_count }} model{{ '' if t.model_count == 1 else 's' }}</td>
+          <td>{{ t.barcode_count or '—' }}</td>
+          <td>{{ '£%.2f'|format(t.rrp_cents / 100) if t.rrp_cents else '—' }}</td>
+        </tr>
+      {% endfor %}
+    </table>
+  </div>
+{% endblock %}
+
+{% block scripts %}<script src="/static/js/template-form.js?v={{ asset_version }}"></script>{% endblock %}

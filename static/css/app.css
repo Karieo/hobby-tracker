@@ -26,6 +26,11 @@
 
 * { box-sizing: border-box; }
 
+/* Buttons and .ghost set an explicit display, which beats the browser's
+   default [hidden] rule — without this, hiding "Start camera" while the
+   scanner is running silently does nothing. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   padding: 0 1rem 3rem;
@@ -127,7 +132,10 @@ footer { max-width: 60rem; margin: 3rem auto 0; color: var(--muted);
    row of its own on a phone, and the secondary controls share the next.
    Above 30rem they all fit and sit on one line. */
 .actions .advance { flex: 1 1 100%; }
-.actions > .ghost { margin-left: auto; }
+/* Scoped to the unit card, where it pushes "Paint" to the far right. Left
+   global it also pushed every secondary button in the scan queue rows, which
+   wrapped them onto lines of their own. */
+.unit .actions > .ghost { margin-left: auto; }
 @media (min-width: 30rem) {
   .actions .advance { flex: 0 1 auto; }
 }
@@ -137,7 +145,7 @@ button, .ghost {
   cursor: pointer; text-decoration: none; display: inline-block;
   min-height: 44px;              /* thumb-sized, per Apple's own guidance */
 }
-button.advance, button[type="submit"] {
+button.advance, button.go, button[type="submit"] {
   background: var(--accent); color: #10231a; border-color: var(--accent);
   font-weight: 600;
 }
@@ -250,3 +258,54 @@ tr.gone { opacity: .5; }
 @media (prefers-reduced-motion: reduce) {
   .toast { transition: none; }
 }
+
+
+/* ── Scanner ────────────────────────────────────────── */
+.scanner { position: relative; border-radius: var(--radius); overflow: hidden;
+           background: #000; border: 1px solid var(--line); aspect-ratio: 4 / 3; }
+.scanner video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scanner-overlay { position: absolute; inset: 0; display: flex;
+                   align-items: center; justify-content: center;
+                   pointer-events: none; }
+/* A frame to aim with. Barcodes are wide and short, so the reticle is too. */
+.reticle { width: 78%; height: 28%; border: 2px solid var(--accent);
+           border-radius: 8px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .35); }
+.scanner-status { position: absolute; left: 0; right: 0; bottom: 0; margin: 0;
+                  padding: .5rem .75rem; font-size: .85rem;
+                  background: rgba(0, 0, 0, .65); color: var(--muted); }
+.scanner-status.live { color: var(--accent); }
+.scanner-status.error { color: var(--bad); }
+
+.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .85em; letter-spacing: .02em; }
+.pill { background: var(--line); border-radius: 999px; padding: .05rem .5rem;
+        font-size: .78rem; margin-left: .3rem; }
+.warnline { color: var(--warn); font-size: .85rem; margin: .3rem 0; }
+
+.scans { list-style: none; margin: 0; padding: 0; }
+.scans li { display: flex; gap: .5rem; align-items: center;
+            padding: .55rem .7rem; border: 1px solid var(--line);
+            border-radius: 8px; margin-bottom: .35rem; font-size: .9rem; }
+/* Green edge = the local table already knows this box. */
+.scans li.known { border-left: 3px solid var(--accent); }
+
+/* ── Review queue ───────────────────────────────────── */
+.queue { list-style: none; margin: 0; padding: 0; display: grid; gap: .7rem; }
+.qrow { background: var(--panel); border: 1px solid var(--line);
+        border-radius: var(--radius); padding: .9rem; }
+.qrow.ready { border-left: 3px solid var(--accent); }
+.qhead { display: flex; justify-content: space-between; gap: 1rem;
+         align-items: flex-start; }
+.qty { flex: none; text-align: right; }
+.qty label { margin: 0; }
+.qty input { width: 4.5rem; text-align: center; }
+
+/* ── Kit template contents ──────────────────────────── */
+.contents { list-style: none; margin: 0 0 .8rem; padding: 0;
+            border: 1px solid var(--line); border-radius: 8px; }
+.contents:empty { display: none; }
+.contents li { display: flex; gap: .6rem; align-items: center;
+               padding: .55rem .7rem; border-bottom: 1px solid var(--line); }
+.contents li:last-child { border-bottom: 0; }
+.contents li > span:first-child { flex: 1; }
+.contents .drop { padding: .3rem .6rem; min-height: 32px; font-size: .8rem; }

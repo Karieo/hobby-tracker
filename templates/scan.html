@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Scan · Collection Tracker{% endblock %}
+{% block body %}
+{# Sprint capture. The camera opens once and stays open: each decode drops onto
+   the queue with a beep and scanning resumes immediately. No modal, no
+   navigation, no confirmation tap — the shelf gets worked through as fast as
+   boxes can be turned over. Enrichment happens later, at a keyboard. #}
+  <header class="page">
+    <div>
+      <h1>Scan</h1>
+      <p class="hint">Point at the barcode. Keep going — sorting happens later.</p>
+    </div>
+    <a class="ghost" href="/scan/review">Review
+      {% if summary.open_rows %}<span class="pill">{{ summary.open_rows }}</span>{% endif %}
+    </a>
+  </header>
+
+  <div class="scanner">
+    <video id="video" playsinline muted></video>
+    <div class="scanner-overlay"><span class="reticle"></span></div>
+    <p class="scanner-status" id="status">Camera off</p>
+  </div>
+
+  <div class="actions wide">
+    <button class="go" id="start">Start camera</button>
+    <button class="ghost" id="stop" hidden>Stop</button>
+  </div>
+
+  {# Non-negotiable. Shrink-wrap glare, damaged boxes and dim shop lighting
+     defeat camera scanning regularly, and when they do this is the whole app. #}
+  <h2>Type it instead</h2>
+  <form class="panel row" id="manual">
+    <label>Barcode digits
+      <input name="code" inputmode="numeric" autocomplete="off"
+             placeholder="5011921204021">
+    </label>
+    <button type="submit">Add</button>
+  </form>
+  <p class="hint" id="manual-note"></p>
+
+  <h2>This session <span class="muted" id="counts">
+    {{ summary.open_boxes }} box{{ '' if summary.open_boxes == 1 else 'es' }} waiting</span></h2>
+  <ul class="scans" id="scans">
+    {% for row in recent %}
+      <li class="{% if row.ready %}known{% endif %}">
+        <span class="code">{{ row.code }}</span>
+        <span>{{ row.template_name or 'Unknown box' }}</span>
+        {% if row.quantity > 1 %}<span class="pill">×{{ row.quantity }}</span>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/vendor/zxing.min.js?v={{ asset_version }}"></script>
+<script src="/static/js/scan.js?v={{ asset_version }}"></script>
+{% endblock %}

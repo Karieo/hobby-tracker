@@ -1,9 +1,12 @@
 """Route wiring, auth, and the API contracts the UI depends on."""
 
+import json
+
 import pytest
 
 import collection as col
 import database as db
+import scanning
 
 
 @pytest.fixture
@@ -219,3 +222,138 @@ def test_unknown_kit_status_is_rejected(client):
 def test_datasheet_search_needs_two_characters(client, army_with_unit):
     assert client.get('/api/datasheets?q=B').json['results'] == []
     assert client.get('/api/datasheets?q=Boy').json['results']
+
+
+# ── Scanning (step 4) ────────────────────────────────────
+
+@pytest.fixture
+def a_template(client, army_with_unit):
+    """A kit template with contents, created through the API."""
+    res = client.post('/api/templates', json={
+        'name': 'Combat Patrol: Orks', 'year': 2024, 'code': '5011921204021',
+        'contents': [{'datasheet_id': army_with_unit['datasheet_id'],
+                      'model_count': 20}]})
+    assert res.status_code == 201
+    return res.json['id']
+
+
+@pytest.mark.parametrize('path', ['/scan', '/scan/review', '/templates'])
+def test_scanning_pages_render(client, army_with_unit, path):
+    assert client.get(path).status_code == 200
+
+
+def test_scanning_pages_require_login(db_path, monkeypatch):
+    import app as appmod
+    monkeypatch.setattr(appmod.db, 'DB_PATH', db_path)
+    anon = appmod.app.test_client()
+    assert anon.get('/scan').status_code == 302
+    assert anon.post('/api/scan', json={'code': '1'}).status_code == 401
+
+
+def test_a_scan_is_saved_immediately(client, army_with_unit):
+    res = client.post('/api/scan', json={'code': '5011921204021'})
+    assert res.status_code == 201
+    assert res.json['quantity'] == 1 and res.json['known'] is False
+    assert res.json['summary']['open_boxes'] == 1
+
+
+def test_rescanning_the_same_box_bumps_the_quantity(client, army_with_unit):
+    client.post('/api/scan', json={'code': '5011921204021'})
+    res = client.post('/api/scan', json={'code': '5011921204021'})
+    assert res.json['quantity'] == 2 and res.json['duplicate'] is True
+    assert res.json['summary']['open_rows'] == 1
+
+
+def test_a_junk_code_is_rejected_but_a_real_one_never_is(client, army_with_unit):
+    assert client.post('/api/scan', json={'code': 'abc'}).status_code == 400
+    # A non-GW prefix is a warning, not a refusal.
+    res = client.post('/api/scan', json={'code': '4006874052004'})
+    assert res.status_code == 201
+    assert res.json['notes'], 'it should say something about the prefix'
+
+
+def test_check_endpoint_describes_a_code_without_saving_it(client, army_with_unit):
+    res = client.get('/api/scan/check?code=9781839062865')
+    assert res.status_code == 200
+    assert res.json['known'] is False
+    assert any('book' in n for n in res.json['notes'])
+    assert client.get('/scan/review').status_code == 200
+    with db.connect() as conn:
+        assert conn.execute('SELECT COUNT(*) c FROM scan_queue').fetchone()['c'] == 0
+
+
+def test_a_known_code_comes_back_resolved(client, a_template):
+    res = client.post('/api/scan', json={'code': '5011921204021'})
+    assert res.json['known'] is True
+    assert res.json['name'] == 'Combat Patrol: Orks'
+
+
+def test_confirming_a_scan_creates_the_kit_and_models(client, a_template, db_path):
+    queue_id = client.post('/api/scan', json={'code': '5011921204021'}).json['queue_id']
+    res = client.post(f'/api/scan/{queue_id}/resolve', json={'box_state': 'opened'})
+    assert res.status_code == 200 and len(res.json['kits']) == 1
+    with db.connect(db_path) as conn:
+        # 10 from the army fixture's unit, plus 20 from the box.
+        assert conn.execute('SELECT COUNT(*) c FROM models').fetchone()['c'] == 30
+
+
+def test_quantity_decides_how_many_kits(client, a_template, db_path):
+    queue_id = client.post('/api/scan', json={'code': '5011921204021'}).json['queue_id']
+    client.post(f'/api/scan/{queue_id}/quantity', json={'quantity': 3})
+    res = client.post(f'/api/scan/{queue_id}/resolve', json={})
+    assert len(res.json['kits']) == 3
+
+
+def test_an_unknown_code_cannot_be_confirmed(client, army_with_unit):
+    queue_id = client.post('/api/scan', json={'code': '5011921999999'}).json['queue_id']
+    res = client.post(f'/api/scan/{queue_id}/resolve', json={})
+    assert res.status_code == 400
+    assert 'template' in res.json['error']
+
+
+def test_a_scan_can_be_discarded(client, army_with_unit):
+    queue_id = client.post('/api/scan', json={'code': '5011921999999'}).json['queue_id']
+    assert client.delete(f'/api/scan/{queue_id}').status_code == 200
+
+
+def test_creating_a_template_links_its_barcode(client, a_template, db_path):
+    """The step that makes every future scan of that box instant."""
+    with db.connect(db_path) as conn:
+        assert scanning.template_for_code(conn, '5011921204021')['id'] == a_template
+
+
+def test_a_template_with_no_contents_is_refused(client, army_with_unit):
+    res = client.post('/api/templates', json={'name': 'Mystery Box', 'contents': []})
+    assert res.status_code == 400
+
+
+def test_contents_may_arrive_as_a_json_string(client, army_with_unit):
+    """Form posts send it as text; fetch() sends a list. Both must work."""
+    res = client.post('/api/templates', json={
+        'name': 'Wrecka Krew',
+        'contents': json.dumps([{'datasheet_id': army_with_unit['datasheet_id'],
+                                 'model_count': 5}])})
+    assert res.status_code == 201
+
+
+def test_editing_a_template_cannot_empty_it(client, a_template):
+    res = client.patch(f'/api/templates/{a_template}', json={'contents': []})
+    assert res.status_code == 400
+
+
+def test_linking_another_barcode(client, a_template, db_path):
+    res = client.post(f'/api/templates/{a_template}/barcodes',
+                      json={'code': '5011921204038'})
+    assert res.status_code == 201
+    with db.connect(db_path) as conn:
+        assert len(scanning.get_template(conn, a_template)['barcodes']) == 2
+
+
+def test_linking_a_junk_barcode_is_refused(client, a_template):
+    assert client.post(f'/api/templates/{a_template}/barcodes',
+                       json={'code': '--'}).status_code == 400
+
+
+def test_template_detail_renders(client, a_template):
+    assert client.get(f'/templates/{a_template}').status_code == 200
+    assert client.get('/templates/999').status_code == 404

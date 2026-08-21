@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Review scans · Collection Tracker{% endblock %}
+{% block body %}
+  <header class="page">
+    <div>
+      <p class="crumb"><a href="/scan">← Back to scanning</a></p>
+      <h1>Review scans</h1>
+    </div>
+    <a class="ghost" href="/templates">Kit templates</a>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><b>{{ summary.open_boxes }}</b><span>boxes waiting</span></div>
+    <div class="stat"><b>{{ summary.known }}</b><span>ready to confirm</span></div>
+    <div class="stat {% if summary.unknown %}flag{% endif %}">
+      <b>{{ summary.unknown }}</b><span>need contents</span>
+    </div>
+    <div class="stat"><b>{{ summary.open_rows }}</b><span>rows</span></div>
+  </div>
+
+  {# Defaults applied to everything confirmed below, so the common case is one
+     tap per box rather than a form per box. #}
+  <h2>Applies to everything you confirm</h2>
+  <form class="panel row" id="defaults">
+    <label>Army
+      <select name="army_id">
+        <option value="">Unassigned</option>
+        {% for a in armies %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Stage
+      <select name="stage_id">
+        {% for s in stages %}
+          <option value="{{ s.id }}" {% if s.name == 'On sprue' %}selected{% endif %}>
+            {{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Box
+      <select name="box_state">
+        <option value="opened">Opened</option>
+        <option value="sealed">Sealed</option>
+        <option value="no_box">No box</option>
+      </select>
+    </label>
+  </form>
+  <p class="hint">
+    Scanning establishes what you own, honestly, at "On sprue". Paint stages get
+    corrected later — don't try to set 2,000 of them now.
+  </p>
+
+  {% set waiting = rows | rejectattr('resolved_at') | list %}
+  {% if not waiting %}
+    <div class="panel empty">
+      <p>Nothing waiting.</p>
+      <p class="muted"><a href="/scan">Scan some boxes</a> and they land here.</p>
+    </div>
+  {% endif %}
+
+  <ul class="queue">
+    {% for row in waiting %}
+      <li class="qrow {% if row.ready %}ready{% endif %}" data-queue="{{ row.id }}"
+          data-code="{{ row.code }}">
+        <div class="qhead">
+          <div>
+            <b>{{ row.template_name or 'Unknown box' }}</b>
+            {% if row.year %}<span class="muted">{{ row.year }}</span>{% endif %}
+            <br><span class="code">{{ row.code }}</span>
+            {% if row.faction_name %}<span class="muted">· {{ row.faction_name }}</span>{% endif %}
+          </div>
+          <div class="qty">
+            <label class="muted">Qty</label>
+            <input type="number" min="1" value="{{ row.quantity }}" class="q-qty"
+                   aria-label="how many of this box">
+          </div>
+        </div>
+
+        {% for note in row.notes %}<p class="warnline">{{ note }}</p>{% endfor %}
+
+        {% if row.ready %}
+          <p class="muted">
+            {{ row.template_units }} unit{{ '' if row.template_units == 1 else 's' }},
+            {{ row.template_models }} model{{ '' if row.template_models == 1 else 's' }} per box
+            {% if row.contents_source %}· contents from {{ row.contents_source.replace('_', ' ') }}{% endif %}
+          </p>
+          <div class="actions">
+            <button class="go q-confirm">Confirm ×<span class="n">{{ row.quantity }}</span> →</button>
+            <a class="ghost" href="/templates/{{ row.template_id }}">Edit contents</a>
+            <button class="ghost q-discard">Discard</button>
+          </div>
+        {% else %}
+          <p class="hint">
+            Never seen this code. Define what's in the box once — every other
+            copy on the shelf resolves behind it automatically.
+          </p>
+          <div class="actions">
+            <a class="ghost" href="/templates?code={{ row.code }}">Define contents →</a>
+            <button class="ghost q-discard">Discard</button>
+          </div>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+
+  {% set done = rows | selectattr('resolved_at') | list %}
+  {% if done %}
+    <h2>Already onboarded <span class="muted">{{ done|length }}</span></h2>
+    <p class="hint">Kept as the audit trail for how the collection was built.</p>
+    <div class="panel wrap">
+      <table>
+        <tr><th>Code</th><th>Kit</th><th>Qty</th><th>Resolved</th></tr>
+        {% for row in done %}
+          <tr>
+            <td><span class="code">{{ row.code }}</span></td>
+            <td>{{ row.kit_name or row.template_name or '—' }}</td>
+            <td>{{ row.quantity }}</td>
+            <td class="muted">{{ row.resolved_at }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}<script src="/static/js/review.js?v={{ asset_version }}"></script>{% endblock %}
