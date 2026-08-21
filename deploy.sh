@@ -58,6 +58,31 @@ if [ ! -f .env ]; then
 fi
 ok ".env is a file"
 
+# ── 1b · .env must actually parse ────────────────────────
+# Docker Compose reads .env for variable substitution and refuses the whole
+# run over one bad line, with an error that names the mangled text rather than
+# the line number. Easy to produce by accident: type a shell command into an
+# editor that is open on .env, and line 1 becomes "./deploy.sh# Copy to ...".
+# Catching it here costs nothing and points at the actual line.
+BAD_LINE=""
+BAD_NUMBER=0
+while IFS= read -r line; do
+  BAD_NUMBER=$((BAD_NUMBER + 1))
+  case "$line" in
+    ''|'#'*) continue ;;
+  esac
+  if ! printf '%s' "$line" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*='; then
+    BAD_LINE="$line"
+    break
+  fi
+done < .env
+if [ -n "$BAD_LINE" ]; then
+  fail ".env line $BAD_NUMBER is not NAME=value and will stop Compose:
+      $BAD_LINE
+    Fix that line — a stray command typed into an editor is the usual cause."
+fi
+ok ".env parses"
+
 # ── 2 · A session secret that survives a restart ─────────
 if [ -z "$(env_value SESSION_SECRET)" ]; then
   if [ "$CHECK_ONLY" -eq 1 ]; then
@@ -98,7 +123,19 @@ if [ -z "$(env_value BACKUP_DEST)" ]; then
 fi
 
 command -v docker >/dev/null || fail "docker not found"
-docker compose version >/dev/null 2>&1 || fail "docker compose plugin not found"
+
+# Ubuntu 20.04 — which is what bastion runs — ships the standalone
+# docker-compose v1 rather than the v2 plugin, and plenty of boxes have one
+# and not the other. Either is fine; refusing to deploy over which spelling is
+# installed would be a check getting in the way of the job.
+if docker compose version >/dev/null 2>&1; then
+  COMPOSE=(docker compose)
+elif command -v docker-compose >/dev/null 2>&1; then
+  COMPOSE=(docker-compose)
+  note "Using the standalone docker-compose (v1)"
+else
+  fail "Neither 'docker compose' nor 'docker-compose' is installed"
+fi
 ok "docker and compose present"
 
 if [ "$CHECK_ONLY" -eq 1 ]; then
@@ -110,7 +147,7 @@ fi
 # ── Deploy ───────────────────────────────────────────────
 bold ""
 bold "── Building and starting ──"
-docker compose up -d --build
+"${COMPOSE[@]}" up -d --build
 
 printf '  waiting for health'
 for _ in $(seq 1 60); do
@@ -122,7 +159,7 @@ for _ in $(seq 1 60); do
   printf '.'; sleep 1
 done
 curl -fsS "http://localhost:$(env_value PORT || echo 3100)/healthz" >/dev/null 2>&1 \
-  || { printf '\n'; docker compose logs --tail 40; fail "Never became healthy"; }
+  || { printf '\n'; "${COMPOSE[@]}" logs --tail 40; fail "Never became healthy"; }
 
 # ── Rules data ───────────────────────────────────────────
 # Fetched rather than vendored (65 MB, no licence), so a fresh box has none.
@@ -132,8 +169,8 @@ if [ ! -d data/bsdata ] || [ -z "$(ls -A data/bsdata 2>/dev/null)" ]; then
   bold ""
   bold "── Rules data ──"
   note "No data/bsdata yet — fetching and importing (a few minutes)"
-  docker compose exec -T tracker python3 scripts/fetch_bsdata.py
-  docker compose exec -T tracker python3 scripts/import_bsdata.py
+  "${COMPOSE[@]}" exec -T tracker python3 scripts/fetch_bsdata.py
+  "${COMPOSE[@]}" exec -T tracker python3 scripts/import_bsdata.py
 else
   ok "Rules data present"
 fi
