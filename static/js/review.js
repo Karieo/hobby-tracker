@@ -48,6 +48,25 @@ document.addEventListener('click', async (e) => {
     return;
   }
 
+  if (e.target.closest('.q-shelve')) {
+    // Ownership without contents. Deliberately one tap and no form: this is
+    // the escape hatch from the only expensive step, so putting a dialog in
+    // front of it would defeat the point.
+    const button = e.target.closest('.q-shelve');
+    button.disabled = true;
+    try {
+      const data = await post(`/api/scan/${id}/shelve`, defaults());
+      const n = data.kits.length;
+      toast(`${n} box${n === 1 ? '' : 'es'} recorded — contents can wait`);
+      row.remove();
+      refreshCounts(data.summary);
+    } catch (err) {
+      button.disabled = false;
+      toast(err.message, 'error');
+    }
+    return;
+  }
+
   if (e.target.closest('.q-discard')) {
     if (!confirm('Discard this scan? The box stays unrecorded.')) return;
     try {
@@ -55,6 +74,29 @@ document.addEventListener('click', async (e) => {
       row.remove();
       toast('Discarded');
     } catch (err) { toast(err.message, 'error'); }
+  }
+});
+
+// Filling in a box recorded earlier. Separate handler because these rows are
+// kits, not queue rows — the queue one returns early on a missing .qrow[data-queue].
+document.addEventListener('click', async (e) => {
+  const button = e.target.closest('.k-adopt');
+  if (!button) return;
+  const row = button.closest('.qrow');
+  const select = row.querySelector('.adopt-template');
+  const templateId = select && select.value;
+  if (!templateId) { toast('Pick which box this is first'); return; }
+
+  button.disabled = true;
+  try {
+    const data = await post(`/api/kits/${row.dataset.kit}/adopt`,
+                            {...defaults(), kit_template_id: templateId});
+    const n = data.units.length;
+    toast(`Filled in — ${n} unit${n === 1 ? '' : 's'} added`);
+    row.remove();
+  } catch (err) {
+    button.disabled = false;
+    toast(err.message, 'error');
   }
 });
 

@@ -232,6 +232,39 @@ def resolve_queue_row(conn, queue_id, army_id=None, stage_id=None, **kit_fields)
     return kit_ids
 
 
+def shelve_queue_row(conn, queue_id, name=None, **kit_fields):
+    """Record the box as owned without saying what is inside it.
+
+    The escape hatch from the only step in onboarding that cannot be made
+    cheap. Defining contents costs a form per distinct product, and with ~100
+    boxes and no catalogue to seed from that is hours of typing before the app
+    has recorded a single thing — which is how the last tracker died.
+
+    So ownership is recorded on its own: the box exists, it is on the shelf, it
+    is at "On sprue" honestly, and `collection.adopt_template` fills in the
+    contents whenever they become known. No contents are invented, none are
+    guessed, and nothing is auto-saved from a lookup — the box simply says what
+    it can prove.
+
+    `quantity` copies, same as resolving: three scans of the same box are three
+    boxes.
+    """
+    row = conn.execute('SELECT * FROM scan_queue WHERE id = ?', (queue_id,)).fetchone()
+    if not row:
+        raise ValueError(f'no queue row {queue_id}')
+    if row['resolved_at']:
+        raise ValueError('that scan has already been resolved')
+
+    label = (name or '').strip() or f'{col.UNIDENTIFIED_PREFIX} {row["code"]}'
+    kit_fields.setdefault('source_ref', row['code'])
+    kit_ids = [col.create_kit(conn, label, **kit_fields)
+               for _ in range(max(1, row['quantity']))]
+
+    conn.execute('UPDATE scan_queue SET resolved_at = ?, kit_id = ? WHERE id = ?',
+                 (db.now(), kit_ids[0], queue_id))
+    return kit_ids
+
+
 def discard_queue_row(conn, queue_id):
     """For a mis-scan — a code that turned out not to be a box Clay owns."""
     conn.execute('DELETE FROM scan_queue WHERE id = ? AND resolved_at IS NULL',

@@ -357,3 +357,87 @@ def test_linking_a_junk_barcode_is_refused(client, a_template):
 def test_template_detail_renders(client, a_template):
     assert client.get(f'/templates/{a_template}').status_code == 200
     assert client.get('/templates/999').status_code == 404
+
+
+# ── Recording a box without its contents ─────────────────
+#
+# The route half of tests/test_shelving.py. These exist because the review
+# screen's buttons post specific shapes, and a handler that works against a
+# different one is a screen that fails only in a browser.
+
+def _models_in_kit(conn, kit_id):
+    return conn.execute(
+        'SELECT COUNT(*) FROM models m JOIN units u ON u.id = m.unit_id '
+        'WHERE u.kit_id = ?', (kit_id,)).fetchone()[0]
+
+
+def test_shelve_records_a_box_with_no_template(client, db_path):
+    client.post('/api/scan', json={'code': '5011921225712'})
+    with db.connect(db_path) as conn:
+        queue_id = conn.execute('SELECT id FROM scan_queue').fetchone()[0]
+
+    res = client.post(f'/api/scan/{queue_id}/shelve', json={})
+
+    assert res.status_code == 200
+    assert len(res.json['kits']) == 1
+    with db.connect(db_path) as conn:
+        kit = conn.execute('SELECT * FROM kits').fetchone()
+        assert kit['kit_template_id'] is None
+        assert kit['source_ref'] == '5011921225712'
+        assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 0
+
+
+def test_shelve_refuses_a_row_twice(client, db_path):
+    client.post('/api/scan', json={'code': '5011921225712'})
+    with db.connect(db_path) as conn:
+        queue_id = conn.execute('SELECT id FROM scan_queue').fetchone()[0]
+
+    assert client.post(f'/api/scan/{queue_id}/shelve', json={}).status_code == 200
+    second = client.post(f'/api/scan/{queue_id}/shelve', json={})
+    assert second.status_code == 400
+    assert 'already been resolved' in second.json['error']
+
+
+def test_adopt_fills_in_a_shelved_box(client, db_path, a_template):
+    client.post('/api/scan', json={'code': '5011921225712'})
+    with db.connect(db_path) as conn:
+        queue_id = conn.execute('SELECT id FROM scan_queue').fetchone()[0]
+    kit_id = client.post(f'/api/scan/{queue_id}/shelve', json={}).json['kits'][0]
+
+    res = client.post(f'/api/kits/{kit_id}/adopt',
+                      json={'kit_template_id': a_template})
+
+    assert res.status_code == 200
+    assert len(res.json['units']) == 1
+    with db.connect(db_path) as conn:
+        assert _models_in_kit(conn, kit_id) == 20
+        assert conn.execute('SELECT name FROM kits WHERE id = ?',
+                            (kit_id,)).fetchone()[0] == 'Combat Patrol: Orks'
+
+
+def test_adopt_twice_is_refused_over_http(client, db_path, a_template):
+    client.post('/api/scan', json={'code': '5011921225712'})
+    with db.connect(db_path) as conn:
+        queue_id = conn.execute('SELECT id FROM scan_queue').fetchone()[0]
+    kit_id = client.post(f'/api/scan/{queue_id}/shelve', json={}).json['kits'][0]
+    client.post(f'/api/kits/{kit_id}/adopt', json={'kit_template_id': a_template})
+
+    res = client.post(f'/api/kits/{kit_id}/adopt',
+                      json={'kit_template_id': a_template})
+
+    assert res.status_code == 400
+    assert 'already has contents' in res.json['error']
+    with db.connect(db_path) as conn:
+        assert _models_in_kit(conn, kit_id) == 20, 'the refusal must not have added a second set'
+
+
+def test_the_review_screen_lists_boxes_awaiting_contents(client, db_path):
+    client.post('/api/scan', json={'code': '5011921225712'})
+    with db.connect(db_path) as conn:
+        queue_id = conn.execute('SELECT id FROM scan_queue').fetchone()[0]
+    client.post(f'/api/scan/{queue_id}/shelve', json={})
+
+    body = client.get('/scan/review').get_data(as_text=True)
+
+    assert 'Recorded, contents not yet known' in body
+    assert 'Unidentified box 5011921225712' in body

@@ -90,17 +90,58 @@
           </div>
         {% else %}
           <p class="hint">
-            Never seen this code. Define what's in the box once — every other
-            copy on the shelf resolves behind it automatically.
+            Never seen this code. Record it now and say what's in it whenever
+            you like — or define the contents once, and every other copy on the
+            shelf resolves behind it automatically.
           </p>
           <div class="actions">
-            <a class="ghost" href="/templates?code={{ row.code }}">Define contents →</a>
+            <button class="go q-shelve">Record box ×<span class="n">{{ row.quantity }}</span> →</button>
+            <a class="ghost" href="/templates?code={{ row.code }}">Define contents</a>
             <button class="ghost q-discard">Discard</button>
           </div>
         {% endif %}
       </li>
     {% endfor %}
   </ul>
+
+  {% if awaiting %}
+    <h2>
+      Recorded, contents not yet known
+      <span class="muted">{{ awaiting|length }}</span>
+    </h2>
+    <p class="hint">
+      These are on the shelf and counted as owned. They hold no models yet, so
+      they are absent from progress and from the gap report until you say what
+      is in them.
+    </p>
+    <ul class="queue">
+      {% for kit in awaiting %}
+        <li class="qrow" data-kit="{{ kit.id }}">
+          <div class="what">
+            <b>{{ kit.name }}</b>
+            {% if kit.code %}<code>{{ kit.code }}</code>{% endif %}
+            {% if kit.faction_name %}<span class="muted">{{ kit.faction_name }}</span>{% endif %}
+          </div>
+          {% if templates %}
+            <div class="actions">
+              <select class="adopt-template">
+                <option value="">Contents…</option>
+                {% for t in templates %}
+                  <option value="{{ t.id }}">
+                    {{ t.name }}{% if t.year %} ({{ t.year }}){% endif %}
+                    — {{ t.model_count }} models
+                  </option>
+                {% endfor %}
+              </select>
+              <button class="go k-adopt">Fill in →</button>
+            </div>
+          {% else %}
+            <p class="hint">No kit templates defined yet — nothing to fill it in from.</p>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
 
   {% set done = rows | selectattr('resolved_at') | list %}
   {% if done %}

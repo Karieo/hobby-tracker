@@ -544,7 +544,9 @@ def scan_review():
             summary=scan.queue_summary(conn),
             stages=col.stage_ladder(conn),
             armies=[a for a in col.list_armies(conn) if a['id']],
-            factions=col.list_factions(conn))
+            factions=col.list_factions(conn),
+            awaiting=col.kits_awaiting_contents(conn),
+            templates=col.list_templates_with_contents(conn))
 
 
 @app.route('/api/scan/<int:queue_id>/resolve', methods=['POST'])
@@ -562,6 +564,41 @@ def api_resolve_scan(queue_id):
                 cost_cents=round(float(cost) * 100) if cost else None,
                 box_state=(data.get('box_state') or 'opened'))
             return jsonify({'kits': kit_ids, 'summary': scan.queue_summary(conn)})
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.route('/api/scan/<int:queue_id>/shelve', methods=['POST'])
+def api_shelve_scan(queue_id):
+    """Record the box, not its contents. One tap, nothing invented."""
+    data = _payload()
+    cost = data.get('cost')
+    try:
+        with _write() as conn:
+            kit_ids = scan.shelve_queue_row(
+                conn, queue_id,
+                name=data.get('name'),
+                faction_id=_int(data.get('faction_id')),
+                source=(data.get('source') or None),
+                acquired_on=(data.get('acquired_on') or '').strip() or None,
+                cost_cents=round(float(cost) * 100) if cost else None,
+                box_state=(data.get('box_state') or 'sealed'))
+            return jsonify({'kits': kit_ids, 'summary': scan.queue_summary(conn)})
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.route('/api/kits/<int:kit_id>/adopt', methods=['POST'])
+def api_adopt_template(kit_id):
+    """Fill in a shelved box's contents once its template exists."""
+    data = _payload()
+    try:
+        with _write() as conn:
+            unit_ids = col.adopt_template(
+                conn, kit_id, _int(data.get('kit_template_id')),
+                army_id=_int(data.get('army_id')),
+                stage_id=_int(data.get('stage_id')))
+            return jsonify({'units': unit_ids})
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
 
