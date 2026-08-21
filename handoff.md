@@ -1,162 +1,135 @@
-# Handoff — Session 5
+# Handoff — Session 6
 
 ## 1 · Goal
 
-Build the Combat Patrol magazine templates, all 90 issues (§11).
+Deploy to bastion. Everything in this session came out of doing that on the
+real box rather than reading about it.
 
 ## 2 · Current State
 
-**The four premium kits ship with contents and seed today. The 90 issues do
-not, and I did not invent them.**
+**The app is live on bastion, with rules data loaded and a verified backup.**
+Five PRs merged (#8–#12), every one of them a bug the deploy found.
 
-The difference is the source. The premium kits are documented in the spec
-(§11), which is a reviewed document — deriving from it is legitimate. The
-per-issue contents are documented only on pages this environment cannot
-reach.
-
-`seed/combat_patrol_magazine.py` reads a contents file, matches every unit
-against the imported BSData datasheets, creates one kit template per issue, and
-optionally instantiates owned kits up to a given issue. 29 tests cover it; 193
-pass overall.
-
-`seed/data/combat_patrol_issues.yaml` ships **with the four premium kits** and
-**empty of issue data**.
-
-### The premium kits
-
-Six of the eight named units resolve exactly against the imported rules data;
-counts come from each datasheet's minimum unit size (`models: min`), which is
-what one kit delivers, so the number can never drift from the rules:
-
-| Kit | Contents |
+| | |
 |---|---|
-| Brutalis Dreadnought + Hive Tyrant | 1× Brutalis Dreadnought, 1× Hive Tyrant |
-| Brôkhyr Thunderkyn + Killa Kans | 3× Brôkhyr Thunderkyn, 3× Killa Kans |
-| Daemon Prince + Howling Banshees | 5× Howling Banshees — Daemon Prince unresolved |
-| GSC Broodcoven + Rogal Dorn Battle Tank | 1× Rogal Dorn Battle Tank — Broodcoven unresolved |
+| Image | `6a354aa88431`, healthy on port 3100 |
+| Datasheets | 1,445 (+330 Legends, +62 Crucible, kept and flagged) |
+| Points rows | 2,544, of which 399 inherited Chapter listings |
+| Factions | 30 |
+| Unresolved | 31 — the documented figure, see below |
+| Collection | empty. Nothing scanned yet. |
+| Backup | `tracker-20260821-110536.db`, 839,680 bytes, verified restorable |
 
-The two that do not resolve are genuine decisions, not failures. BSData has no
-plain **Daemon Prince** — it is of Chaos, of Khorne, of Nurgle, winged or not,
-and which one it becomes is a build-time choice (§14). **GSC Broodcoven** is a
-three-character boxed set, not a datasheet. Both lines are left in and
-reported, with the near-misses named; each kit is still created from the lines
-that did resolve. None ships marked `owned` — a premium kit is an optional
-extra, and claiming one Clay never bought would put models in his collection
-that do not exist.
+The 31 unresolved rows are all expected classes, none of them a matching
+failure: naming variants between the two sources (MFM "Vyper" / BSData
+"Vypers", one Soul Grinder against four god-specific ones, Blight-Haulers vs
+Blight-hauler); Legion units priced under their own faction rather than
+`chaos-space-marines` (Berzerkers, Rubric/Plague/Noise Marines) — the faction
+scoping doing exactly its job; units with no points cost at all (Spore Mines,
+Mucolid Spores, Ripper Swarms attached to a Parasite); the four Chaos Titans,
+priced in a catalogue outside `wh40k-11e`; and one true ambiguity, **Wolf Guard
+Headtakers**, where two datasheets share a name inside Space Wolves.
 
-### Why it is empty
+Three named Space Marine characters — **Captain Sicarius, Marneus Calgar,
+Lieutenant Titus** — have no MFM entry and so no points. Only matters at list
+building, which is step 8 and out of scope.
 
-Every published source for the per-issue contents is blocked by this
-environment's egress policy:
-
-| Source | Result |
-|---|---|
-| `fauxhammer.com` (a contents list covering all 90) | `EGRESS_BLOCKED` |
-| `hachettepartworks.com` (the publisher's own per-issue pages) | `EGRESS_BLOCKED` |
-| `warhammer-community.com` | `EGRESS_BLOCKED` |
-| `hachettecollections.com`, `bolterandchainsword.com`, Wikipedia | all blocked |
-
-`/root/.ccr/README.md` is explicit: a 403 from the proxy is organization egress
-policy, and the instruction is to report the blocked host, not route around it.
-
-`WebSearch` *does* work, and returned real fragments — issue 41 a Warboss in
-Mega Armour, 43 and 45 ten Ork Boyz each, 47–48 Deffkoptas, 49–50 a Deff Dread,
-59 a Boomdakka Snazzwagon. **I deliberately did not use them.** They arrive as
-a model's summary of a page I cannot read, they cover six issues of ninety, and
-nothing corroborates them. Assembling 90 issues that way produces exactly what
-§11 forbids: fluent, plausible, wrong in places, with no signal about which —
-and it would land as trusted seed data covering the entire magazine collection,
-where nothing would ever prompt Clay to check it.
-
-So the code is done and the data is a one-file drop-in.
+**Not yet done:** the Cloudflare Tunnel is not pointed at 3100, so the camera
+has never been tested against a real box in real light. That is the one part of
+this app that has to work somewhere other than a desk.
 
 ## 3 · Active Files
 
-| File | Role |
-|---|---|
-| `seed/combat_patrol_magazine.py` | The seed job |
-| `seed/data/combat_patrol_issues.yaml` | Contents + provenance; empty of issues |
-| `seed/data/README.md` | Where to get the data, and the rules for filling it |
-| `tests/test_combat_patrol_seed.py` | 29 tests |
+- `Dockerfile` — now installs `git`
+- `deploy.sh` — rules-data step rewritten
+- `scripts/fetch_bsdata.py` — `git()` helper, `current_sha()` returns errors
+- `restore.sh` — the empty-collection check
+- `.gitignore`, `tests/test_gitignore.py`
+- `tests/test_fetch_bsdata.py` (new), `tests/test_backup.py` (two tests replaced)
+- `.github/workflows/ci.yml` — image tooling check
+- `docker-compose.yml` — `version: '3.3'`
 
 ## 4 · Changes Made
 
-**Provenance is enforced, not requested.** The importer refuses to run without
-source URLs, a retrieval date, a confidence, and a second source that agrees.
-Undated, unattributed seed data is indistinguishable from invented seed data
-once it is in the database, and every template it creates carries
-`contents_source='seed'` plus the URLs.
+**#8 — compose schema.** `version: '3.8'` was rejected outright by bastion's
+docker-compose. 3.3 works on both v1 and v2. `healthcheck.start_period` dropped
+with it (needs 3.4).
 
-`--dry-run` deliberately works *without* provenance, so a half-finished draft
-can still be checked.
+**#9 — git in the image.** `python:3.11-slim` has no git, so
+`fetch_bsdata.py` died on a fresh box after the container had already booted
+healthy. git rather than a tarball because the script fetches one pinned commit
+and verifies it got that commit. CI now runs the setup scripts' tools against
+the built image — the docker job booted the container and called `/healthz`,
+which this sails straight past.
 
-**Multi-issue sprues attach to the issue that completes them.** A Maulerfiend
-split across #89–90 becomes one template on #90; #89 is reported as parts-only
-and yields no kit. Half a Maulerfiend is not a model you own.
+**#10 — two gates.** `.gitignore` covered `.env` and none of nano's copies
+(`.env.save`, `.env.save.1`, `..env.swp`), each holding SESSION_SECRET and
+OWNER_PASSWORD. And `deploy.sh` gated the import on the *checkout directory*
+existing, so a fetch without an import left the app with no datasheets and a
+deploy script convinced there was nothing to do. Now gated on
+`count(*) from datasheets`, printed every deploy.
 
-**Nothing is invented to fill a gap.** Unmatched unit names become
-`unresolved_imports` rows and appear in the report. An issue whose units all
-fail to match produces *no* template, because an empty template instantiates an
-empty kit and looks like it worked.
+**#11 — the refusal that destroyed data.** `fetch_bsdata.py` reported a
+complete 46-catalogue checkout as "not a BSData checkout. Move it aside." The
+checkout was owned by the host user; container git runs as root and refuses
+another user's repository. `current_sha()` sent that to DEVNULL and returned
+None, and None meant one thing at the call site. Every git call is now scoped
+with `safe.directory`; `current_sha()` returns `(sha, error)`; the refusal
+counts catalogues and says *do not move or delete it*.
 
-**Matching reuses the rules importer's `norm`**, so a name that matched there
-matches here. Legends and Crucible variants are excluded — a deprecated
-printing must never satisfy a seed.
+**#12 — crying wolf on day one.** `restore.sh --check` failed a perfectly good
+first snapshot because it held no collection — there is no collection yet. Now
+compared against the live database: empty snapshot behind populated live still
+fails and says so; empty behind empty is a fresh install; unreadable live is
+reported as unverified.
 
-**The nine Combat Patrols and four premium kits are shipped**, because those
-come from the spec itself rather than from a web source.
-
-### Demonstrated against real data
-
-A throwaway fixture (in scratch, not committed) run against the real 1,445
-datasheets: 7 issues in, 5 templates out, 4 owned kits and 22 models for issues
-≤75, the Maulerfiend correctly on #90, a deliberately fake unit reported rather
-than invented, and the 83 missing issues printed as compact ranges. `--dry-run`
-wrote nothing.
+225 tests pass. shellcheck clean on all three scripts.
 
 ## 5 · Failed Attempts
 
-**Reaching a source, five different ways.** `curl` to the publisher and the
-community lists: all `000` through the proxy. `WebFetch` to the same: all
-`EGRESS_BLOCKED`. Only `WebSearch` — which returns summaries rather than pages
-— gets out.
+**I told Clay to delete a good checkout.** He hit "not a BSData checkout",
+I diagnosed a partial clone from a failed `git init`, and told him to
+`mv data/bsdata ~/bsdata.broken`. It was a complete 46-catalogue checkout; the
+only reason it still exists is that he ran `ls` first, as suggested, instead of
+the `mv`. The script's own message backed the wrong diagnosis, which is what
+#11 fixes — but the guess was mine, made without asking for evidence I had
+already asked for.
 
-**Assembling the list from search snippets.** Tempting, and it *would* have
-produced ninety plausible rows. Rejected: single-source, second-hand through a
-summariser, six issues of ninety actually covered, and impossible to verify
-line by line. This is the failure mode §11 exists to prevent, and it would have
-been worse here than for the kit catalogue because the magazine seed is
-imported wholesale as trusted.
+**I said "git pull && ./deploy.sh" while the fix sat in an unmerged PR.** Twice.
+The tell both times was every layer reporting `Using cache` and the build ending
+on the identical image ID `6a45dfe2ea0c` — visible in the screenshot I had, and
+not read. The second time it also failed because of a local `sed` edit *I* had
+told him to make on `docker-compose.yml`, which blocked the pull.
 
-**A test fixture that held an open write transaction** deadlocked the tests
-that go through `main()`, which opens its own connection — `database is
-locked`. The fixture now commits.
+**I quoted "~1,900 datasheets" as the health checkpoint.** The real figure is
+1,445, which I had in the module docstring and did not check before giving him
+a threshold to judge his own deploy against.
+
+**Pattern across all three:** guessing when a one-line command would have
+produced the answer, on a box I cannot see and he can. The screenshots carried
+what was needed every time.
 
 ## 6 · Next Steps
 
-**The premium kits are done.** Two lines need a decision from Clay: which
-Daemon Prince variant, and splitting GSC Broodcoven into Magus / Primus /
-Patriarch. Both are `unresolved_imports` rows with candidates listed.
+**Point the Cloudflare Tunnel at 3100 and scan a real box.** `getUserMedia`
+needs the HTTPS origin; a plain-HTTP Tailscale IP will fail silently on every
+iOS browser. Nothing about the scanner has been exercised on real hardware in
+real light, and that is where it has to work.
 
-**The 90 issues still need data.** Either:
+**Then the collection view** — the other half of step 5, the "do I already own
+one of these" screen, and the last thing before v1 is done. No blockers.
 
-1. **Allow one host through egress** — `fauxhammer.com` has a list covering all
-   90 in one page, `hachettepartworks.com` is the publisher. Then I can derive,
-   corroborate and fill the file properly in one pass.
-2. **Paste or drop the list in.** `seed/data/README.md` documents the format;
-   `--status` and `--dry-run` will tell you immediately what does not match.
+**Still open, unchanged:**
 
-Then `python3 seed/combat_patrol_magazine.py --owned-through 75`.
-
-**Also still open:**
-
-- The **kit catalogue seed job** (§11) has the same problem and worse — it needs
-  to walk retailer pages for EANs and GW's verbatim contents block. Not runnable
-  from this environment at all as things stand.
-- The **collection view** is the other half of step 5 and has no such blocker.
-  It is the "do I already own one of these" screen, and the last thing before
-  v1 is done.
-- `BACKUP_DEST` is still unset — backups are local-only.
-- Dependencies are unpinned, so CI resolves the latest release each run.
+- `BACKUP_DEST` unset. Snapshots land on `/mnt/t7` — a different disk, same
+  box. The backup script says so itself: *one box is not a backup.*
+- The **90 Combat Patrol issues** still need a source: an egress allowance for
+  `fauxhammer.com` / `hachettepartworks.com`, or Clay pasting the list.
+  `seed/data/README.md` has the format; `--dry-run` reports mismatches.
+- **Two premium-kit decisions**: which Daemon Prince variant, and whether GSC
+  Broodcoven splits into Magus / Primus / Patriarch.
+- The **kit catalogue seed job** (§11) — same egress problem, worse.
+- Dependencies unpinned (`>=`), so CI resolves the latest release each run.
+- **Wolf Guard Headtakers** needs a pick between two same-named datasheets.
 
 **Do not build past step 5.**
