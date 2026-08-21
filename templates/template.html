@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}{{ template.name }} · Collection Tracker{% endblock %}
+{% block body %}
+  <header class="page">
+    <div>
+      <p class="crumb"><a href="/templates">← Kit templates</a></p>
+      <h1>{{ template.name }}</h1>
+      <p class="muted">
+        {% if template.year %}{{ template.year }} · {% endif %}
+        {{ template.faction_name or 'no faction' }}
+        {% if template.rrp_cents %}
+          · RRP £{{ '%.2f'|format(template.rrp_cents / 100) }}
+          <span class="muted">as of {{ template.price_updated_on }}</span>
+        {% endif %}
+      </p>
+    </div>
+  </header>
+
+  {% if template.contents_source and template.contents_source != 'manual' %}
+    <div class="panel warn">
+      <b>Contents came from {{ template.contents_source.replace('_', ' ') }}</b>
+      <span class="muted">confidence: {{ template.contents_confidence or 'unknown' }}</span>
+      {% if template.source_urls %}
+        <ul class="muted">
+          {% for u in template.source_urls %}<li>{{ u }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+      <p class="muted">Check it against the box before trusting it.</p>
+    </div>
+  {% endif %}
+
+  <h2>What's in the box</h2>
+  <form class="panel stack" id="edit-template" data-template="{{ template.id }}">
+    <label>Name<input name="name" value="{{ template.name }}" required></label>
+    <div class="row">
+      <label>Faction
+        <select name="faction_id">
+          <option value="">— none —</option>
+          {% for f in factions %}
+            <option value="{{ f.id }}" {% if f.id == template.faction_id %}selected{% endif %}>
+              {{ f.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Year<input name="year" type="number" value="{{ template.year or '' }}"></label>
+      <label>RRP<input name="rrp" type="number" step="0.01" min="0"
+             value="{{ '%.2f'|format(template.rrp_cents / 100) if template.rrp_cents else '' }}"></label>
+    </div>
+
+    <ul class="contents" id="contents">
+      {% for c in template.contents %}
+        <li data-datasheet="{{ c.datasheet_id }}" data-count="{{ c.model_count }}">
+          <span><b>{{ c.model_count }}×</b> {{ c.datasheet_name }}</span>
+          <span class="muted">{{ c.faction_name or '' }}</span>
+          <button type="button" class="ghost drop">Remove</button>
+        </li>
+      {% endfor %}
+    </ul>
+    <div class="row">
+      <label>Add unit
+        <input class="picker" autocomplete="off" data-target="#pick-datasheet"
+               placeholder="Start typing…">
+        <input type="hidden" id="pick-datasheet">
+      </label>
+      <label>Models<input type="number" id="pick-count" min="1" value="1"></label>
+      <button type="button" class="ghost" id="add-line">Add</button>
+    </div>
+    <ul class="results" hidden></ul>
+    <button type="submit">Save</button>
+  </form>
+
+  <h2>Barcodes <span class="muted">{{ template.barcodes|length }}</span></h2>
+  <p class="hint">
+    Every code here resolves to this box instantly, forever. This local table is
+    the only part of barcode scanning guaranteed to still work in five years.
+  </p>
+  {% if template.barcodes %}
+    <div class="panel wrap">
+      <table>
+        <tr><th>Code</th><th>First scanned</th><th>Times seen</th></tr>
+        {% for b in template.barcodes %}
+          <tr>
+            <td><span class="code">{{ b.code }}</span></td>
+            <td class="muted">{{ b.first_scanned_at }}</td>
+            <td>{{ b.scan_count }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    </div>
+  {% endif %}
+  <form class="panel row" id="link-code" data-template="{{ template.id }}">
+    <label>Link another barcode
+      <input name="code" inputmode="numeric" autocomplete="off"
+             placeholder="5011921204021">
+    </label>
+    <button type="submit">Link</button>
+  </form>
+{% endblock %}
+
+{% block scripts %}<script src="/static/js/template-form.js?v={{ asset_version }}"></script>{% endblock %}

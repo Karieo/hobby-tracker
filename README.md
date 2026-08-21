@@ -8,10 +8,10 @@ Cloudflare Tunnel. Conventions follow [Remndrs](https://github.com/Karieo/Remndr
 flat module layout, `python-dotenv` config read lazily, bcrypt + session-cookie
 auth, server-rendered Jinja with vanilla JS, no build step and no ORM.
 
-**Status: build steps 1–3 of 5.** Schema, migration runner, reference-data seed,
-the rules-data importer, and the collection itself — armies, kits, units,
-models, the stage pipeline and painting session mode. Scanning (step 4) and the
-collection search view (step 5) are not built yet.
+**Status: build steps 1–4 of 5.** Schema, migration runner, reference-data seed,
+the rules-data importer, the collection itself (armies, kits, units, models, the
+stage pipeline and painting session mode), and barcode scanning with its sprint
+queue and review screen. The collection search view (step 5) is not built yet.
 
 ## Setup
 
@@ -53,6 +53,8 @@ and builds and boots the Docker image on every push and pull request
 | `data/mfm/` | Munitorum Field Manual snapshots (MIT, committed) |
 | `data/bsdata/` | BSData catalogues (fetched, gitignored — see `data/SOURCES.md`) |
 | `collection.py` | Armies, kits, units, models, stage movement |
+| `scanning.py` | Barcodes, the scan sprint queue, kit templates |
+| `static/vendor/` | ZXing-js, vendored (Apache-2.0) |
 | `templates/`, `static/` | Server-rendered Jinja + vanilla JS, no build step |
 | `backup.sh` | Nightly snapshot + CSV export + off-box copy |
 | `restore.sh` | Verify a snapshot (`--check`) or restore one |
@@ -73,6 +75,35 @@ that gap is where the last tracker died.
 Every percentage is effort-weighted (`datasheets.effort` per model), because a
 Knight and a Termagant are both "1 model" and counting them equally makes
 progress bars lie. Raw counts show alongside.
+
+## Scanning
+
+`/scan` is sprint capture: the camera opens once and stays open, each decode
+posts to the server immediately, and scanning resumes. No modal, no navigation,
+no confirmation tap — a shelf gets worked through as fast as boxes can be turned
+over, and a flat battery never costs the work. Enrichment happens later at
+`/scan/review`.
+
+**ZXing-js is the primary decoder, not a fallback.** The native `BarcodeDetector`
+API is Chrome/Android only; WebKit does not implement it, so it fails silently on
+every browser on iOS. Since an iPhone is the target, depending on it would mean
+the scanner never fires on the only phone that matters. It is feature-detected
+and used when present, and nothing relies on it.
+
+The camera needs a secure context, which the Cloudflare Tunnel provides and a
+plain-http Tailscale IP does not — the page says so rather than failing quietly.
+**Typing the digits is always available**, because glare, damaged boxes and dim
+shop lighting defeat camera scanning regularly.
+
+Codes are sanity-checked and never rejected: an unexpected prefix or a bad check
+digit means *look at this*, not *invalid*. Codexes carry ISBNs and secondhand
+boxes carry other companies' codes, and a scanner that refuses a real box is
+worse than one that shrugs.
+
+The local `barcodes` table is the point of the whole design. Unknown code once,
+contents defined once, instant forever after — and unlike any external GTIN
+provider, it will still work in five years. Defining one unknown box resolves
+every other copy of it already sitting in the queue.
 
 ## Rules data
 

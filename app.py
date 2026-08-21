@@ -1,8 +1,9 @@
 """Warhammer Collection Tracker — Flask server.
 
-Build steps 1-3: reference data, plus armies, kits, units, models and the stage
-pipeline. Routes live here and delegate to ``collection.py``; scanning (step 4)
-and the collection view (step 5) are not built yet.
+Build steps 1-4: reference data, the collection and stage pipeline, and the
+scanner with its sprint queue and review screen. Routes live here and delegate
+to ``collection.py`` and ``scanning.py``; the collection search view (step 5) is
+not built yet.
 
 Auth posture matches Remndrs, because the Cloudflare Tunnel makes this publicly
 reachable and obscurity is not a plan: bcrypt password, session cookie, a
@@ -10,6 +11,7 @@ before_request allowlist, per-IP failed-login throttling, and ProxyFix so the
 tunnel's forwarded headers are trusted.
 """
 
+import json
 import logging
 import os
 import secrets
@@ -49,6 +51,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 
 import collection as col  # noqa: E402
 import database as db  # noqa: E402
+import scanning as scan  # noqa: E402
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s %(name)s: %(message)s')
@@ -74,7 +77,7 @@ if not _secret:
 app.secret_key = _secret
 app.permanent_session_lifetime = timedelta(days=30)
 
-VERSION = '0.2.0'
+VERSION = '0.3.0'
 _APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -487,6 +490,182 @@ def paint(unit_id=None):
         return render_template('paint.html', unit=unit, breakdown=breakdown,
                                units=col.paintable_units(conn),
                                stages=col.stage_ladder(conn))
+
+
+# ── Scanning: capture ────────────────────────────────────
+
+@app.route('/scan')
+def scan_page():
+    """Sprint capture. The camera stays open and nothing interrupts it.
+
+    Needs a secure context for getUserMedia — the Cloudflare Tunnel supplies
+    that, a plain-http Tailscale IP does not, and the page says so rather than
+    failing silently.
+    """
+    with _read() as conn:
+        return render_template('scan.html', summary=scan.queue_summary(conn),
+                               recent=scan.queue_rows(conn)[:8])
+
+
+@app.route('/api/scan', methods=['POST'])
+def api_scan():
+    """One decode. Written to the server at once — a dead battery must not cost
+    Clay the shelf he just worked through."""
+    data = _payload()
+    try:
+        with _write() as conn:
+            result = scan.enqueue_scan(conn, data.get('code') or '')
+            result['summary'] = scan.queue_summary(conn)
+            return jsonify(result), 201
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.route('/api/scan/check')
+def api_scan_check():
+    """Sanity notes for a typed code, before it is committed to the queue."""
+    code = scan.normalise_code(request.args.get('code') or '')
+    with _read() as conn:
+        template = scan.template_for_code(conn, code) if code else None
+    return jsonify({**scan.describe_code(code), 'known': template is not None,
+                    'name': template['name'] if template else None})
+
+
+# ── Scanning: enrichment ─────────────────────────────────
+
+@app.route('/scan/review')
+def scan_review():
+    """The keyboard half, done later. Known codes need a tap; unknown ones need
+    contents defined once each."""
+    with _read() as conn:
+        return render_template(
+            'scan_review.html',
+            rows=scan.queue_rows(conn, include_resolved=True),
+            summary=scan.queue_summary(conn),
+            stages=col.stage_ladder(conn),
+            armies=[a for a in col.list_armies(conn) if a['id']],
+            factions=col.list_factions(conn))
+
+
+@app.route('/api/scan/<int:queue_id>/resolve', methods=['POST'])
+def api_resolve_scan(queue_id):
+    data = _payload()
+    cost = data.get('cost')
+    try:
+        with _write() as conn:
+            kit_ids = scan.resolve_queue_row(
+                conn, queue_id,
+                army_id=_int(data.get('army_id')),
+                stage_id=_int(data.get('stage_id')),
+                source=(data.get('source') or None),
+                acquired_on=(data.get('acquired_on') or '').strip() or None,
+                cost_cents=round(float(cost) * 100) if cost else None,
+                box_state=(data.get('box_state') or 'opened'))
+            return jsonify({'kits': kit_ids, 'summary': scan.queue_summary(conn)})
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.route('/api/scan/<int:queue_id>/quantity', methods=['POST'])
+def api_scan_quantity(queue_id):
+    with _write() as conn:
+        scan.set_queue_quantity(conn, queue_id, _int(_payload().get('quantity'), 1))
+    return jsonify({'success': True})
+
+
+@app.route('/api/scan/<int:queue_id>', methods=['DELETE'])
+def api_discard_scan(queue_id):
+    with _write() as conn:
+        scan.discard_queue_row(conn, queue_id)
+    return jsonify({'success': True})
+
+
+# ── Kit templates ────────────────────────────────────────
+#
+# Built by hand first, deliberately: onboarding must never depend on an EAN
+# lookup answering or a vision model being right.
+
+@app.route('/templates')
+def templates_page():
+    with _read() as conn:
+        return render_template('templates.html',
+                               templates=scan.list_templates(
+                                   conn, request.args.get('q')),
+                               factions=col.list_factions(conn),
+                               query=request.args.get('q') or '')
+
+
+@app.route('/templates/<int:template_id>')
+def template_detail(template_id):
+    with _read() as conn:
+        template = scan.get_template(conn, template_id)
+        if not template:
+            abort(404)
+        return render_template('template.html', template=template,
+                               factions=col.list_factions(conn))
+
+
+def _contents_from(data):
+    """Accept contents as a JSON list, from either a form post or fetch()."""
+    contents = data.get('contents')
+    if isinstance(contents, str):
+        try:
+            contents = json.loads(contents)
+        except ValueError:
+            contents = []
+    return contents or []
+
+
+@app.route('/api/templates', methods=['POST'])
+def api_create_template():
+    data = _payload()
+    rrp = data.get('rrp')
+    try:
+        with _write() as conn:
+            template_id = scan.create_template(
+                conn, data.get('name') or '', _contents_from(data),
+                faction_id=_int(data.get('faction_id')),
+                year=_int(data.get('year')),
+                rrp_cents=round(float(rrp) * 100) if rrp else None,
+                notes=(data.get('notes') or '').strip() or None)
+            code = scan.normalise_code(data.get('code') or '')
+            if code:
+                scan.link_barcode(conn, code, template_id)
+            return jsonify({'id': template_id}), 201
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.route('/api/templates/<int:template_id>', methods=['PATCH'])
+def api_update_template(template_id):
+    data = _payload()
+    rrp = data.get('rrp')
+    contents = _contents_from(data) if 'contents' in data else None
+    try:
+        with _write() as conn:
+            scan.update_template(
+                conn, template_id, name=data.get('name'),
+                faction_id=_int(data.get('faction_id')),
+                year=_int(data.get('year')),
+                rrp_cents=round(float(rrp) * 100) if rrp else None,
+                notes=data.get('notes'), contents=contents)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'success': True})
+
+
+@app.route('/api/templates/<int:template_id>/barcodes', methods=['POST'])
+def api_link_barcode(template_id):
+    """Teach the local table what a code is — the step that makes every future
+    scan of that box instant."""
+    code = scan.normalise_code(_payload().get('code') or '')
+    if not code:
+        return jsonify({'error': 'No digits in that code'}), 400
+    with _write() as conn:
+        if not scan.get_template(conn, template_id):
+            abort(404)
+        scan.link_barcode(conn, code, template_id)
+    return jsonify({'success': True, **scan.describe_code(code)}), 201
 
 
 # ── Pickers ──────────────────────────────────────────────

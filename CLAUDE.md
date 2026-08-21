@@ -14,11 +14,11 @@ conventions and hard-won context.
 
 ## Status
 
-Build steps 1–3 of the spec's 13-step order are done: schema, migration runner,
-stages/factions seed, the BSData + Munitorum importer, and the collection
-(armies, kits, units, models, stage pipeline, painting session mode). v1 ends at
-step 5 (scanner, then the collection search view). **Do not build past
-step 5** — the dashboard, list builder, gap report, shopping list, sale
+Build steps 1–4 of the spec's 13-step order are done: schema, migration runner,
+stages/factions seed, the BSData + Munitorum importer, the collection (armies,
+kits, units, models, stage pipeline, painting session mode), and the scanner
+with its sprint queue and review screen. v1 ends at step 5 (the collection
+search view). **Do not build past step 5** — the dashboard, list builder, gap report, shopping list, sale
 candidates and export are specced so the schema doesn't paint us into a corner,
 not because they're wanted yet.
 
@@ -113,7 +113,7 @@ alone. Two columns exist because 11th edition outgrew the spec:
 costs more) and `datasheet_points.faction_id` (one Repulsor Executioner
 datasheet, 255 points for Black Templars and 230 for Blood Angels).
 
-## Scanning (step 4, not built)
+## Scanning (built)
 
 - **iPhone is the target.** WebKit does not implement `BarcodeDetector`, so it
   fails silently on every iOS browser. Build against ZXing-js as the *primary*
@@ -127,7 +127,15 @@ datasheet, 255 points for Black Templars and 230 for Blood Angels).
   `scan_queue` with a beep, scanning resumes immediately. Write each scan to the
   server at once — a dead battery must not cost a shelf.
 - GW EANs start `5011921`; books use ISBN-derived `978`. The prefix check
-  **warns, never rejects**.
+  **warns, never rejects** — and so does the check-digit test.
+- ZXing 0.23's `decodeFrom*` helpers either want to own the `<video>` element or
+  round-trip each frame through a data URL. The frame loop builds a
+  `BinaryBitmap` from a canvas and calls `decodeBitmap` directly instead.
+- `static/js/*.js` are classic scripts sharing one global scope with `app.js`.
+  A second top-level `const $` is a SyntaxError that kills the page, so every
+  file after `app.js` is wrapped in an IIFE.
+- `app.js` binds `button.advance` globally. Never borrow that class for styling
+  — use `.go`. The handlers now also require `data-unit` as a second guard.
 
 ## Backups
 

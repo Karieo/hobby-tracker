@@ -98,18 +98,20 @@ document.addEventListener('click', (e) => {
     return;
   }
 
+  // Every one of these needs a unit to act on. Without the guard, any button
+  // that merely borrows the styling class fires a request for unit "undefined".
   const all = e.target.closest('button.advance');
-  if (all) { advance(all.dataset.unit, {}, 'Whole unit'); return; }
+  if (all && all.dataset.unit) { advance(all.dataset.unit, {}, 'Whole unit'); return; }
 
   const some = e.target.closest('button.advance-n');
-  if (some) {
+  if (some && some.dataset.unit) {
     const input = $('input', some.closest('.stepper'));
     advance(some.dataset.unit, {count: Number(input.value) || 1});
     return;
   }
 
   const tick = e.target.closest('button.tick');
-  if (tick) {
+  if (tick && tick.dataset.unit) {
     advance(tick.dataset.unit, {count: 1, from_stage_id: Number(tick.dataset.from)});
     return;
   }
@@ -284,8 +286,15 @@ $$('input.picker').forEach((input) => {
         li.addEventListener('click', () => {
           input.value = row.name;
           hidden.value = row.id;
+          // Kept on the input so a caller that builds a list from repeated
+          // picks (the kit template form) has the label without refetching.
+          input.dataset.name = row.name;
+          input.dataset.faction = row.faction_name || '';
+          input.dataset.minModels = row.min_models || '';
           const count = $('input[name="model_count"]', input.closest('form'));
           if (count && row.min_models) count.value = row.min_models;
+          const pickCount = $('#pick-count', input.closest('form'));
+          if (pickCount && row.min_models) pickCount.value = row.min_models;
           clear();
         });
         list.appendChild(li);
@@ -294,7 +303,11 @@ $$('input.picker').forEach((input) => {
     }, 180);
   });
 
+  // Only guard forms where the datasheet *is* the payload (the add-unit form).
+  // On the kit template form the picker adds a line to a list and is empty by
+  // the time the form is submitted, so guarding there would block every save.
   input.closest('form').addEventListener('submit', (e) => {
+    if (!hidden.name) return;
     if (!hidden.value) {
       e.preventDefault();
       e.stopImmediatePropagation();
