@@ -12,6 +12,10 @@ tests/
 *.db-wal
 *.db-shm
 data/*.db*
+# 65 MB of catalogues that the image does not need: docker-compose mounts
+# ./data over /app/data, so the importer reads the host's copy. Leaving it in
+# the build context just makes every build slower.
+data/bsdata/
 .DS_Store
 *.log
 handoff.md

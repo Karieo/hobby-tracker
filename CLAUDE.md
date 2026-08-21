@@ -30,7 +30,12 @@ python3 scripts/fetch_bsdata.py      # fetch BSData at the pinned SHA
 python3 scripts/import_bsdata.py [--dry-run]   # import + report
 python3 app.py                       # http://localhost:3100
 python3 -m pytest                    # tests
+shellcheck backup.sh restore.sh      # the shell half, linted in CI too
 ```
+
+CI (`.github/workflows/ci.yml`) runs the suite on 3.11 and 3.12, ShellChecks the
+backup scripts, and builds and boots the Docker image. Keep it green: it is the
+only thing standing between a regression and `main`.
 
 ## Architecture
 

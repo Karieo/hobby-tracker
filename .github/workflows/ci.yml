@@ -1,0 +1,96 @@
+# Runs the test suite on every push and pull request.
+#
+# The suite is fast (~20s) and needs nothing but the repo: `data/bsdata/` is
+# fetched, not committed, and no test depends on it — the importer tests are
+# unit-level over fixtures they build themselves. So CI needs no secrets, no
+# services and no network beyond installing dependencies.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch makes the first run irrelevant; cancel it
+# rather than queueing behind it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is what the Dockerfile ships and what bastion actually runs.
+        # 3.12 is here to catch a stdlib deprecation before an image bump does.
+        python-version: ['3.11', '3.12']
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest
+
+  # The backup scripts run unattended under cron, which is the worst place to
+  # find a bug: a shell mistake there is silent by default. They already shipped
+  # one — a non-matching grep taking the whole script down under `set -e` — so
+  # they get linted as well as tested.
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check syntax
+        run: |
+          for script in backup.sh restore.sh; do
+            bash -n "$script"
+          done
+
+      - name: ShellCheck
+        run: shellcheck backup.sh restore.sh
+
+  # Catches a Dockerfile or dependency break at PR time rather than at deploy
+  # time on the Jetson, where the feedback loop is a great deal slower.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the image
+        run: docker build -t hobby-tracker:ci .
+
+      - name: Boot it and check it answers
+        run: |
+          docker run -d --name ci -p 3100:3100 \
+            -e OWNER_NAME=Clay -e OWNER_PASSWORD=ci-test \
+            -e SESSION_SECRET=ci-secret \
+            hobby-tracker:ci
+          # The container migrates its own database on boot, so a healthy
+          # response also proves the migrations applied cleanly from nothing.
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3100/healthz > /dev/null 2>&1; then
+              echo "healthy after ${i}s"
+              curl -fsS http://localhost:3100/healthz
+              docker rm -f ci > /dev/null
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "container never became healthy" >&2
+          docker logs ci
+          exit 1

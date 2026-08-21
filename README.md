@@ -36,6 +36,10 @@ docker compose exec tracker python3 scripts/import_bsdata.py
 
 Tests: `pip install -r requirements-dev.txt && python3 -m pytest`
 
+CI runs the suite on 3.11 and 3.12, lints the backup scripts with ShellCheck,
+and builds and boots the Docker image on every push and pull request
+(`.github/workflows/ci.yml`).
+
 ## Layout
 
 | Path | What it is |
