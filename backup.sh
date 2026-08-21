@@ -29,7 +29,13 @@ set -euo pipefail
 # The one thing worse than no backup is believing you have one. Any unexpected
 # failure says so on the way out instead of exiting quietly with a status only
 # cron sees.
-trap 'status=$?; [ $status -ne 0 ] && printf "\033[31m✗ backup FAILED (exit %s) at line %s\033[0m\n" "$status" "$LINENO" >&2; exit $status' EXIT
+on_exit() {
+  local status=$?
+  [ "$status" -ne 0 ] && printf '\033[31m✗ backup FAILED (exit %s)\033[0m\n' \
+    "$status" >&2
+  exit "$status"
+}
+trap on_exit EXIT
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$APP_DIR"
@@ -128,14 +134,23 @@ ok "CSV export → csv/$STAMP/"
 
 # ── 3 · Off-box copy ────────────────────────────────────
 if [ -n "$BACKUP_DEST" ]; then
-  SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=accept-new"
-  [ -n "$BACKUP_SSH_KEY" ] && SSH_OPTS="$SSH_OPTS -i $(expand "$BACKUP_SSH_KEY")"
+  # An array, not a string: a key path is a filename, and splitting one on
+  # whitespace is how a backup starts failing for someone whose home directory
+  # has a space in it.
+  SSH_OPTS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new)
+  [ -n "$BACKUP_SSH_KEY" ] && SSH_OPTS+=(-i "$(expand "$BACKUP_SSH_KEY")")
   DEST_HOST="${BACKUP_DEST%%:*}"; DEST_PATH="${BACKUP_DEST#*:}"
-  ssh $SSH_OPTS "$DEST_HOST" "mkdir -p '$DEST_PATH/db' '$DEST_PATH/csv'" \
+  # DEST_PATH is deliberately expanded here, not on the remote — this side is
+  # what knows the path. The inner quotes protect it once it lands there.
+  # shellcheck disable=SC2029
+  ssh "${SSH_OPTS[@]}" "$DEST_HOST" "mkdir -p '$DEST_PATH/db' '$DEST_PATH/csv'" \
     || fail "Can't reach $DEST_HOST over SSH"
+  # rsync -e takes a command string and splits it itself, so a key path with a
+  # space is not supported on this leg. Rare, and it fails loudly if it happens.
+  RSH="ssh ${SSH_OPTS[*]}"
   # No --delete: a deletion here must never wipe the backup copy.
-  rsync -az -e "ssh $SSH_OPTS" "$SNAP" "$BACKUP_DEST/db/"
-  rsync -az -e "ssh $SSH_OPTS" "$CSV_DIR" "$BACKUP_DEST/csv/"
+  rsync -az -e "$RSH" "$SNAP" "$BACKUP_DEST/db/"
+  rsync -az -e "$RSH" "$CSV_DIR" "$BACKUP_DEST/csv/"
   ok "Shipped off-box → $BACKUP_DEST"
 else
   note "BACKUP_DEST unset — local snapshot only. One box is not a backup."

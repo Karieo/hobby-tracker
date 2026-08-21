@@ -21,7 +21,13 @@
 # mistake to make than losing the database in the first place.
 set -euo pipefail
 
-trap 'status=$?; [ $status -ne 0 ] && printf "\033[31m✗ restore FAILED (exit %s)\033[0m\n" "$status" >&2; exit $status' EXIT
+on_exit() {
+  local status=$?
+  [ "$status" -ne 0 ] && printf '\033[31m✗ restore FAILED (exit %s)\033[0m\n' \
+    "$status" >&2
+  exit "$status"
+}
+trap on_exit EXIT
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$APP_DIR"
