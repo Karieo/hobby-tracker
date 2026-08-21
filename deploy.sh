@@ -58,6 +58,31 @@ if [ ! -f .env ]; then
 fi
 ok ".env is a file"
 
+# ── 1b · .env must actually parse ────────────────────────
+# Docker Compose reads .env for variable substitution and refuses the whole
+# run over one bad line, with an error that names the mangled text rather than
+# the line number. Easy to produce by accident: type a shell command into an
+# editor that is open on .env, and line 1 becomes "./deploy.sh# Copy to ...".
+# Catching it here costs nothing and points at the actual line.
+BAD_LINE=""
+BAD_NUMBER=0
+while IFS= read -r line; do
+  BAD_NUMBER=$((BAD_NUMBER + 1))
+  case "$line" in
+    ''|'#'*) continue ;;
+  esac
+  if ! printf '%s' "$line" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*='; then
+    BAD_LINE="$line"
+    break
+  fi
+done < .env
+if [ -n "$BAD_LINE" ]; then
+  fail ".env line $BAD_NUMBER is not NAME=value and will stop Compose:
+      $BAD_LINE
+    Fix that line — a stray command typed into an editor is the usual cause."
+fi
+ok ".env parses"
+
 # ── 2 · A session secret that survives a restart ─────────
 if [ -z "$(env_value SESSION_SECRET)" ]; then
   if [ "$CHECK_ONLY" -eq 1 ]; then
