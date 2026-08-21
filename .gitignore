@@ -1,4 +1,13 @@
+# .env holds SESSION_SECRET and OWNER_PASSWORD. Editors leave copies of it
+# next to it under names this list has to cover too: a nano session on bastion
+# produced .env.save, .env.save.1 and ..env.swp, none of which .env matches.
+# They are untracked either way — the risk is one `git add -A` turning three
+# stray files into published credentials.
 .env
+.env.*
+!.env.example
+.*.swp
+*.swp
 __pycache__/
 *.pyc
 data/bsdata/
