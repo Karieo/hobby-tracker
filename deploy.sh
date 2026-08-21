@@ -215,6 +215,34 @@ if [ "$(datasheet_count)" -eq 0 ]; then
 fi
 ok "Rules data imported ($(datasheet_count) datasheets)"
 
+# ── Kill Team ────────────────────────────────────────────
+# A separate BSData repository, in a different format, so a separate fetch and
+# import. Gated on its own count for the same reason the 40,000 one is: a
+# checkout on disk says nothing about what reached the database.
+killteam_count() {
+  local out=''
+  out="$("${COMPOSE[@]}" exec -T tracker python3 -c \
+    "import database; print(database.connect().execute(
+       'select count(*) from datasheets where game_system = \"killteam\"'
+     ).fetchone()[0])" \
+    2>/dev/null | tr -dc '0-9')" || true
+  printf '%s' "${out:-0}"
+}
+
+if ! "${COMPOSE[@]}" exec -T tracker python3 scripts/fetch_killteam.py; then
+  note "Could not fetch the Kill Team catalogues (see above)."
+  note "40,000 is unaffected. Retry alone:"
+  note "  ${COMPOSE[*]} exec tracker python3 scripts/fetch_killteam.py"
+elif [ "$(killteam_count)" -eq 0 ]; then
+  note "No Kill Team operatives yet — importing"
+  if ! "${COMPOSE[@]}" exec -T tracker python3 scripts/import_killteam.py; then
+    note "The Kill Team import failed. 40,000 is unaffected; retry alone:"
+    note "  ${COMPOSE[*]} exec tracker python3 scripts/import_killteam.py"
+  fi
+fi
+[ "$(killteam_count)" -eq 0 ] \
+  || ok "Kill Team imported ($(killteam_count) operatives)"
+
 bold ""
 bold "Deployed."
 echo "  Local:  http://localhost:$(env_value PORT || echo 3100)"

@@ -695,15 +695,25 @@ def list_factions(conn):
 def search_datasheets(conn, query, limit=25):
     """Datasheet picker for manual add.
 
-    Current datasheets only — Legends and Crucible variants are excluded so a
-    deprecated printing never gets picked by accident in a hurry.
+    Current 40,000 datasheets only — Legends and Crucible variants are excluded
+    so a deprecated printing never gets picked by accident in a hurry.
+
+    That exclusion is `variant IS NULL`, which is why the game system has to be
+    part of it. Kill Team operatives carry their *edition* in the same column,
+    deliberately: a 2021 box and its 2024 reprint hold different models, and
+    which one Clay owns is his to say. Filtering them out as though they were
+    deprecated 40,000 printings would import 1,450 operatives and show none of
+    them — the box would still be unrecordable, with nothing on screen to
+    explain why.
     """
     like = f'%{(query or "").strip()}%'
     return [dict(r) for r in conn.execute("""
         SELECT d.id, d.name, d.effort, d.min_models, d.max_models,
-               f.name AS faction_name
+               d.game_system, d.variant, f.name AS faction_name
           FROM datasheets d LEFT JOIN factions f ON f.id = d.faction_id
-         WHERE d.variant IS NULL AND d.name LIKE ?
-         ORDER BY CASE WHEN d.name LIKE ? THEN 0 ELSE 1 END, d.name
+         WHERE (d.variant IS NULL OR d.game_system <> 'wh40k')
+           AND d.name LIKE ?
+         ORDER BY CASE WHEN d.name LIKE ? THEN 0 ELSE 1 END,
+                  d.game_system = 'wh40k' DESC, d.name
          LIMIT ?
     """, (like, f'{(query or "").strip()}%', limit))]

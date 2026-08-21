@@ -28,6 +28,8 @@ not because they're wanted yet.
 python3 migrate.py [--status]        # apply / inspect migrations
 python3 scripts/fetch_bsdata.py      # fetch BSData at the pinned SHA
 python3 scripts/import_bsdata.py [--dry-run]   # import + report
+python3 scripts/fetch_killteam.py    # fetch Kill Team at its pinned SHA
+python3 scripts/import_killteam.py [--dry-run] # Kill Team operatives
 python3 app.py                       # http://localhost:3100
 python3 seed/combat_patrol_magazine.py --status   # magazine seed
 python3 -m pytest                    # tests

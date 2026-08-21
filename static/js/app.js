@@ -280,8 +280,16 @@ $$('input.picker').forEach((input) => {
         const li = document.createElement('li');
         li.innerHTML = `<b></b> <span class="muted"></span>`;
         li.querySelector('b').textContent = row.name;
+        // The system is named only when it is not 40,000. Searching
+        // "Intercessor" now returns both the 40,000 datasheet and Kill Team's
+        // Intercessor Warrior, and picking the wrong one records models that
+        // are not on the shelf. The edition matters for the same reason a
+        // Combat Patrol's year does: the 2021 and 2024 boxes differ.
+        const system = row.game_system && row.game_system !== 'wh40k'
+          ? `Kill Team${row.variant ? ` ${row.variant}` : ''}` : null;
         li.querySelector('.muted').textContent =
-          [row.faction_name, row.min_models ? `${row.min_models}–${row.max_models}` : null,
+          [system, row.faction_name,
+           row.min_models ? `${row.min_models}–${row.max_models}` : null,
            `effort ${row.effort}`].filter(Boolean).join(' · ');
         li.addEventListener('click', () => {
           input.value = row.name;
