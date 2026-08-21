@@ -16,6 +16,11 @@ alongside rather than instead.
 
 import database as db
 
+# A box recorded before anyone said what is in it. Prefixed rather than left
+# blank so it reads as a real thing on a shelf, and so adopt_template can tell
+# a placeholder from a name Clay chose himself.
+UNIDENTIFIED_PREFIX = 'Unidentified box'
+
 # A kit that has been sold, traded or gifted keeps its rows — deleting it would
 # corrupt the spend history — but its models stop counting towards ownership and
 # effort. `listed` is still owned: it is on the market, not gone.
@@ -530,6 +535,100 @@ def instantiate_template(conn, kit_template_id, army_id=None, stage_id=None,
                             army_id=army_id, kit_id=kit_id, stage_id=stage_id)
                 for row in contents]
     return kit_id, unit_ids
+
+
+def list_templates_with_contents(conn):
+    """Templates that can actually be adopted — ones with contents defined.
+
+    A template with no contents rows would adopt into nothing and look like it
+    worked, so it is filtered out here rather than offered and then refused.
+    """
+    return [dict(r) for r in conn.execute("""
+        SELECT t.id, t.name, t.year, f.name AS faction_name,
+               COUNT(ktu.id)                     AS unit_count,
+               COALESCE(SUM(ktu.model_count), 0) AS model_count
+          FROM kit_templates t
+          LEFT JOIN factions f ON f.id = t.faction_id
+          JOIN kit_template_units ktu ON ktu.kit_template_id = t.id
+         GROUP BY t.id
+        HAVING unit_count > 0
+         ORDER BY t.name, t.year
+    """)]
+
+
+def kits_awaiting_contents(conn):
+    """Boxes recorded as owned whose contents nobody has defined yet.
+
+    Ownership and contents are established separately on purpose: a scan can
+    honestly record "this box is on my shelf" in one tap, months before anyone
+    knows or cares which datasheets are inside it. That is the same bargain the
+    paint stages make, and for the same reason — a step that must be completed
+    before anything is saved is a step that stops the shelf being recorded at
+    all.
+
+    This is the backlog that bargain creates, and it has to stay visible or it
+    becomes silent debt.
+    """
+    # source_ref carries the scanned code, set when the box was shelved. Read
+    # it straight rather than joining back through barcodes: same answer when
+    # the row exists, and still the right answer for a box added by hand.
+    return [dict(r) for r in conn.execute("""
+        SELECT k.*, k.source_ref AS code, f.name AS faction_name
+          FROM kits k
+          LEFT JOIN factions f ON f.id = k.faction_id
+         WHERE k.kit_template_id IS NULL
+           AND k.status = 'owned'
+           AND NOT EXISTS (SELECT 1 FROM units u WHERE u.kit_id = k.id)
+         ORDER BY k.created_at DESC, k.id DESC
+    """)]
+
+
+def adopt_template(conn, kit_id, kit_template_id, army_id=None, stage_id=None):
+    """Give a recorded-but-empty box its contents, without creating a new kit.
+
+    The other half of recording ownership first. Without this, "fill it in
+    later" has no mechanism and every shelved box is permanently a mystery —
+    which is the drift the spec says to build the recovery for *before* it
+    happens, not after.
+
+    Refuses a kit that already has units rather than adding a second set. A
+    kit silently holding two copies of its contents overstates the collection
+    in every count that matters, and nothing about the UI would show it.
+    """
+    kit = conn.execute('SELECT * FROM kits WHERE id = ?', (kit_id,)).fetchone()
+    if not kit:
+        raise ValueError(f'no kit {kit_id}')
+    if conn.execute('SELECT 1 FROM units WHERE kit_id = ?', (kit_id,)).fetchone():
+        raise ValueError('that kit already has contents — adopting a template '
+                         'would give it a second set')
+
+    template = conn.execute('SELECT * FROM kit_templates WHERE id = ?',
+                            (kit_template_id,)).fetchone()
+    if not template:
+        raise ValueError(f'no kit template {kit_template_id}')
+    contents = conn.execute(
+        'SELECT * FROM kit_template_units WHERE kit_template_id = ?',
+        (kit_template_id,)).fetchall()
+    if not contents:
+        raise ValueError(f'kit template "{template["name"]}" has no contents '
+                         'defined — adopting it would change nothing')
+
+    if stage_id is None:
+        stage_id = db.first_owned_stage(conn)['id']
+    unit_ids = [create_unit(conn, row['datasheet_id'], row['model_count'],
+                            army_id=army_id, kit_id=kit_id, stage_id=stage_id)
+                for row in contents]
+
+    # The box keeps whatever Clay called it if he named it himself; a
+    # placeholder gives way to the template's real name.
+    name = kit['name']
+    if name.startswith(UNIDENTIFIED_PREFIX):
+        name = template['name']
+    conn.execute('UPDATE kits SET kit_template_id = ?, name = ?, '
+                 'faction_id = COALESCE(faction_id, ?), updated_at = ? '
+                 'WHERE id = ?',
+                 (kit_template_id, name, template['faction_id'], db.now(), kit_id))
+    return unit_ids
 
 
 def dispose_kit(conn, kit_id, status, disposed_on=None, price_cents=None,
