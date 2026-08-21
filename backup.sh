@@ -26,15 +26,31 @@
 #   sqlite3 "$BACKUP_DIR/db/tracker-<stamp>.db" 'PRAGMA integrity_check;'
 set -euo pipefail
 
+# The one thing worse than no backup is believing you have one. Any unexpected
+# failure says so on the way out instead of exiting quietly with a status only
+# cron sees.
+trap 'status=$?; [ $status -ne 0 ] && printf "\033[31m✗ backup FAILED (exit %s) at line %s\033[0m\n" "$status" "$LINENO" >&2; exit $status' EXIT
+
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$APP_DIR"
 
+bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 note() { printf '  \033[33m•\033[0m %s\n' "$*"; }
 fail() { printf '  \033[31m✗ %s\033[0m\n' "$*"; exit 1; }
 
-env_value() { grep "^$1=" .env 2>/dev/null | head -1 | cut -d= -f2-; }
-expand()    { eval echo "$1"; }
+# Read one key from .env. Must never fail when the key is absent: optional
+# settings legitimately aren't there (BACKUP_SSH_KEY ships commented out), and
+# under `set -e` a non-matching grep would kill the whole backup — silently, and
+# under cron, forever.
+env_value() {
+  local line=''
+  line="$(grep "^$1=" .env 2>/dev/null | head -1)" || true
+  printf '%s' "${line#*=}"
+}
+
+# Expand a leading ~ without eval, so a stray character in .env can't run.
+expand() { printf '%s' "${1/#\~/$HOME}"; }
 
 PYTHON="$APP_DIR/venv/bin/python"
 [ -x "$PYTHON" ] || PYTHON="$(command -v python3)" || fail "python3 not found"
@@ -74,19 +90,39 @@ CSV_DIR="$BACKUP_DIR/csv/$STAMP"
 mkdir -p "$CSV_DIR"
 "$PYTHON" - "$SNAP" "$CSV_DIR" <<'PY'
 import csv, os, sqlite3, sys
+
 db, out = sys.argv[1], sys.argv[2]
+
+# Credentials are redacted from the CSV. The .db snapshot beside it is the real
+# backup and keeps everything; this file exists so the *collection* is readable
+# when the app or the schema is broken, and a password hash does nothing for
+# that while being the one thing here worth stealing. This copy travels
+# off-box in plain text.
+REDACT = {'users': {'password_hash'}, 'api_tokens': {'token_hash'}}
+
 conn = sqlite3.connect(db)
 conn.row_factory = sqlite3.Row
 tables = [r[0] for r in conn.execute(
     "SELECT name FROM sqlite_master WHERE type='table' "
     "AND name NOT LIKE 'sqlite_%' ORDER BY name")]
+redacted = 0
 for t in tables:
-    rows = conn.execute(f'SELECT * FROM "{t}"').fetchall()
+    cols = [d[0] for d in conn.execute(f'SELECT * FROM "{t}" LIMIT 0').description]
+    hide = REDACT.get(t, set())
     with open(os.path.join(out, f'{t}.csv'), 'w', newline='', encoding='utf-8') as fh:
         w = csv.writer(fh)
-        w.writerow([d[0] for d in conn.execute(f'SELECT * FROM "{t}" LIMIT 0').description])
-        w.writerows([tuple(r) for r in rows])
-print(f'  exported {len(tables)} tables')
+        w.writerow(cols)
+        for row in conn.execute(f'SELECT * FROM "{t}"'):
+            values = []
+            for col in cols:
+                if col in hide and row[col] is not None:
+                    values.append('[redacted]')
+                else:
+                    values.append(row[col])
+            w.writerow(values)
+    redacted += len(hide & set(cols))
+print(f'  exported {len(tables)} tables'
+      + (f' ({redacted} credential columns redacted)' if redacted else ''))
 PY
 ok "CSV export → csv/$STAMP/"
 
@@ -106,6 +142,14 @@ else
 fi
 
 # ── 4 · Rotate ──────────────────────────────────────────
-ls -1t "$BACKUP_DIR"/db/tracker-*.db 2>/dev/null | tail -n +$((BACKUP_KEEP + 1)) | xargs -r rm -f
-ls -1dt "$BACKUP_DIR"/csv/*/ 2>/dev/null | tail -n +$((BACKUP_KEEP + 1)) | xargs -r rm -rf
+# `|| true` because on the very first run there is nothing to rotate, and ls
+# exiting non-zero must not take the (already successful) backup down with it.
+{ ls -1t "$BACKUP_DIR"/db/tracker-*.db 2>/dev/null || true; } \
+  | tail -n +$((BACKUP_KEEP + 1)) | xargs -r rm -f
+{ ls -1dt "$BACKUP_DIR"/csv/*/ 2>/dev/null || true; } \
+  | tail -n +$((BACKUP_KEEP + 1)) | xargs -r rm -rf
 ok "Kept newest $BACKUP_KEEP snapshots"
+
+bold ""
+bold "Backup complete → $BACKUP_DIR"
+echo "  Verify a restore with:  ./restore.sh --check $SNAP"

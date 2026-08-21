@@ -124,6 +124,20 @@ datasheet, 255 points for Black Templars and 230 for Blood Angels).
 - GW EANs start `5011921`; books use ISBN-derived `978`. The prefix check
   **warns, never rejects**.
 
+## Backups
+
+`backup.sh` snapshots via `sqlite3 .backup`, never `cp` — the app holds a
+connection open, so committed data routinely sits in the `-wal` file with the
+`.db` not yet containing it, and a plain copy loses it silently. `restore.sh
+--check` verifies a snapshot without writing; `restore.sh <snap>` restores and
+sets the current database aside first.
+
+Both scripts run under `set -euo pipefail`, so **any helper that can fail must
+be guarded**. A non-matching `grep` in `env_value` once took the whole backup
+down with exit 1 and no output — under cron that is backups silently never
+happening, which is strictly worse than having none. Both scripts now trap and
+report failures loudly, and `tests/test_backup.py` guards the regression.
+
 ## Working agreement
 
 - Ask before deleting, moving, or publishing anything. Always.
