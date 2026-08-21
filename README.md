@@ -51,6 +51,7 @@ Tests: `pip install -r requirements-dev.txt && python3 -m pytest`
 | `collection.py` | Armies, kits, units, models, stage movement |
 | `templates/`, `static/` | Server-rendered Jinja + vanilla JS, no build step |
 | `backup.sh` | Nightly snapshot + CSV export + off-box copy |
+| `restore.sh` | Verify a snapshot (`--check`) or restore one |
 
 ## Using it
 
@@ -95,14 +96,37 @@ or `effort_is_override = 1` (effort) are never overwritten.
 
 The database is dozens of hours of manual entry with no upstream source —
 nothing can reconstruct which of your Boyz are primed. `backup.sh` takes a
-`sqlite3 .backup` snapshot (never a file copy, which corrupts), verifies its
-integrity, writes a full CSV export beside it, and ships both off the box.
+`sqlite3 .backup` snapshot, verifies its integrity, writes a credential-redacted
+CSV export beside it, and ships both off the box.
+
+```bash
+cp .env.example .env      # set BACKUP_DIR; BACKUP_DEST for the off-box copy
+./backup.sh
+./restore.sh --check      # verify the newest snapshot, change nothing
+```
 
 ```
 0 3 * * *  /path/to/hobby-tracker/backup.sh >> /var/log/hobby-tracker-backup.log 2>&1
 ```
 
-Verify a restore once, early, while losing the database still wouldn't matter.
+**Why `.backup` and not `cp`.** The app keeps a connection open, so committed
+data routinely sits in the `-wal` file with the `.db` not yet containing it.
+Copying the `.db` alone loses it silently, and the backup looks fine until the
+day it matters. This is measured, not assumed — `tests/test_backup.py` writes a
+row into the WAL, copies both ways, and asserts the plain copy loses it and the
+snapshot doesn't.
+
+**Verify a restore, don't assume one.** `./restore.sh --check` opens the newest
+snapshot read-only, runs `integrity_check` and a foreign-key check, confirms the
+schema is not ahead of the code, and refuses a snapshot holding no collection
+data. `./restore.sh <snapshot>` performs a real restore and sets the current
+database aside first, because restoring the wrong snapshot is an easier mistake
+to make than losing the database was.
+
+The CSV export redacts password and token hashes. The `.db` snapshot beside it
+keeps everything; the CSV exists so the *collection* stays readable when the app
+or the schema is broken, and a credential does nothing for that while being the
+one thing in there worth stealing.
 
 ## Licensing
 
