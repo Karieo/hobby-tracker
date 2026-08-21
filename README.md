@@ -54,6 +54,7 @@ and builds and boots the Docker image on every push and pull request
 | `data/bsdata/` | BSData catalogues (fetched, gitignored — see `data/SOURCES.md`) |
 | `collection.py` | Armies, kits, units, models, stage movement |
 | `scanning.py` | Barcodes, the scan sprint queue, kit templates |
+| `seed/` | Combat Patrol magazine seed job and its contents file |
 | `static/vendor/` | ZXing-js, vendored (Apache-2.0) |
 | `templates/`, `static/` | Server-rendered Jinja + vanilla JS, no build step |
 | `backup.sh` | Nightly snapshot + CSV export + off-box copy |
@@ -104,6 +105,37 @@ The local `barcodes` table is the point of the whole design. Unknown code once,
 contents defined once, instant forever after — and unlike any external GTIN
 provider, it will still work in five years. Defining one unknown box resolves
 every other copy of it already sitting in the queue.
+
+## Seed data
+
+`seed/combat_patrol_magazine.py` pre-loads the Hachette Combat Patrol partwork
+as kit templates, so 90 issues are not 90 manual entries.
+
+```bash
+python3 seed/combat_patrol_magazine.py --status          # what is present, what is missing
+python3 seed/combat_patrol_magazine.py --dry-run
+python3 seed/combat_patrol_magazine.py --owned-through 75
+```
+
+Every unit name is matched against an imported BSData datasheet. Anything that
+does not match is reported and written to `unresolved_imports` — never guessed
+at, never dropped. A sprue split across issues is attached to the issue that
+*completes* it, because half a Maulerfiend is not a model you own. Re-running is
+idempotent.
+
+**The four premium kits ship with contents; the 90 issues do not.** The
+difference is the source: the premium kits are documented in the spec (§11), a
+reviewed document, so they seed today. The per-issue contents are not, and every
+published source for them was unreachable from the environment this was built
+in. Seed data is derived and reviewed or it does not ship — a partwork list
+written from memory would be fluent, plausible and wrong in places, with no
+signal about which, and it would land as trusted data covering the whole
+magazine collection.
+
+The issue importer refuses to run without provenance (source URLs, a retrieval
+date, a confidence, and a second source that agrees). `models: min` in the data
+file means "one minimum-size unit", resolved from the rules data at seed time so
+the count can never drift from them. See `seed/data/README.md`.
 
 ## Rules data
 

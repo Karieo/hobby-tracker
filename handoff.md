@@ -1,140 +1,162 @@
-# Handoff — Session 4
+# Handoff — Session 5
 
 ## 1 · Goal
 
-Build step 4: the scanner, the scan sprint queue, and the review screen (§12).
-
-Per the spec's own ordering inside that step: the manual kit template form
-first, so onboarding never depends on automation; then EAN-keyed contents
-resolution; then photo extraction as the fallback.
+Build the Combat Patrol magazine templates, all 90 issues (§11).
 
 ## 2 · Current State
 
-Steps 1–4 done and merged through step 3; step 4 is on this branch. 164 tests
-pass, CI is green on `main`, and the scanner was driven end to end in a real
-browser against a **real barcode**, not a mock.
+**The four premium kits ship with contents and seed today. The 90 issues do
+not, and I did not invent them.**
 
-Working:
+The difference is the source. The premium kits are documented in the spec
+(§11), which is a reviewed document — deriving from it is legitimate. The
+per-issue contents are documented only on pages this environment cannot
+reach.
 
-- **`/scan`** — sprint capture. Camera opens once and stays open, each decode
-  posts immediately, scanning resumes. Beep on decode, duplicate debounce,
-  manual digit entry alongside.
-- **`/scan/review`** — enrichment. Known codes need one tap; unknown ones link
-  through to the template form with the code pre-filled.
-- **`/templates`** — kit templates, defined by hand, contents picked against
-  imported datasheets only.
-- **Local `barcodes` table** — define one box, every other copy of it in the
-  queue resolves behind it.
+`seed/combat_patrol_magazine.py` reads a contents file, matches every unit
+against the imported BSData datasheets, creates one kit template per issue, and
+optionally instantiates owned kits up to a given issue. 29 tests cover it; 193
+pass overall.
 
-**Not built, deliberately:** EAN-keyed contents resolution and photo
-extraction. Both need an Anthropic API key and a decision from Clay; the seam
-is `scanning.lookup_code()`, which returns `None` and is documented as optional
-enrichment. Onboarding works identically without them, which is the spec's own
-design rule.
+`seed/data/combat_patrol_issues.yaml` ships **with the four premium kits** and
+**empty of issue data**.
 
-### Verified in a browser, with a real decode
+### The premium kits
 
-Chromium was given a fake camera fed a generated Y4M containing a genuine
-EAN-13 — `5011921204021`, the 2024 Ork Combat Patrol from §12's worked example.
-The full chain ran: **camera decoded it** → landed on the queue → typed an ISBN
-by hand and it was flagged as a book → defined contents against the real
-imported datasheets → the barcode linked → the row went ready → confirm created
-the kit. 21 models, no JS errors, no horizontal overflow at 390px.
+Six of the eight named units resolve exactly against the imported rules data;
+counts come from each datasheet's minimum unit size (`models: min`), which is
+what one kit delivers, so the number can never drift from the rules:
 
-Debounce confirmed: the decoder fires many times a second and the queue row
-still read `quantity=1`.
+| Kit | Contents |
+|---|---|
+| Brutalis Dreadnought + Hive Tyrant | 1× Brutalis Dreadnought, 1× Hive Tyrant |
+| Brôkhyr Thunderkyn + Killa Kans | 3× Brôkhyr Thunderkyn, 3× Killa Kans |
+| Daemon Prince + Howling Banshees | 5× Howling Banshees — Daemon Prince unresolved |
+| GSC Broodcoven + Rogal Dorn Battle Tank | 1× Rogal Dorn Battle Tank — Broodcoven unresolved |
+
+The two that do not resolve are genuine decisions, not failures. BSData has no
+plain **Daemon Prince** — it is of Chaos, of Khorne, of Nurgle, winged or not,
+and which one it becomes is a build-time choice (§14). **GSC Broodcoven** is a
+three-character boxed set, not a datasheet. Both lines are left in and
+reported, with the near-misses named; each kit is still created from the lines
+that did resolve. None ships marked `owned` — a premium kit is an optional
+extra, and claiming one Clay never bought would put models in his collection
+that do not exist.
+
+### Why it is empty
+
+Every published source for the per-issue contents is blocked by this
+environment's egress policy:
+
+| Source | Result |
+|---|---|
+| `fauxhammer.com` (a contents list covering all 90) | `EGRESS_BLOCKED` |
+| `hachettepartworks.com` (the publisher's own per-issue pages) | `EGRESS_BLOCKED` |
+| `warhammer-community.com` | `EGRESS_BLOCKED` |
+| `hachettecollections.com`, `bolterandchainsword.com`, Wikipedia | all blocked |
+
+`/root/.ccr/README.md` is explicit: a 403 from the proxy is organization egress
+policy, and the instruction is to report the blocked host, not route around it.
+
+`WebSearch` *does* work, and returned real fragments — issue 41 a Warboss in
+Mega Armour, 43 and 45 ten Ork Boyz each, 47–48 Deffkoptas, 49–50 a Deff Dread,
+59 a Boomdakka Snazzwagon. **I deliberately did not use them.** They arrive as
+a model's summary of a page I cannot read, they cover six issues of ninety, and
+nothing corroborates them. Assembling 90 issues that way produces exactly what
+§11 forbids: fluent, plausible, wrong in places, with no signal about which —
+and it would land as trusted seed data covering the entire magazine collection,
+where nothing would ever prompt Clay to check it.
+
+So the code is done and the data is a one-file drop-in.
 
 ## 3 · Active Files
 
 | File | Role |
 |---|---|
-| `scanning.py` | Codes, the queue, kit templates, the lookup seam |
-| `static/js/scan.js` | Camera, both decoders, manual entry |
-| `static/js/review.js` | Confirm / quantity / discard |
-| `static/js/template-form.js` | Contents builder |
-| `static/vendor/zxing.min.js` | ZXing-js 0.23.0, Apache-2.0 |
-| `templates/scan*.html`, `template*.html` | The four screens |
-| `tests/test_scanning.py` | 35 tests on the rules that matter |
-
-No migration: `barcodes`, `scan_queue`, `kit_templates` and
-`kit_template_units` all came from migration 001, which was written for this.
+| `seed/combat_patrol_magazine.py` | The seed job |
+| `seed/data/combat_patrol_issues.yaml` | Contents + provenance; empty of issues |
+| `seed/data/README.md` | Where to get the data, and the rules for filling it |
+| `tests/test_combat_patrol_seed.py` | 29 tests |
 
 ## 4 · Changes Made
 
-**ZXing is vendored, not CDN-loaded.** 362 KB, Apache-2.0, licence included.
-The scanner is the critical onboarding path and should not depend on a CDN
-being reachable from `bastion`.
+**Provenance is enforced, not requested.** The importer refuses to run without
+source URLs, a retrieval date, a confidence, and a second source that agrees.
+Undated, unattributed seed data is indistinguishable from invented seed data
+once it is in the database, and every template it creates carries
+`contents_source='seed'` plus the URLs.
 
-**Both decoders share one loop shape.** ZXing is primary because WebKit has no
-`BarcodeDetector` and fails silently on every iOS browser; `BarcodeDetector` is
-feature-detected for desktop Chrome and never depended on.
+`--dry-run` deliberately works *without* provenance, so a half-finished draft
+can still be checked.
 
-**Nothing is ever rejected.** Prefix and check-digit problems are notes on a row
-that is already saved. A scanner that refuses a real box Clay is holding is
-worse than one that shrugs.
+**Multi-issue sprues attach to the issue that completes them.** A Maulerfiend
+split across #89–90 becomes one template on #90; #89 is reported as parts-only
+and yields no kit. Half a Maulerfiend is not a model you own.
 
-**Quantity is the shelf count.** Rescanning bumps it, and confirming
-instantiates that many kits. Resolved rows stay as the audit trail for how the
-collection was built.
+**Nothing is invented to fill a gap.** Unmatched unit names become
+`unresolved_imports` rows and appear in the report. An issue whose units all
+fail to match produces *no* template, because an empty template instantiates an
+empty kit and looks like it worked.
+
+**Matching reuses the rules importer's `norm`**, so a name that matched there
+matches here. Legends and Crucible variants are excluded — a deprecated
+printing must never satisfy a seed.
+
+**The nine Combat Patrols and four premium kits are shipped**, because those
+come from the spec itself rather than from a web source.
+
+### Demonstrated against real data
+
+A throwaway fixture (in scratch, not committed) run against the real 1,445
+datasheets: 7 issues in, 5 templates out, 4 owned kits and 22 models for issues
+≤75, the Maulerfiend correctly on #90, a deliberately fake unit reported rather
+than invented, and the 83 missing issues printed as compact ranges. `--dry-run`
+wrote nothing.
 
 ## 5 · Failed Attempts
 
-**`reader.decodeFromVideoElement(video, callback)` never fired.** The camera
-ran, the video played (640×480, `readyState` 4, `currentTime` advancing), ZXing
-loaded — and no decode arrived in 25 seconds. It was not obvious from the page
-whether the decoder, the camera, or the fake feed was at fault, so I decoded a
-single grabbed frame directly in the console: it returned `5011921204021`
-immediately. That isolated it to the helper, which wants to own the `<video>`
-element and attach its own stream — ours was already attached, because we ask
-for the rear camera explicitly.
+**Reaching a source, five different ways.** `curl` to the publisher and the
+community lists: all `000` through the proxy. `WebFetch` to the same: all
+`EGRESS_BLOCKED`. Only `WebSearch` — which returns summaries rather than pages
+— gets out.
 
-**`decodeFromCanvas` was the obvious replacement and does not exist in 0.23.**
-Enumerating the prototype chain showed twenty-odd `decodeFrom*` methods and no
-canvas one. The working path is the low-level one: build an
-`HTMLCanvasElementLuminanceSource` → `HybridBinarizer` → `BinaryBitmap` and call
-`decodeBitmap`. No data-URL round trip per frame, and it made the two decoder
-paths the same shape.
+**Assembling the list from search snippets.** Tempting, and it *would* have
+produced ninety plausible rows. Rejected: single-source, second-hand through a
+summariser, six issues of ninety actually covered, and impossible to verify
+line by line. This is the failure mode §11 exists to prevent, and it would have
+been worse here than for the kit catalogue because the magazine seed is
+imported wholesale as trusted.
 
-**`class="advance"` on the confirm button fired a request for unit
-`undefined`.** I reused the class for its green styling; `app.js` binds
-`button.advance` globally to "advance a unit one stage". Confirming a scan
-worked (`POST /api/scan/1/resolve` → 200) *and* fired
-`POST /api/units/undefined/advance` → 404, so the toast read "404" on a
-successful action. Fixed twice over: a separate `.go` styling class, and the
-handlers now require `data-unit` before acting.
-
-**`const $` in a second classic script is a SyntaxError.** `scan.js`,
-`review.js` and `template-form.js` share global scope with `app.js`, which
-already declares it. Caught before it shipped; all three are wrapped in IIFEs.
-
-**The datasheet picker's submit guard blocked saving a template.** It refuses a
-submit when its hidden input is empty — correct on the add-unit form, wrong on
-the template form where the picker adds a line and is *meant* to be empty at
-save time. It now only guards when the hidden input is a named form field.
-
-**"Start camera" stayed visible while scanning.** `button { display:
-inline-block }` beats the browser's default `[hidden]` rule, so setting
-`.hidden = true` did nothing. Only visible in a screenshot — no test would have
-caught it.
+**A test fixture that held an open write transaction** deadlocked the tests
+that go through `main()`, which opens its own connection — `database is
+locked`. The fixture now commits.
 
 ## 6 · Next Steps
 
-**Step 5 — v1 ends here.** Kit catalogue seed job (§11) plus the Combat Patrol
-magazine templates, then the collection view. The seed job is the one with
-teeth: the catalogue must be *derived* from sources with EAN and GW's verbatim
-contents block, two sources agreeing, emitted to a reviewable file rather than
-straight into the database. A catalogue written from memory is the exact failure
-§11 exists to prevent.
+**The premium kits are done.** Two lines need a decision from Clay: which
+Daemon Prince variant, and splitting GSC Broodcoven into Magus / Primus /
+Patriarch. Both are `unresolved_imports` rows with candidates listed.
 
-**Then stop and use it for a few weeks.**
+**The 90 issues still need data.** Either:
 
-**Open, none blocking:**
+1. **Allow one host through egress** — `fauxhammer.com` has a list covering all
+   90 in one page, `hachettepartworks.com` is the publisher. Then I can derive,
+   corroborate and fill the file properly in one pass.
+2. **Paste or drop the list in.** `seed/data/README.md` documents the format;
+   `--status` and `--dry-run` will tell you immediately what does not match.
 
-1. **EAN lookup and photo extraction** need an Anthropic API key and a decision.
-   The seam is one function.
-2. **`BACKUP_DEST` is still unset** — backups are local-only. A dead Jetson
-   still costs the collection.
-3. **Dependencies are unpinned** (`>=`), so CI resolves the latest release each
-   run and a breaking upstream release can turn it red with no change here.
+Then `python3 seed/combat_patrol_magazine.py --owned-through 75`.
+
+**Also still open:**
+
+- The **kit catalogue seed job** (§11) has the same problem and worse — it needs
+  to walk retailer pages for EANs and GW's verbatim contents block. Not runnable
+  from this environment at all as things stand.
+- The **collection view** is the other half of step 5 and has no such blocker.
+  It is the "do I already own one of these" screen, and the last thing before
+  v1 is done.
+- `BACKUP_DEST` is still unset — backups are local-only.
+- Dependencies are unpinned, so CI resolves the latest release each run.
 
 **Do not build past step 5.**
