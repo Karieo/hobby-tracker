@@ -8,6 +8,14 @@
 #
 # The tunnel supplies HTTPS, which getUserMedia requires — barcode scanning
 # will not work over plain http on a Tailscale IP.
+#
+# `version` is obsolete to Compose v2, which warns about it and carries on. It
+# is REQUIRED by the standalone docker-compose v1 still shipping on Ubuntu
+# 20.04, which without it falls back to the legacy format, reads `services` as
+# a service name, and dies on "Unsupported config option". bastion runs 20.04,
+# so it stays.
+version: '3.8'
+
 services:
   tracker:
     build: .

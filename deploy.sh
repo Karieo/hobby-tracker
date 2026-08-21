@@ -98,7 +98,19 @@ if [ -z "$(env_value BACKUP_DEST)" ]; then
 fi
 
 command -v docker >/dev/null || fail "docker not found"
-docker compose version >/dev/null 2>&1 || fail "docker compose plugin not found"
+
+# Ubuntu 20.04 — which is what bastion runs — ships the standalone
+# docker-compose v1 rather than the v2 plugin, and plenty of boxes have one
+# and not the other. Either is fine; refusing to deploy over which spelling is
+# installed would be a check getting in the way of the job.
+if docker compose version >/dev/null 2>&1; then
+  COMPOSE=(docker compose)
+elif command -v docker-compose >/dev/null 2>&1; then
+  COMPOSE=(docker-compose)
+  note "Using the standalone docker-compose (v1)"
+else
+  fail "Neither 'docker compose' nor 'docker-compose' is installed"
+fi
 ok "docker and compose present"
 
 if [ "$CHECK_ONLY" -eq 1 ]; then
@@ -110,7 +122,7 @@ fi
 # ── Deploy ───────────────────────────────────────────────
 bold ""
 bold "── Building and starting ──"
-docker compose up -d --build
+"${COMPOSE[@]}" up -d --build
 
 printf '  waiting for health'
 for _ in $(seq 1 60); do
@@ -122,7 +134,7 @@ for _ in $(seq 1 60); do
   printf '.'; sleep 1
 done
 curl -fsS "http://localhost:$(env_value PORT || echo 3100)/healthz" >/dev/null 2>&1 \
-  || { printf '\n'; docker compose logs --tail 40; fail "Never became healthy"; }
+  || { printf '\n'; "${COMPOSE[@]}" logs --tail 40; fail "Never became healthy"; }
 
 # ── Rules data ───────────────────────────────────────────
 # Fetched rather than vendored (65 MB, no licence), so a fresh box has none.
@@ -132,8 +144,8 @@ if [ ! -d data/bsdata ] || [ -z "$(ls -A data/bsdata 2>/dev/null)" ]; then
   bold ""
   bold "── Rules data ──"
   note "No data/bsdata yet — fetching and importing (a few minutes)"
-  docker compose exec -T tracker python3 scripts/fetch_bsdata.py
-  docker compose exec -T tracker python3 scripts/import_bsdata.py
+  "${COMPOSE[@]}" exec -T tracker python3 scripts/fetch_bsdata.py
+  "${COMPOSE[@]}" exec -T tracker python3 scripts/import_bsdata.py
 else
   ok "Rules data present"
 fi

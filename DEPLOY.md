@@ -12,12 +12,32 @@ health, and fetches + imports the rules data if this is a fresh box.
 
 ## First deploy
 
+**The repo is private**, so plain HTTPS will prompt for credentials and GitHub
+no longer accepts an account password — you need either an SSH key on the box
+that is registered with your GitHub account, or a personal access token.
+
 ```bash
-git clone https://github.com/Karieo/hobby-tracker && cd hobby-tracker
+cd ~                                                    # not inside an existing clone
+git clone git@github.com:Karieo/hobby-tracker.git       # or https:// with a PAT
+cd hobby-tracker
 cp .env.example .env
-$EDITOR .env          # OWNER_PASSWORD at minimum
+$EDITOR .env          # OWNER_PASSWORD at minimum; save before running deploy
 ./deploy.sh
 ```
+
+`cd ~` first is not fussiness: cloning from inside an existing checkout leaves
+a nested copy at `hobby-tracker/hobby-tracker`, which is confusing to find
+later.
+
+### Either flavour of compose works
+
+bastion runs Ubuntu 20.04, which ships the standalone `docker-compose` (v1)
+rather than the `docker compose` plugin. `deploy.sh` uses whichever is present.
+
+`docker-compose.yml` declares `version: '3.8'` for the same reason. Compose v2
+calls that obsolete and warns; v1 **requires** it, and without it falls back to
+the legacy format, reads `services` as a service name, and dies on
+"Unsupported config option". It stays.
 
 Then point the Cloudflare Tunnel at **port 3100** and verify a backup:
 
