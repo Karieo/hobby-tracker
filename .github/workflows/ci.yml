@@ -82,6 +82,8 @@ jobs:
         run: |
           docker run --rm hobby-tracker:ci git --version
           docker run --rm hobby-tracker:ci python3 scripts/fetch_bsdata.py --help > /dev/null
+          docker run --rm hobby-tracker:ci python3 scripts/fetch_killteam.py --help > /dev/null
+          docker run --rm hobby-tracker:ci python3 scripts/import_killteam.py --help > /dev/null
 
       - name: Boot it and check it answers
         run: |
