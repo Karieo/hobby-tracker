@@ -14,7 +14,14 @@
 # 20.04, which without it falls back to the legacy format, reads `services` as
 # a service name, and dies on "Unsupported config option". bastion runs 20.04,
 # so it stays.
-version: '3.8'
+#
+# 3.3 rather than something newer: bastion's docker-compose rejected 3.8
+# outright. 3.3 has been supported since docker-compose 1.14 and by every
+# Compose v2, and nothing here needs a later schema — the one directive that
+# did (healthcheck.start_period, which needs 3.4) is gone, and costs little,
+# since the first check does not run until interval has elapsed by which time
+# the app is up.
+version: '3.3'
 
 services:
   tracker:
@@ -35,4 +42,3 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 15s

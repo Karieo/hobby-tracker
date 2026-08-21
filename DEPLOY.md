@@ -34,10 +34,17 @@ later.
 bastion runs Ubuntu 20.04, which ships the standalone `docker-compose` (v1)
 rather than the `docker compose` plugin. `deploy.sh` uses whichever is present.
 
-`docker-compose.yml` declares `version: '3.8'` for the same reason. Compose v2
-calls that obsolete and warns; v1 **requires** it, and without it falls back to
-the legacy format, reads `services` as a service name, and dies on
-"Unsupported config option". It stays.
+`docker-compose.yml` declares `version: '3.3'` for the same reason. Compose v2
+calls a `version` key obsolete and warns; v1 **requires** it, and without one
+falls back to the legacy format, reads `services` as a service name, and dies
+on "Unsupported config option".
+
+3.3 specifically, because bastion's docker-compose rejected 3.8 outright
+("Version ... is unsupported"). 3.3 has been supported since docker-compose
+1.14 and by every Compose v2. Nothing here needs a later schema — the one
+directive that did, `healthcheck.start_period`, is gone and barely missed,
+since the first check does not run until `interval` has elapsed and the app is
+up well inside that.
 
 Then point the Cloudflare Tunnel at **port 3100** and verify a backup:
 
