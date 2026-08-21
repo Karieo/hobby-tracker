@@ -6,15 +6,43 @@ Build the Combat Patrol magazine templates, all 90 issues (§11).
 
 ## 2 · Current State
 
-**The machinery is built, tested and working. The contents are not in it, and
-I did not put them there.**
+**The four premium kits ship with contents and seed today. The 90 issues do
+not, and I did not invent them.**
+
+The difference is the source. The premium kits are documented in the spec
+(§11), which is a reviewed document — deriving from it is legitimate. The
+per-issue contents are documented only on pages this environment cannot
+reach.
 
 `seed/combat_patrol_magazine.py` reads a contents file, matches every unit
 against the imported BSData datasheets, creates one kit template per issue, and
 optionally instantiates owned kits up to a given issue. 29 tests cover it; 193
 pass overall.
 
-`seed/data/combat_patrol_issues.yaml` **ships empty of issue data**.
+`seed/data/combat_patrol_issues.yaml` ships **with the four premium kits** and
+**empty of issue data**.
+
+### The premium kits
+
+Six of the eight named units resolve exactly against the imported rules data;
+counts come from each datasheet's minimum unit size (`models: min`), which is
+what one kit delivers, so the number can never drift from the rules:
+
+| Kit | Contents |
+|---|---|
+| Brutalis Dreadnought + Hive Tyrant | 1× Brutalis Dreadnought, 1× Hive Tyrant |
+| Brôkhyr Thunderkyn + Killa Kans | 3× Brôkhyr Thunderkyn, 3× Killa Kans |
+| Daemon Prince + Howling Banshees | 5× Howling Banshees — Daemon Prince unresolved |
+| GSC Broodcoven + Rogal Dorn Battle Tank | 1× Rogal Dorn Battle Tank — Broodcoven unresolved |
+
+The two that do not resolve are genuine decisions, not failures. BSData has no
+plain **Daemon Prince** — it is of Chaos, of Khorne, of Nurgle, winged or not,
+and which one it becomes is a build-time choice (§14). **GSC Broodcoven** is a
+three-character boxed set, not a datasheet. Both lines are left in and
+reported, with the near-misses named; each kit is still created from the lines
+that did resolve. None ships marked `owned` — a premium kit is an optional
+extra, and claiming one Clay never bought would put models in his collection
+that do not exist.
 
 ### Why it is empty
 
@@ -106,7 +134,11 @@ locked`. The fixture now commits.
 
 ## 6 · Next Steps
 
-**To finish this task, the data needs to get in.** Either:
+**The premium kits are done.** Two lines need a decision from Clay: which
+Daemon Prince variant, and splitting GSC Broodcoven into Magus / Primus /
+Patriarch. Both are `unresolved_imports` rows with candidates listed.
+
+**The 90 issues still need data.** Either:
 
 1. **Allow one host through egress** — `fauxhammer.com` has a list covering all
    90 in one page, `hachettepartworks.com` is the publisher. Then I can derive,

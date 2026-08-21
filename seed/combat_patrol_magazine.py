@@ -72,6 +72,43 @@ def check_provenance(data):
     return problems
 
 
+def resolve_count(value, datasheet_row):
+    """A contents count. ``min`` means one minimum-size unit.
+
+    Kept as a word in the data file rather than a number, so the count comes
+    from the imported rules data every time and can never drift from them. A
+    premium kit delivers one legal unit, so the datasheet's minimum unit size
+    is the count.
+    """
+    if isinstance(value, int):
+        return value, None
+    if str(value).strip().lower() == 'min':
+        minimum = datasheet_row['min_models'] if datasheet_row else None
+        if not minimum:
+            return None, ('unit size unknown — this datasheet has no points '
+                          'entry, so "min" cannot be resolved; write the count out')
+        return int(minimum), None
+    return None, f'{value!r} is not a number or "min"'
+
+
+def validate_premium(data):
+    collections = data.get('collections') or {}
+    problems = []
+    for key, kit in (data.get('premium_kits') or {}).items():
+        if key not in collections:
+            problems.append(f'premium kit {key!r} has no entry in collections')
+        if not (kit.get('contents') or []):
+            problems.append(f'premium kit {key!r} has no contents')
+        for line in kit.get('contents') or []:
+            if not line.get('unit'):
+                problems.append(f'premium kit {key!r}: a contents line has no unit')
+            value = line.get('models')
+            if not isinstance(value, int) and str(value).strip().lower() != 'min':
+                problems.append(f'premium kit {key!r}: models must be a number '
+                                f'or "min", got {value!r}')
+    return problems
+
+
 def validate_issues(data):
     """Structural problems, found before anything touches the database."""
     collections = data.get('collections') or {}
@@ -112,7 +149,7 @@ def match_datasheet(conn, unit_name, faction_slug=None):
     picked up by a seed.
     """
     rows = conn.execute(
-        'SELECT d.id, d.name, f.slug FROM datasheets d '
+        'SELECT d.id, d.name, d.min_models, f.slug FROM datasheets d '
         'LEFT JOIN factions f ON f.id = d.faction_id '
         'WHERE d.variant IS NULL').fetchall()
     key = normalise_name(unit_name)
@@ -120,16 +157,20 @@ def match_datasheet(conn, unit_name, faction_slug=None):
     if faction_slug:
         scoped = [r for r in exact if r['slug'] == faction_slug]
         if len(scoped) == 1:
-            return scoped[0]['id'], None
+            return scoped[0], None
         if len(scoped) > 1:
             return None, f'{len(scoped)} datasheets named "{unit_name}" in {faction_slug}'
     if len(exact) == 1:
-        return exact[0]['id'], None
+        return exact[0], None
     if len(exact) > 1:
         owners = sorted({r['slug'] or '?' for r in exact})
         return None, ('ambiguous: datasheets with this name exist in '
                       + ', '.join(owners))
-    return None, 'no BSData datasheet with this name'
+    # A near miss is far more useful than "not found" when the answer is a
+    # build-time choice between four similarly-named datasheets.
+    near = sorted({r['name'] for r in rows if key and key in normalise_name(r['name'])})
+    return None, ('no BSData datasheet with this name'
+                  + (f'; did you mean: {", ".join(near[:4])}' if near else ''))
 
 
 def template_name(issue, collections, entry):
@@ -147,7 +188,9 @@ def seed(conn, data, owned_through=0, first_stage_id=None):
 
     report = {'templates_created': 0, 'templates_updated': 0, 'kits_created': 0,
               'parts_only': [], 'unresolved': [], 'issues_present': len(issues),
-              'issues_missing': [], 'models_seeded': 0}
+              'issues_missing': [], 'models_seeded': 0,
+              'premium_created': 0, 'premium_updated': 0, 'premium_owned': 0,
+              'premium_partial': []}
     present = {e['issue'] for e in issues}
     report['issues_missing'] = [n for n in range(1, TOTAL_ISSUES + 1)
                                 if n not in present]
@@ -168,8 +211,8 @@ def seed(conn, data, owned_through=0, first_stage_id=None):
             # it — half a Maulerfiend is not a model you own.
             if spans and number != max(spans):
                 continue
-            datasheet_id, why = match_datasheet(conn, line['unit'], faction_slug)
-            if datasheet_id is None:
+            row, why = match_datasheet(conn, line['unit'], faction_slug)
+            if row is None:
                 db.record_unresolved(
                     conn, IMPORTER, 'unit_line', line['unit'],
                     f'issue {number}: {why}',
@@ -177,8 +220,15 @@ def seed(conn, data, owned_through=0, first_stage_id=None):
                     payload={'issue': number, 'collection': entry['collection']})
                 report['unresolved'].append((number, line['unit'], why))
                 continue
-            contents.append({'datasheet_id': datasheet_id,
-                             'model_count': int(line['models'])})
+            count, count_why = resolve_count(line['models'], row)
+            if count is None:
+                db.record_unresolved(
+                    conn, IMPORTER, 'unit_line', line['unit'],
+                    f'issue {number}: {count_why}',
+                    source_ref=f'Combat Patrol Magazine #{number}')
+                report['unresolved'].append((number, line['unit'], count_why))
+                continue
+            contents.append({'datasheet_id': row['id'], 'model_count': count})
 
         if not contents:
             # Either the issue only carries part of a multi-issue sprue, or
@@ -217,7 +267,82 @@ def seed(conn, data, owned_through=0, first_stage_id=None):
                 report['kits_created'] += 1
                 report['models_seeded'] += sum(c['model_count'] for c in contents)
 
+    seed_premium(conn, data, report, first_stage_id)
     return report
+
+
+def seed_premium(conn, data, report, first_stage_id):
+    """The four premium kits.
+
+    They ship with contents because the spec documents them, unlike the 90
+    issues. They are *not* seeded as owned by default — a premium kit is an
+    optional extra a subscriber may or may not have taken, and claiming
+    ownership of one Clay never bought would put models in his collection that
+    do not exist. Set ``owned: true`` per kit in the data file.
+
+    A kit whose lines do not all resolve is still created from the ones that
+    do, and the rest are reported. Half a premium kit recorded honestly beats
+    none recorded at all — and beats a guess at the missing half.
+    """
+    collections = data.get('collections') or {}
+    source = data.get('premium_source') or {}
+    urls = [source['from']] if source.get('from') else []
+
+    for key, kit in (data.get('premium_kits') or {}).items():
+        meta = collections.get(key) or {}
+        name = meta.get('name', key)
+        contents, missing = [], []
+        for line in kit.get('contents') or []:
+            row, why = match_datasheet(conn, line['unit'])
+            if row is None:
+                db.record_unresolved(
+                    conn, IMPORTER, 'unit_line', line['unit'],
+                    f'premium kit "{name}": {why}', source_ref=name,
+                    payload={'premium_kit': key})
+                report['unresolved'].append((name, line['unit'], why))
+                missing.append(line['unit'])
+                continue
+            count, count_why = resolve_count(line['models'], row)
+            if count is None:
+                db.record_unresolved(
+                    conn, IMPORTER, 'unit_line', line['unit'],
+                    f'premium kit "{name}": {count_why}', source_ref=name)
+                report['unresolved'].append((name, line['unit'], count_why))
+                missing.append(line['unit'])
+                continue
+            contents.append({'datasheet_id': row['id'], 'model_count': count})
+
+        if not contents:
+            report['premium_partial'].append((name, missing))
+            continue
+        if missing:
+            report['premium_partial'].append((name, missing))
+
+        existing = conn.execute('SELECT id FROM kit_templates WHERE name = ?',
+                                (name,)).fetchone()
+        if existing:
+            scan.update_template(conn, existing['id'], contents=contents)
+            template_id = existing['id']
+            report['premium_updated'] += 1
+        else:
+            template_id = scan.create_template(
+                conn, name, contents, contents_source='seed',
+                contents_confidence=source.get('confidence') or 'low',
+                source_urls=urls,
+                notes='Combat Patrol magazine premium kit'
+                      + (f'; unresolved: {", ".join(missing)}' if missing else ''))
+            report['premium_created'] += 1
+
+        if kit.get('owned'):
+            already = conn.execute(
+                'SELECT 1 FROM kits WHERE kit_template_id = ? LIMIT 1',
+                (template_id,)).fetchone()
+            if not already:
+                col.instantiate_template(
+                    conn, template_id, stage_id=first_stage_id,
+                    source='premium_kit', source_ref=name, box_state='no_box')
+                report['premium_owned'] += 1
+                report['models_seeded'] += sum(c['model_count'] for c in contents)
 
 
 # ── Reporting ────────────────────────────────────────────
@@ -232,6 +357,10 @@ def print_report(data, report, dry_run=False):
     print(f"  templates updated          {report['templates_updated']:>4}")
     print(f"  owned kits created         {report['kits_created']:>4}"
           + (f"  ({report['models_seeded']} models)" if report['models_seeded'] else ''))
+    print(f"  premium kits created       {report['premium_created']:>4}"
+          + (f"  ({report['premium_owned']} owned)" if report['premium_owned'] else ''))
+    if report['premium_updated']:
+        print(f"  premium kits updated       {report['premium_updated']:>4}")
     if report['parts_only']:
         print(f"  parts-only issues          {len(report['parts_only']):>4}  "
               f"({', '.join('#' + str(n) for n in report['parts_only'][:12])}"
@@ -244,13 +373,22 @@ def print_report(data, report, dry_run=False):
         print('  ' + _ranges(missing))
         print('  See seed/data/README.md. These are not guessed at.')
 
+    if report['premium_partial']:
+        print()
+        print('  PREMIUM KITS WITH UNRESOLVED LINES')
+        print('  (created from the lines that did resolve; the rest are below)')
+        for name, missing in report['premium_partial']:
+            print(f'     {name}')
+            print(f'       still needs: {", ".join(missing) or "everything"}')
+
     if report['unresolved']:
         print()
         print(f"  UNRESOLVED — {len(report['unresolved'])} unit names needing a human")
         print('  (nothing below was invented or dropped; each is a row in '
               'unresolved_imports)')
-        for number, unit, why in report['unresolved']:
-            print(f'     #{number}  {unit}')
+        for where, unit, why in report['unresolved']:
+            label = f'#{where}' if isinstance(where, int) else where
+            print(f'     {label}  {unit}')
             print(f'       {why}')
     print('─' * 68)
 
@@ -287,7 +425,7 @@ def main(argv=None):
         db.DB_PATH = args.db
     data = load_data(args.data)
 
-    structural = validate_issues(data)
+    structural = validate_issues(data) + validate_premium(data)
     if structural:
         print('The contents file has problems:', file=sys.stderr)
         for problem in structural:
@@ -301,17 +439,26 @@ def main(argv=None):
         print(f'{len(present)} of {TOTAL_ISSUES} issues have contents')
         if missing:
             print(f'missing: {_ranges(missing)}')
+        premium = data.get('premium_kits') or {}
+        owned = sum(1 for k in premium.values() if k.get('owned'))
+        print(f'{len(premium)} premium kits defined ({owned} marked owned)')
         for problem in check_provenance(data):
             print(f'  provenance: {problem}')
         return 0
 
-    if not issues:
-        print('No issue contents in seed/data/combat_patrol_issues.yaml — nothing '
-              'to seed.\nThe list is derived from a published source and reviewed, '
-              'never written from\nmemory. See seed/data/README.md.', file=sys.stderr)
+    premium = data.get('premium_kits') or {}
+    if not issues and not premium:
+        print('Nothing to seed: no issue contents and no premium kits.',
+              file=sys.stderr)
         return 1
+    if not issues:
+        print('No per-issue contents yet — seeding the premium kits only.\n'
+              'The issue list is derived from a published source and reviewed, '
+              'never written\nfrom memory. See seed/data/README.md.')
 
-    provenance = check_provenance(data)
+    # Provenance is only demanded of the part that has data. The premium kits
+    # carry their own, from the spec.
+    provenance = check_provenance(data) if issues else []
     if provenance and not args.dry_run:
         print('Refusing to seed contents that cannot be traced back:', file=sys.stderr)
         for problem in provenance:

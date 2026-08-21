@@ -1,8 +1,13 @@
 # Combat Patrol magazine seed data
 
-`combat_patrol_issues.yaml` holds the per-issue contents of the Hachette
-Warhammer 40,000: Combat Patrol partwork, issues 1–90. It ships empty on
-purpose.
+`combat_patrol_issues.yaml` holds two things: the per-issue contents of the
+Hachette Warhammer 40,000: Combat Patrol partwork (issues 1–90), and the four
+premium kits.
+
+**The premium kits ship with contents. The 90 issues do not.** The difference
+is the source: the premium kits are documented in the spec (§11), which is a
+reviewed document. The per-issue contents are not, and every published source
+for them was unreachable from the environment this was built in.
 
 ## Why it is empty
 
@@ -36,6 +41,36 @@ derived here.
    unit against the imported datasheets and **refuses to invent one** —
    anything it cannot match is reported and written to `unresolved_imports`
    rather than guessed at or dropped.
+
+## The premium kits
+
+These are already filled in, and seed today:
+
+```bash
+python3 seed/combat_patrol_magazine.py --dry-run    # premium kits alone need no issue data
+```
+
+Two lines deliberately do not resolve, and are left in rather than dropped:
+
+- **Daemon Prince** — BSData has no plain one; it is `of Chaos`, `of Khorne`,
+  `of Nurgle`, with or without wings. Which it becomes is a build-time decision
+  (§14: no potential-builds modelling), so it is yours to make. The report
+  lists the candidates.
+- **GSC Broodcoven** — a three-character boxed set (Magus, Primus, Patriarch),
+  not one datasheet. Split it into three lines.
+
+Each kit is still created from the lines that *do* resolve, with the missing
+ones recorded on the template and in `unresolved_imports`.
+
+`models: min` means "one minimum-size unit", resolved from the imported rules
+data at seed time. A premium kit delivers one legal unit, so the datasheet's
+minimum unit size is the count — and keeping it out of this file means the
+number can never drift from the rules.
+
+No premium kit ships marked `owned`. They are optional extras; set
+`owned: true` on the ones you actually took.
+
+## Seeding the issues
 
 Then:
 

@@ -123,13 +123,19 @@ at, never dropped. A sprue split across issues is attached to the issue that
 *completes* it, because half a Maulerfiend is not a model you own. Re-running is
 idempotent.
 
-**`seed/data/combat_patrol_issues.yaml` ships empty**, and the importer refuses
-to run without provenance (source URLs, a retrieval date, a confidence, and a
-second source that agrees). Seed data is derived and reviewed or it does not
-ship: a partwork list written from memory would be fluent, plausible and wrong
-in places, with no signal about which, and it would land as trusted data
-covering the whole magazine collection. See `seed/data/README.md` for how to
-fill it in.
+**The four premium kits ship with contents; the 90 issues do not.** The
+difference is the source: the premium kits are documented in the spec (§11), a
+reviewed document, so they seed today. The per-issue contents are not, and every
+published source for them was unreachable from the environment this was built
+in. Seed data is derived and reviewed or it does not ship — a partwork list
+written from memory would be fluent, plausible and wrong in places, with no
+signal about which, and it would land as trusted data covering the whole
+magazine collection.
+
+The issue importer refuses to run without provenance (source URLs, a retrieval
+date, a confidence, and a second source that agrees). `models: min` in the data
+file means "one minimum-size unit", resolved from the rules data at seed time so
+the count can never drift from them. See `seed/data/README.md`.
 
 ## Rules data
 

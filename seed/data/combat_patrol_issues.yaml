@@ -61,3 +61,61 @@ collections:
 #
 # Issue 89 then yields no kit of its own and is reported as parts-only.
 issues: []
+
+# ────────────────────────────────────────────────────────────────────────
+# THE FOUR PREMIUM KITS
+#
+# These DO ship with contents, because unlike the per-issue list they are
+# documented in the spec (§11) rather than on a web page I could not reach.
+# The spec is a reviewed source; my recall is not.
+#
+# `models: min` means "one minimum-size unit", resolved from the imported
+# rules data at seed time rather than written down here. A premium kit
+# delivers one legal unit, so the datasheet's minimum unit size is the count —
+# and keeping it out of this file means the number can never drift from the
+# rules.
+#
+# Two lines below deliberately will not match, and are left in rather than
+# dropped, because a silently missing line is a shortfall you find at the till
+# months later:
+#
+#   * "Daemon Prince" — BSData has no plain one. It is Daemon Prince of Chaos,
+#     of Khorne, of Nurgle, with or without wings. Which one it becomes is a
+#     build-time decision (§14: no potential-builds modelling), so it is yours
+#     to make, not mine to guess.
+#   * "GSC Broodcoven" — a three-character boxed set (Magus, Primus,
+#     Patriarch), not one datasheet. Needs splitting into its three lines.
+#
+# Both are reported by the seeder and land in unresolved_imports with a
+# manual picker, which is exactly what that machinery is for.
+# ────────────────────────────────────────────────────────────────────────
+premium_source:
+  from: "warhammer-tracker-spec.md §11"
+  retrieved_on: 2026-08-21
+  confidence: medium
+  note: >
+    Unit names are the spec's, verbatim. Counts are the minimum legal unit size
+    from the imported rules data, which is what one kit delivers — worth
+    checking against the physical kit before trusting them.
+
+premium_kits:
+  premium-brutalis:
+    owned: false          # set true for the ones you actually took
+    contents:
+      - {unit: Brutalis Dreadnought, models: min}
+      - {unit: Hive Tyrant, models: min}
+  premium-daemon:
+    owned: false
+    contents:
+      - {unit: Daemon Prince, models: min}      # will not match — see above
+      - {unit: Howling Banshees, models: min}
+  premium-thunderkyn:
+    owned: false
+    contents:
+      - {unit: Brôkhyr Thunderkyn, models: min}
+      - {unit: Killa Kans, models: min}
+  premium-broodcoven:
+    owned: false
+    contents:
+      - {unit: GSC Broodcoven, models: min}     # will not match — see above
+      - {unit: Rogal Dorn Battle Tank, models: min}

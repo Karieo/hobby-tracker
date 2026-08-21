@@ -285,3 +285,148 @@ def test_templates_carry_their_provenance(conn, orks):
     assert template['contents_confidence'] == 'high'
     assert 'https://example.test/contents' in template['source_urls']
     assert 'https://example.test/other' in template['source_urls']
+
+
+# ── Premium kits ─────────────────────────────────────────
+
+def test_the_four_premium_kits_ship_with_contents():
+    """Unlike the 90 issues, these are documented in the spec — a reviewed
+    source — so shipping them is derived, not recalled."""
+    shipped = seeder.load_data()
+    kits = shipped['premium_kits']
+    assert len(kits) == 4
+    assert all(kit['contents'] for kit in kits.values())
+    assert shipped['premium_source']['from'] == 'warhammer-tracker-spec.md §11'
+
+
+def test_no_premium_kit_ships_marked_as_owned():
+    """A premium kit is an optional extra. Claiming one Clay never bought would
+    put models in his collection that do not exist."""
+    shipped = seeder.load_data()
+    assert not any(kit.get('owned') for kit in shipped['premium_kits'].values())
+
+
+def premium(contents, owned=False):
+    return {
+        'source': {}, 'issues': [],
+        'collections': {'p': {'name': 'Premium: Test Kit', 'premium': True}},
+        'premium_source': {'from': 'spec §11', 'confidence': 'medium'},
+        'premium_kits': {'p': {'owned': owned, 'contents': contents}},
+    }
+
+
+def test_min_resolves_to_the_datasheets_minimum_unit_size(conn, orks):
+    """The count comes from the rules data, so it can never drift from them."""
+    conn.execute('UPDATE datasheets SET min_models = 3 WHERE name = ?', ('Deffkoptas',))
+    report = seeder.seed(conn, premium([{'unit': 'Deffkoptas', 'models': 'min'}]))
+    assert report['premium_created'] == 1
+    template = scan.get_template(conn, scan.list_templates(conn)[0]['id'])
+    assert template['contents'][0]['model_count'] == 3
+
+
+def test_an_explicit_count_still_works(conn, orks):
+    seeder.seed(conn, premium([{'unit': 'Boyz', 'models': 7}]))
+    template = scan.get_template(conn, scan.list_templates(conn)[0]['id'])
+    assert template['contents'][0]['model_count'] == 7
+
+
+def test_min_is_refused_when_the_unit_size_is_unknown(conn, orks):
+    """A datasheet with no points entry has no minimum — better to say so than
+    to quietly assume one."""
+    conn.execute('UPDATE datasheets SET min_models = NULL WHERE name = ?', ('Boyz',))
+    report = seeder.seed(conn, premium([{'unit': 'Boyz', 'models': 'min'}]))
+    assert report['premium_created'] == 0
+    assert any('unit size unknown' in why for _w, _u, why in report['unresolved'])
+
+
+def test_a_premium_kit_is_built_from_the_lines_that_resolve(conn, orks):
+    """Half a premium kit recorded honestly beats none — and beats a guess at
+    the missing half."""
+    report = seeder.seed(conn, premium([
+        {'unit': 'Boyz', 'models': 10},
+        {'unit': 'Daemon Prince', 'models': 'min'},      # genuinely ambiguous
+    ]))
+    assert report['premium_created'] == 1
+    assert report['premium_partial'] == [('Premium: Test Kit', ['Daemon Prince'])]
+    template = scan.get_template(conn, scan.list_templates(conn)[0]['id'])
+    assert len(template['contents']) == 1
+    assert 'unresolved: Daemon Prince' in template['notes']
+
+
+def test_an_ambiguous_name_offers_the_near_misses(conn, orks):
+    """"Daemon Prince" is a build-time choice between four datasheets, so the
+    report has to name them rather than just refusing."""
+    for suffix in ('of Chaos', 'of Khorne'):
+        conn.execute(
+            'INSERT INTO datasheets (bsdata_id, name, effort, created_at, '
+            'updated_at) VALUES (?, ?, 8, ?, ?)',
+            (suffix, f'Daemon Prince {suffix}', db.now(), db.now()))
+    report = seeder.seed(conn, premium([{'unit': 'Daemon Prince', 'models': 'min'}]))
+    why = report['unresolved'][0][2]
+    assert 'did you mean' in why and 'Daemon Prince of Chaos' in why
+
+
+def test_a_premium_kit_with_nothing_resolvable_makes_no_template(conn, orks):
+    report = seeder.seed(conn, premium([{'unit': 'Not Real At All', 'models': 1}]))
+    assert report['premium_created'] == 0
+    assert scan.list_templates(conn) == []
+
+
+def test_premium_kits_are_not_owned_unless_asked(conn, orks):
+    seeder.seed(conn, premium([{'unit': 'Boyz', 'models': 10}]))
+    assert conn.execute('SELECT COUNT(*) c FROM kits').fetchone()['c'] == 0
+
+
+def test_marking_one_owned_creates_its_kit_and_models(conn, orks):
+    report = seeder.seed(conn, premium([{'unit': 'Boyz', 'models': 10}], owned=True))
+    assert report['premium_owned'] == 1
+    kit = conn.execute('SELECT * FROM kits').fetchone()
+    assert kit['source'] == 'premium_kit'
+    assert kit['box_state'] == 'no_box'
+    assert conn.execute('SELECT COUNT(*) c FROM models').fetchone()['c'] == 10
+
+
+def test_premium_kits_carry_their_own_provenance(conn, orks):
+    seeder.seed(conn, premium([{'unit': 'Boyz', 'models': 10}]))
+    template = scan.get_template(conn, scan.list_templates(conn)[0]['id'])
+    assert template['contents_source'] == 'seed'
+    assert template['contents_confidence'] == 'medium'
+    assert template['source_urls'] == ['spec §11']
+
+
+def test_a_premium_kit_may_span_factions(conn, orks):
+    """Brutalis Dreadnought + Hive Tyrant is one kit and two factions."""
+    report = seeder.seed(conn, premium([
+        {'unit': 'Boyz', 'models': 10}, {'unit': 'Rhino', 'models': 1}]))
+    assert report['premium_created'] == 1
+    template = scan.get_template(conn, scan.list_templates(conn)[0]['id'])
+    assert {c['faction_name'] for c in template['contents']} == {'Orks', 'Space Marines'}
+
+
+def test_re_running_premium_kits_does_not_duplicate(conn, orks):
+    payload = premium([{'unit': 'Boyz', 'models': 10}], owned=True)
+    seeder.seed(conn, payload)
+    second = seeder.seed(conn, payload)
+    assert (second['premium_created'], second['premium_owned']) == (0, 0)
+    assert second['premium_updated'] == 1
+    assert conn.execute('SELECT COUNT(*) c FROM models').fetchone()['c'] == 10
+
+
+@pytest.mark.parametrize('kits, fragment', [
+    ({'nope': {'contents': [{'unit': 'Boyz', 'models': 1}]}}, 'no entry in collections'),
+    ({'p': {'contents': []}}, 'no contents'),
+    ({'p': {'contents': [{'models': 1}]}}, 'no unit'),
+    ({'p': {'contents': [{'unit': 'Boyz', 'models': 'lots'}]}}, 'number or "min"'),
+])
+def test_premium_structural_problems_are_caught(kits, fragment):
+    payload = premium([])
+    payload['premium_kits'] = kits
+    problems = seeder.validate_premium(payload)
+    assert any(fragment in p for p in problems), problems
+
+
+def test_premium_kits_seed_even_with_no_issue_contents(tmp_path, db_path, orks):
+    """The whole point of shipping them: they work today, the issues do not."""
+    payload = premium([{'unit': 'Boyz', 'models': 10}])
+    assert seeder.main(['--data', str(_write(tmp_path, payload)),
+                        '--db', db_path]) == 0
