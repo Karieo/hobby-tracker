@@ -1,13 +1,10 @@
-<!doctype html>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Collection Tracker</title>
-<link rel="stylesheet" href="/static/css/app.css">
-<main>
-  <h1>Collection Tracker</h1>
-  <p class="sub">
-    Reference data only so far — build steps 1 and 2. Armies, kits and models
-    arrive in step 3.
+{% extends "base.html" %}
+{% block title %}Rules data · Collection Tracker{% endblock %}
+{% block body %}
+  <h1>Rules data</h1>
+  <p class="hint">
+    Datasheets from BSData, points from the Munitorum Field Manual. Re-running
+    the importer is safe — hand corrections are never overwritten.
   </p>
 
   <div class="stats">
@@ -30,7 +27,7 @@
 
   <h2>Unresolved imports {% if unresolved %}({{ unresolved|length }}){% endif %}</h2>
   {% if unresolved %}
-    <p class="sub">
+    <p class="hint">
       Nothing here was guessed at or dropped. Each row needs a human decision;
       the manual picker that resolves them lands with the admin page.
     </p>
@@ -39,21 +36,17 @@
         <tr><th>Kind</th><th>Name</th><th>Why</th><th>Source</th></tr>
         {% for u in unresolved %}
           <tr>
-            <td>{{ u.kind }}</td>
-            <td>{{ u.raw_name }}</td>
-            <td>{{ u.detail }}</td>
-            <td>{{ u.source_ref or '' }}</td>
+            <td>{{ u.kind }}</td><td>{{ u.raw_name }}</td>
+            <td>{{ u.detail }}</td><td>{{ u.source_ref or '' }}</td>
           </tr>
         {% endfor %}
       </table>
     </div>
   {% else %}
-    <p class="sub">
-      Nothing unresolved — but the importer has not run yet if the counts above
-      are zero. Run <code>python3 scripts/fetch_bsdata.py</code> then
+    <p class="hint">
+      Nothing unresolved — but if the counts above are zero the importer hasn't
+      run. <code>python3 scripts/fetch_bsdata.py</code> then
       <code>python3 scripts/import_bsdata.py</code>.
     </p>
   {% endif %}
-
-  <footer>v{{ version }} · {{ owner }}</footer>
-</main>
+{% endblock %}

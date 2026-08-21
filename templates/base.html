@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{% block title %}Collection Tracker{% endblock %}</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/css/app.css?v={{ asset_version }}">
+<nav class="nav">
+  <a href="/" class="brand">Collection</a>
+  <a href="/paint" {% if request.path.startswith('/paint') %}class="on"{% endif %}>Paint</a>
+  <a href="/kits" {% if request.path.startswith('/kits') %}class="on"{% endif %}>Kits</a>
+  <a href="/reference" {% if request.path.startswith('/reference') %}class="on"{% endif %}>Data</a>
+</nav>
+<main>
+  {% block body %}{% endblock %}
+</main>
+<footer>v{{ version }} · {{ owner }}</footer>
+<script src="/static/js/app.js?v={{ asset_version }}"></script>
+{% block scripts %}{% endblock %}

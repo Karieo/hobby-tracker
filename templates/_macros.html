@@ -1,0 +1,26 @@
+{# Stage bar: one segment per stage that actually has models, in pipeline order.
+   Colour runs cool-to-warm along the pipeline so a squad's state reads at a
+   glance from across the desk without anyone parsing a legend. #}
+{% macro stage_bar(unit) %}
+  <div class="bar" role="img"
+       aria-label="{% for s in unit.segments %}{{ s.count }} {{ s.name }}{% if not loop.last %}, {% endif %}{% endfor %}">
+    {% for seg in unit.segments %}
+      <span class="seg s{{ seg.position }}" style="width: {{ '%.2f'|format(seg.width) }}%"
+            title="{{ seg.count }} × {{ seg.name }}"></span>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
+{# Effort-weighted completion, with the raw model count alongside — never
+   instead of. A Knight and a Termagant are both "1 model". #}
+{% macro progress(stats) %}
+  <span class="pct">{{ stats.completion }}%</span>
+  <span class="muted">
+    {{ stats.effort_done }}/{{ stats.effort_total }} effort ·
+    {{ stats.done_count if stats.done_count is defined else '?' }}/{{ stats.model_count }} models
+  </span>
+{% endmacro %}
+
+{% macro staleness(stamp) %}
+  {% if stamp %}<span class="stale" data-since="{{ stamp }}"></span>{% endif %}
+{% endmacro %}

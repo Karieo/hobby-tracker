@@ -8,9 +8,10 @@ Cloudflare Tunnel. Conventions follow [Remndrs](https://github.com/Karieo/Remndr
 flat module layout, `python-dotenv` config read lazily, bcrypt + session-cookie
 auth, server-rendered Jinja with vanilla JS, no build step and no ORM.
 
-**Status: build steps 1–2 of 5.** Schema, migration runner, reference-data seed
-and the rules-data importer are done. Armies, kits, units and models (step 3),
-scanning (step 4) and the collection view (step 5) are not built yet.
+**Status: build steps 1–3 of 5.** Schema, migration runner, reference-data seed,
+the rules-data importer, and the collection itself — armies, kits, units,
+models, the stage pipeline and painting session mode. Scanning (step 4) and the
+collection search view (step 5) are not built yet.
 
 ## Setup
 
@@ -47,7 +48,26 @@ Tests: `pip install -r requirements-dev.txt && python3 -m pytest`
 | `scripts/import_bsdata.py` | Imports datasheets and points; reports what it couldn't resolve |
 | `data/mfm/` | Munitorum Field Manual snapshots (MIT, committed) |
 | `data/bsdata/` | BSData catalogues (fetched, gitignored — see `data/SOURCES.md`) |
+| `collection.py` | Armies, kits, units, models, stage movement |
+| `templates/`, `static/` | Server-rendered Jinja + vanilla JS, no build step |
 | `backup.sh` | Nightly snapshot + CSV export + off-box copy |
+
+## Using it
+
+Armies hold units; units hold one row per physical model. The primary control
+everywhere is **Advance all** — one tap moves a whole unit forward a stage,
+because almost every real update is "I primed the squad". *Advance N* handles
+half-finished squads, the per-stage `+1` handles single models, and the "set a
+count" box handles "six of these ten are primed" without touching a checkbox.
+Individual model selection exists and is never required.
+
+`/paint` is session mode: pick a unit, big tap targets, every tap saves. It is
+meant to be used *during* the hobby rather than as an admin chore afterwards —
+that gap is where the last tracker died.
+
+Every percentage is effort-weighted (`datasheets.effort` per model), because a
+Knight and a Termagant are both "1 model" and counting them equally makes
+progress bars lie. Raw counts show alongside.
 
 ## Rules data
 

@@ -14,9 +14,10 @@ conventions and hard-won context.
 
 ## Status
 
-Build steps 1–2 of the spec's 13-step order are done: schema, migration runner,
-stages/factions seed, and the BSData + Munitorum importer. v1 ends at step 5
-(armies/kits/units/models CRUD, scanner, collection view). **Do not build past
+Build steps 1–3 of the spec's 13-step order are done: schema, migration runner,
+stages/factions seed, the BSData + Munitorum importer, and the collection
+(armies, kits, units, models, stage pipeline, painting session mode). v1 ends at
+step 5 (scanner, then the collection search view). **Do not build past
 step 5** — the dashboard, list builder, gap report, shopping list, sale
 candidates and export are specced so the schema doesn't paint us into a corner,
 not because they're wanted yet.

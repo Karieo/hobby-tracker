@@ -1,9 +1,8 @@
 """Warhammer Collection Tracker — Flask server.
 
-Session 1 scope is the spec's build steps 1 and 2: schema, migration runner,
-reference-data seed, and the BSData/Munitorum importer. So this is deliberately
-a skeleton — auth, the health endpoint, and a status page that shows what the
-importer put in the database. The collection routes arrive in step 3.
+Build steps 1-3: reference data, plus armies, kits, units, models and the stage
+pipeline. Routes live here and delegate to ``collection.py``; scanning (step 4)
+and the collection view (step 5) are not built yet.
 
 Auth posture matches Remndrs, because the Cloudflare Tunnel makes this publicly
 reachable and obscurity is not a plan: bcrypt password, session cookie, a
@@ -15,6 +14,7 @@ import logging
 import os
 import secrets
 import time
+from contextlib import contextmanager
 from datetime import timedelta
 
 from dotenv import load_dotenv
@@ -43,10 +43,11 @@ def apply_timezone():
 apply_timezone()
 
 import bcrypt  # noqa: E402
-from flask import (Flask, jsonify, redirect, render_template,  # noqa: E402
-                   request, session)
+from flask import (Flask, abort, jsonify, redirect,  # noqa: E402
+                   render_template, request, session)
 from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 
+import collection as col  # noqa: E402
 import database as db  # noqa: E402
 
 logging.basicConfig(level=logging.INFO,
@@ -73,7 +74,27 @@ if not _secret:
 app.secret_key = _secret
 app.permanent_session_lifetime = timedelta(days=30)
 
-VERSION = '0.1.0'
+VERSION = '0.2.0'
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _asset_version():
+    """Cache-buster for app.css/app.js, from their mtimes.
+
+    Without it a deploy's fix hides behind a browser's cached copy — which is
+    exactly what happened while building this, and would be far more confusing
+    on a phone that has had the page open for a week.
+    """
+    stamps = []
+    for rel in ('static/css/app.css', 'static/js/app.js'):
+        try:
+            stamps.append(int(os.path.getmtime(os.path.join(_APP_DIR, rel))))
+        except OSError:
+            pass
+    return str(max(stamps)) if stamps else VERSION
+
+
+_ASSET_VERSION = _asset_version()
 
 
 # ── Bootstrap ────────────────────────────────────────────
@@ -169,16 +190,314 @@ def api_version():
     return jsonify({'version': VERSION})
 
 
+@app.route('/reference')
+def reference():
+    """What the importer loaded, and what it could not resolve."""
+    with _read() as conn:
+        unresolved = [dict(r) for r in db.open_unresolved(conn)]
+        stages = col.stage_ladder(conn)
+    return render_template('reference.html', summary=db.import_summary(),
+                           stages=stages, unresolved=unresolved)
+
+
+# ── Connections ──────────────────────────────────────────
+#
+# Two helpers rather than one, so a handler declares its intent: reads never
+# hold a write transaction open, and writes commit exactly once at the end.
+
+@contextmanager
+def _read():
+    conn = db.connect()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@contextmanager
+def _write():
+    conn = db.connect()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _payload():
+    return request.get_json(silent=True) or request.form or {}
+
+
+def _int(value, default=None):
+    """Form values arrive as strings and empty means "not set", not zero."""
+    if value is None or value == '':
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+@app.context_processor
+def inject_globals():
+    return {'owner': os.getenv('OWNER_NAME', 'Clay'), 'version': VERSION,
+            'asset_version': _ASSET_VERSION}
+
+
+# ── Armies ───────────────────────────────────────────────
+
 @app.route('/')
 def index():
-    """What the importer has loaded. The collection views land in step 3."""
-    with db.connect() as conn:
-        unresolved = [dict(r) for r in db.open_unresolved(conn)]
-        stages = [dict(r) for r in db.get_stages(conn)]
-    return render_template('index.html', summary=db.import_summary(),
-                           stages=stages, unresolved=unresolved,
-                           owner=os.getenv('OWNER_NAME', 'Clay'),
-                           version=VERSION)
+    with _read() as conn:
+        armies = col.list_armies(conn)
+        factions = col.list_factions(conn)
+        summary = db.import_summary()
+    return render_template('armies.html', armies=armies, factions=factions,
+                           summary=summary)
+
+
+@app.route('/api/armies', methods=['POST'])
+def api_create_army():
+    data = _payload()
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'An army needs a name'}), 400
+    with _write() as conn:
+        army_id = col.create_army(conn, name,
+                                  primary_faction_id=_int(data.get('primary_faction_id')),
+                                  notes=(data.get('notes') or '').strip() or None)
+    return jsonify({'id': army_id}), 201
+
+
+@app.route('/api/armies/<int:army_id>', methods=['PATCH'])
+def api_update_army(army_id):
+    data = _payload()
+    with _write() as conn:
+        if not col.update_army(
+                conn, army_id, name=(data.get('name') or '').strip() or None,
+                primary_faction_id=_int(data.get('primary_faction_id')),
+                notes=data.get('notes')):
+            abort(404)
+    return jsonify({'success': True})
+
+
+@app.route('/armies/unassigned')
+@app.route('/armies/<int:army_id>')
+def army_detail(army_id=None):
+    """The screen Clay lives in.
+
+    Unassigned shares this template deliberately: units with no army are a real
+    bucket that needs the same stats and the same controls, not a special case
+    tucked away somewhere quieter.
+    """
+    with _read() as conn:
+        army = col.get_army(conn, army_id) if army_id else None
+        if army_id and not army:
+            abort(404)
+        units = col.list_units(conn, army_id=army_id, unassigned=army_id is None)
+        return render_template(
+            'army.html', army=army, units=units,
+            stats=col.army_stats(conn, army_id),
+            stages=col.stage_ladder(conn),
+            armies=[a for a in col.list_armies(conn) if a['id']],
+            factions=col.list_factions(conn))
+
+
+# ── Units ────────────────────────────────────────────────
+
+@app.route('/units/<int:unit_id>')
+def unit_detail(unit_id):
+    with _read() as conn:
+        unit = col.get_unit(conn, unit_id)
+        if not unit:
+            abort(404)
+        return render_template(
+            'unit.html', unit=unit,
+            breakdown=col.unit_breakdown(conn, unit_id),
+            models=col.unit_models(conn, unit_id),
+            stages=col.stage_ladder(conn),
+            armies=[a for a in col.list_armies(conn) if a['id']])
+
+
+@app.route('/api/units', methods=['POST'])
+def api_create_unit():
+    data = _payload()
+    datasheet_id = _int(data.get('datasheet_id'))
+    model_count = _int(data.get('model_count'), 0)
+    if not datasheet_id:
+        return jsonify({'error': 'Pick a datasheet'}), 400
+    if model_count < 1:
+        return jsonify({'error': 'A unit needs at least one model'}), 400
+    with _write() as conn:
+        unit_id = col.create_unit(
+            conn, datasheet_id, model_count,
+            army_id=_int(data.get('army_id')),
+            kit_id=_int(data.get('kit_id')),
+            stage_id=_int(data.get('stage_id')),
+            nickname=(data.get('nickname') or '').strip() or None)
+    return jsonify({'id': unit_id}), 201
+
+
+@app.route('/api/units/<int:unit_id>/advance', methods=['POST'])
+def api_advance_unit(unit_id):
+    """The primary interaction. No body advances the whole unit."""
+    data = _payload()
+    with _write() as conn:
+        if not col.get_unit(conn, unit_id):
+            abort(404)
+        moved = col.advance_unit(conn, unit_id, count=_int(data.get('count')),
+                                 from_stage_id=_int(data.get('from_stage_id')))
+        return jsonify({'moved': moved,
+                        'breakdown': col.unit_breakdown(conn, unit_id)})
+
+
+@app.route('/api/units/<int:unit_id>/stage', methods=['POST'])
+def api_set_unit_stage(unit_id):
+    """Bulk stage set: a hand-picked selection, or "N of them are at X"."""
+    data = _payload()
+    stage_id = _int(data.get('stage_id'))
+    if not stage_id:
+        return jsonify({'error': 'Pick a stage'}), 400
+    model_ids = data.get('model_ids')
+    with _write() as conn:
+        if not col.get_unit(conn, unit_id):
+            abort(404)
+        if model_ids:
+            owned = {m['id'] for m in col.unit_models(conn, unit_id)}
+            # Never let one unit's request move another unit's models.
+            chosen = [i for i in (_int(x) for x in model_ids) if i in owned]
+            moved = col.set_models_stage(conn, chosen, stage_id)
+        else:
+            moved = col.set_unit_stage_counts(
+                conn, unit_id, stage_id, _int(data.get('count'), 0))
+        return jsonify({'moved': moved,
+                        'breakdown': col.unit_breakdown(conn, unit_id)})
+
+
+@app.route('/api/units/<int:unit_id>/move', methods=['POST'])
+def api_move_unit(unit_id):
+    with _write() as conn:
+        if not col.get_unit(conn, unit_id):
+            abort(404)
+        col.move_unit_to_army(conn, unit_id, _int(_payload().get('army_id')))
+    return jsonify({'success': True})
+
+
+@app.route('/api/units/<int:unit_id>', methods=['PATCH'])
+def api_update_unit(unit_id):
+    data = _payload()
+    with _write() as conn:
+        if not col.get_unit(conn, unit_id):
+            abort(404)
+        col.update_unit(conn, unit_id, nickname=data.get('nickname'),
+                        notes=data.get('notes'))
+    return jsonify({'success': True})
+
+
+@app.route('/api/units/<int:unit_id>', methods=['DELETE'])
+def api_delete_unit(unit_id):
+    """Undo for a mistyped entry — not how you record getting rid of models.
+
+    Models Clay actually owned leave through a kit disposal, which keeps the
+    rows and the spend history.
+    """
+    with _write() as conn:
+        if not col.get_unit(conn, unit_id):
+            abort(404)
+        col.delete_unit(conn, unit_id)
+    return jsonify({'success': True})
+
+
+@app.route('/api/units/<int:unit_id>/models', methods=['POST'])
+def api_add_models(unit_id):
+    data = _payload()
+    count = _int(data.get('count'), 0)
+    if count < 1:
+        return jsonify({'error': 'How many?'}), 400
+    with _write() as conn:
+        if not col.get_unit(conn, unit_id):
+            abort(404)
+        stage_id = _int(data.get('stage_id')) or db.first_owned_stage(conn)['id']
+        col.add_models(conn, unit_id, count, stage_id)
+    return jsonify({'success': True}), 201
+
+
+# ── Kits ─────────────────────────────────────────────────
+
+@app.route('/kits')
+def kits_page():
+    with _read() as conn:
+        return render_template('kits.html', kits=col.list_kits(conn),
+                               factions=col.list_factions(conn),
+                               armies=[a for a in col.list_armies(conn) if a['id']])
+
+
+@app.route('/api/kits', methods=['POST'])
+def api_create_kit():
+    data = _payload()
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'A kit needs a name'}), 400
+    cost = data.get('cost')
+    with _write() as conn:
+        kit_id = col.create_kit(
+            conn, name, faction_id=_int(data.get('faction_id')),
+            source=(data.get('source') or None),
+            source_ref=(data.get('source_ref') or '').strip() or None,
+            acquired_on=(data.get('acquired_on') or '').strip() or None,
+            cost_cents=round(float(cost) * 100) if cost else None,
+            box_state=(data.get('box_state') or 'sealed'),
+            notes=(data.get('notes') or '').strip() or None)
+    return jsonify({'id': kit_id}), 201
+
+
+@app.route('/api/kits/<int:kit_id>/status', methods=['POST'])
+def api_kit_status(kit_id):
+    data = _payload()
+    price = data.get('price')
+    with _write() as conn:
+        if not col.get_kit(conn, kit_id):
+            abort(404)
+        try:
+            col.dispose_kit(conn, kit_id, (data.get('status') or '').strip(),
+                            disposed_on=(data.get('disposed_on') or '').strip() or None,
+                            price_cents=round(float(price) * 100) if price else None,
+                            note=(data.get('note') or '').strip() or None)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+    return jsonify({'success': True})
+
+
+# ── Painting session ─────────────────────────────────────
+
+@app.route('/paint')
+@app.route('/paint/<int:unit_id>')
+def paint(unit_id=None):
+    """Big tap targets, no forms, no navigation — for use with wet brushes."""
+    with _read() as conn:
+        unit = breakdown = None
+        if unit_id:
+            unit = col.get_unit(conn, unit_id)
+            if not unit:
+                abort(404)
+            breakdown = col.unit_breakdown(conn, unit_id)
+        return render_template('paint.html', unit=unit, breakdown=breakdown,
+                               units=col.paintable_units(conn),
+                               stages=col.stage_ladder(conn))
+
+
+# ── Pickers ──────────────────────────────────────────────
+
+@app.route('/api/datasheets')
+def api_datasheets():
+    query = (request.args.get('q') or '').strip()
+    if len(query) < 2:
+        return jsonify({'results': []})
+    with _read() as conn:
+        return jsonify({'results': col.search_datasheets(conn, query)})
 
 
 if __name__ == '__main__':

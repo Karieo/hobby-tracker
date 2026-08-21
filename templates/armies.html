@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% from "_macros.html" import stage_bar, progress, staleness %}
+{% block title %}Armies · Collection Tracker{% endblock %}
+{% block body %}
+  <header class="page">
+    <h1>Armies</h1>
+    <button class="ghost" data-toggle="#new-army">+ Army</button>
+  </header>
+
+  <form class="panel stack hidden" id="new-army" data-post="/api/armies">
+    <label>Name<input name="name" required placeholder="Da Boyz"></label>
+    <label>Primary faction
+      <select name="primary_faction_id">
+        <option value="">— none —</option>
+        {% for f in factions %}<option value="{{ f.id }}">{{ f.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <p class="hint">
+      A label for display and list defaults. It never limits what can go in —
+      an Imperial Knights army can hold a Callidus Assassin.
+    </p>
+    <label>Notes<input name="notes"></label>
+    <button type="submit">Create army</button>
+  </form>
+
+  {% if not armies %}
+    <div class="panel empty">
+      <p>No armies yet.</p>
+      <p class="muted">
+        Create one above, or add a kit — units can sit unassigned until you
+        decide where they belong.
+      </p>
+    </div>
+  {% endif %}
+
+  <ul class="cards">
+    {% for a in armies %}
+      <li class="card {% if not a.id %}unassigned{% endif %}">
+        <a href="{{ '/armies/%d'|format(a.id) if a.id else '/armies/unassigned' }}">
+          <div class="card-head">
+            <h2>{{ a.name }}</h2>
+            <span class="pct">{{ a.completion }}%</span>
+          </div>
+          {% if not a.id %}
+            <p class="hint">
+              Units not committed to an army yet — including anything you might sell.
+            </p>
+          {% elif a.faction_name %}
+            <p class="muted">{{ a.faction_name }}</p>
+          {% endif %}
+          {{ stage_bar({'segments': a.segments}) if a.segments else '' }}
+          <p class="muted">
+            {{ a.unit_count }} unit{{ '' if a.unit_count == 1 else 's' }} ·
+            {{ a.model_count }} model{{ '' if a.model_count == 1 else 's' }} ·
+            {{ a.effort_done }}/{{ a.effort_total }} effort
+            {{ staleness(a.last_activity) }}
+          </p>
+        </a>
+      </li>
+    {% endfor %}
+  </ul>
+
+  {% if summary.datasheets == 0 %}
+    <div class="panel warn">
+      <b>No rules data loaded.</b>
+      <p class="muted">
+        Run <code>python3 scripts/fetch_bsdata.py</code> then
+        <code>python3 scripts/import_bsdata.py</code> — you can't add units
+        without datasheets to add them against.
+      </p>
+    </div>
+  {% endif %}
+{% endblock %}
