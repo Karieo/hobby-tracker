@@ -169,8 +169,23 @@ if [ ! -d data/bsdata ] || [ -z "$(ls -A data/bsdata 2>/dev/null)" ]; then
   bold ""
   bold "── Rules data ──"
   note "No data/bsdata yet — fetching and importing (a few minutes)"
-  "${COMPOSE[@]}" exec -T tracker python3 scripts/fetch_bsdata.py
-  "${COMPOSE[@]}" exec -T tracker python3 scripts/import_bsdata.py
+  # Both steps run in the container, so both failure modes are the container's:
+  # no outbound route to github.com, or a tool missing from the image. Say so —
+  # the traceback above this line is a Python one and reads like a bug in the
+  # script when it is neither.
+  if ! "${COMPOSE[@]}" exec -T tracker python3 scripts/fetch_bsdata.py; then
+    fail "Could not fetch BSData (see the error above).
+    The app itself is up and healthy on port $(env_value PORT || echo 3100) —
+    it just has no datasheets yet, so units cannot be added.
+    Retry the fetch alone once the cause is fixed:
+      ${COMPOSE[*]} exec tracker python3 scripts/fetch_bsdata.py
+      ${COMPOSE[*]} exec tracker python3 scripts/import_bsdata.py"
+  fi
+  if ! "${COMPOSE[@]}" exec -T tracker python3 scripts/import_bsdata.py; then
+    fail "BSData fetched but the import failed (see the error above).
+    Re-run it alone — the fetch is idempotent and will not repeat:
+      ${COMPOSE[*]} exec tracker python3 scripts/import_bsdata.py"
+  fi
 else
   ok "Rules data present"
 fi

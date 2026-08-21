@@ -74,6 +74,15 @@ jobs:
       - name: Build the image
         run: docker build -t hobby-tracker:ci .
 
+      # The image booting healthy proves nothing about the setup scripts that
+      # run inside it. A missing git got all the way to the Jetson once,
+      # because a container with no rules data is still a container that
+      # answers /healthz.
+      - name: The setup scripts' tools are in the image
+        run: |
+          docker run --rm hobby-tracker:ci git --version
+          docker run --rm hobby-tracker:ci python3 scripts/fetch_bsdata.py --help > /dev/null
+
       - name: Boot it and check it answers
         run: |
           docker run -d --name ci -p 3100:3100 \
