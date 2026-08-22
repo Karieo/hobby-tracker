@@ -50,6 +50,22 @@
   </p>
 
   {% set waiting = rows | rejectattr('resolved_at') | list %}
+  {% if waiting|length > 1 %}
+    <div class="panel">
+      <div class="actions">
+        <button class="go" id="sweep">
+          Onboard all {{ summary.open_boxes }} boxes →
+        </button>
+      </div>
+      <p class="hint">
+        {{ summary.known }} known box{{ '' if summary.known == 1 else 'es' }}
+        get{{ 's' if summary.known == 1 }} their contents;
+        {{ summary.unknown }} unknown one{{ '' if summary.unknown == 1 else 's' }}
+        {{ 'is' if summary.unknown == 1 else 'are' }} recorded as owned and
+        wait below for contents. Or take them one at a time.
+      </p>
+    </div>
+  {% endif %}
   {% if not waiting %}
     <div class="panel empty">
       <p>Nothing waiting.</p>
@@ -123,18 +139,32 @@
             {% if kit.faction_name %}<span class="muted">{{ kit.faction_name }}</span>{% endif %}
           </div>
           {% if templates %}
+            {# Its own barcode already says what this box is, when the code has
+               been defined since it was shelved. Defining Combat Patrol once
+               pays for every copy already on the shelf. #}
             <div class="actions">
               <select class="adopt-template">
                 <option value="">Contents…</option>
                 {% for t in templates %}
-                  <option value="{{ t.id }}">
+                  <option value="{{ t.id }}"
+                          {% if t.id == kit.suggested_template_id %}selected{% endif %}>
                     {{ t.name }}{% if t.year %} ({{ t.year }}){% endif %}
                     — {{ t.model_count }} models
                   </option>
                 {% endfor %}
               </select>
-              <button class="go k-adopt">Fill in →</button>
+              <button class="go k-adopt">
+                {% if kit.suggested_template_name %}
+                  Fill in from {{ kit.suggested_template_name }} →
+                {% else %}Fill in →{% endif %}
+              </button>
             </div>
+            {% if kit.code %}
+              <p class="hint">
+                <a href="/box/{{ kit.code }}">Scan or open this box's page</a>
+                {%- if kit.suggested_template_name %} to fill in every copy at once{% endif %}.
+              </p>
+            {% endif %}
           {% else %}
             <p class="hint">No kit templates defined yet — nothing to fill it in from.</p>
           {% endif %}

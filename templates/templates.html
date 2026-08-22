@@ -45,6 +45,9 @@
              value="{{ request.args.get('code') or '' }}"
              placeholder="5011921204021">
     </label>
+    {# Where to land after saving. Arriving from a box page means Clay is
+       holding that box, so send him back to it rather than to the queue. #}
+    <input type="hidden" name="next" value="{{ request.args.get('next') or '' }}">
 
     <h2>What's in the box</h2>
     <p class="hint">

@@ -726,3 +726,81 @@ def test_a_wishlist_unit_says_bought_it_not_advance(client, db_path,
 
     assert 'Bought it' in body
     assert '· wanted' in body
+
+
+# ── The box page: one barcode, everything known about it ──
+
+def test_an_unknown_code_offers_to_have_its_contents_defined(client):
+    res = client.get('/box/5011921225712')
+
+    assert res.status_code == 200
+    body = res.get_data(as_text=True)
+    assert 'Never seen this code' in body
+    # And straight into the define flow, landing back here afterwards.
+    assert 'templates?code=5011921225712&amp;next=/box/5011921225712' in body
+
+
+def test_a_known_code_shows_what_is_in_the_box(client, army_with_unit, db_path):
+    with db.connect(db_path) as conn:
+        template = scanning.create_template(
+            conn, 'Combat Patrol: Orks',
+            [{'datasheet_id': army_with_unit['datasheet_id'], 'model_count': 20}],
+            year=2024)
+        scanning.link_barcode(conn, '5011921204021', template)
+
+    body = client.get('/box/5011921204021').get_data(as_text=True)
+
+    assert 'Combat Patrol: Orks' in body
+    assert 'Boyz' in body
+
+
+def test_the_box_page_offers_to_fill_in_every_recorded_copy(client,
+                                                            army_with_unit,
+                                                            db_path):
+    with db.connect(db_path) as conn:
+        template = scanning.create_template(
+            conn, 'Combat Patrol: Orks',
+            [{'datasheet_id': army_with_unit['datasheet_id'], 'model_count': 20}])
+        qid = scanning.enqueue_scan(conn, '5011921204021')['queue_id']
+        scanning.set_queue_quantity(conn, qid, 2)
+        scanning.shelve_queue_row(conn, qid)
+        scanning.link_barcode(conn, '5011921204021', template)
+
+    body = client.get('/box/5011921204021').get_data(as_text=True)
+    assert 'Fill in 2 boxes' in body
+
+    res = client.post('/api/box/5011921204021/adopt-all', json={})
+    assert res.status_code == 200
+    assert len(res.get_json()['kits']) == 2
+    with db.connect(db_path) as conn:
+        assert col.kits_awaiting_contents(conn) == []
+
+
+def test_adopt_all_on_an_undefined_code_is_refused(client):
+    res = client.post('/api/box/5011921225712/adopt-all', json={})
+    assert res.status_code == 400
+    assert 'no kit template' in res.get_json()['error']
+
+
+def test_a_typed_code_is_normalised_by_the_box_page(client):
+    """Scanners and humans both add spaces and dashes."""
+    assert client.get('/box/5011921-225712').status_code == 200
+
+
+# ── Sweeping the queue ───────────────────────────────────
+
+def test_sweeping_onboards_the_whole_queue(client, army_with_unit, db_path):
+    with db.connect(db_path) as conn:
+        template = scanning.create_template(
+            conn, 'Combat Patrol: Orks',
+            [{'datasheet_id': army_with_unit['datasheet_id'], 'model_count': 20}])
+        scanning.link_barcode(conn, '5011921204021', template)
+        scanning.enqueue_scan(conn, '5011921204021')
+        scanning.enqueue_scan(conn, '5011921225712')
+
+    res = client.post('/api/scan/sweep', json={})
+
+    assert res.status_code == 200
+    assert res.get_json() == {'confirmed': 1, 'shelved': 1,
+                              'summary': {'open_rows': 0, 'open_boxes': 0,
+                                          'known': 0, 'unknown': 0}}

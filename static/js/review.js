@@ -27,6 +27,23 @@ async function post(url, body, method = 'POST') {
   return data;
 }
 
+// The whole queue in one tap. A hundred boxes must not cost a hundred taps —
+// the per-row buttons stay for the odd box out.
+document.addEventListener('click', async (e) => {
+  const button = e.target.closest('#sweep');
+  if (!button) return;
+  button.disabled = true;
+  try {
+    const data = await post('/api/scan/sweep', defaults());
+    toast(`${data.confirmed} kit${data.confirmed === 1 ? '' : 's'} added, ` +
+          `${data.shelved} box${data.shelved === 1 ? '' : 'es'} recorded`);
+    setTimeout(() => location.reload(), 700);
+  } catch (err) {
+    button.disabled = false;
+    toast(err.message, 'error');
+  }
+});
+
 document.addEventListener('click', async (e) => {
   const row = e.target.closest('.qrow');
   if (!row) return;

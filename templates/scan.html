@@ -26,6 +26,24 @@
     <button class="ghost" id="stop" hidden>Stop</button>
   </div>
 
+  {# Two jobs, one camera. Adding is the shelf sprint: decode, beep, keep
+     going. Identifying is the couch session afterwards — a hundred recorded
+     boxes are named `Unidentified box 5011921…`, and rather than reading
+     digits off a screen Clay picks the box up and scans it to open its page.
+     The box is its own index. #}
+  <fieldset class="panel modes" id="mode">
+    <label>
+      <input type="radio" name="mode" value="add" checked>
+      <b>Adding boxes</b>
+      <span class="muted">Scan the shelf. Each box lands on the queue.</span>
+    </label>
+    <label>
+      <input type="radio" name="mode" value="identify">
+      <b>Identifying boxes</b>
+      <span class="muted">Scan a box to open its page and say what's in it.</span>
+    </label>
+  </fieldset>
+
   {# Non-negotiable. Shrink-wrap glare, damaged boxes and dim shop lighting
      defeat camera scanning regularly, and when they do this is the whole app. #}
   <h2>Type it instead</h2>

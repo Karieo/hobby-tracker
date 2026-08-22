@@ -798,6 +798,71 @@ def api_discard_scan(queue_id):
     return jsonify({'success': True})
 
 
+@app.route('/box/<code>')
+def box_page(code):
+    """Everything known about one barcode, reached by scanning the box itself.
+
+    The couch half of onboarding. A hundred shelved boxes are named
+    `Unidentified box 5011921…` and nothing but thirteen digits says which is
+    which — so instead of reading digits off a screen, Clay picks the box up,
+    scans it, and lands here to say what is in it. The box is its own index.
+    """
+    code = scan.normalise_code(code)
+    with _read() as conn:
+        template = scan.template_for_code(conn, code)
+        return render_template(
+            'box.html', code=code, notes=scan.describe_code(code)['notes'],
+            template=scan.get_template(conn, template['id']) if template else None,
+            awaiting=[k for k in col.kits_awaiting_contents(conn)
+                      if k['code'] == code],
+            kits=[dict(r) for r in conn.execute(
+                'SELECT k.*, t.name AS template_name FROM kits k '
+                'LEFT JOIN kit_templates t ON t.id = k.kit_template_id '
+                'WHERE k.source_ref = ? ORDER BY k.id', (code,))],
+            open_rows=[r for r in scan.queue_rows(conn) if r['code'] == code],
+            stages=col.stage_ladder(conn),
+            armies=[a for a in col.list_armies(conn) if a['id']])
+
+
+@app.route('/api/box/<code>/adopt-all', methods=['POST'])
+def api_adopt_all_for_code(code):
+    """Define contents once, fill in every copy already on the shelf."""
+    data = _payload()
+    try:
+        with _write() as conn:
+            kit_ids = col.adopt_all_for_code(
+                conn, scan.normalise_code(code),
+                kit_template_id=_int(data.get('kit_template_id')),
+                army_id=_int(data.get('army_id')),
+                stage_id=_int(data.get('stage_id')))
+            return jsonify({'kits': kit_ids})
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.route('/api/scan/sweep', methods=['POST'])
+def api_scan_sweep():
+    """The whole queue in one tap: known boxes confirmed, unknown ones
+    recorded. A hundred rows must not cost a hundred taps."""
+    data = _payload()
+    cost = data.get('cost')
+    try:
+        with _write() as conn:
+            result = scan.sweep_queue(
+                conn,
+                army_id=_int(data.get('army_id')),
+                stage_id=_int(data.get('stage_id')),
+                source=(data.get('source') or None),
+                acquired_on=(data.get('acquired_on') or '').strip() or None,
+                cost_cents=round(float(cost) * 100) if cost else None,
+                box_state=(data.get('box_state') or 'sealed'))
+            return jsonify({'confirmed': len(result['confirmed']),
+                            'shelved': len(result['shelved']),
+                            'summary': scan.queue_summary(conn)})
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
 # ── Kit templates ────────────────────────────────────────
 #
 # Built by hand first, deliberately: onboarding must never depend on an EAN
