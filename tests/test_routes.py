@@ -804,3 +804,41 @@ def test_sweeping_onboards_the_whole_queue(client, army_with_unit, db_path):
     assert res.get_json() == {'confirmed': 1, 'shelved': 1,
                               'summary': {'open_rows': 0, 'open_boxes': 0,
                                           'known': 0, 'unknown': 0}}
+
+
+# ── Pasting a shelf in ───────────────────────────────────
+
+def test_the_add_page_renders(client):
+    assert client.get('/add').status_code == 200
+
+
+def test_preview_matches_what_it_can_and_asks_about_the_rest(client,
+                                                             army_with_unit):
+    res = client.post('/add/preview', data={
+        'text': '20 Boyz built\n5 Nothing Real',
+        'game_system': 'wh40k', 'stage_id': ''})
+
+    assert res.status_code == 200
+    body = res.get_data(as_text=True)
+    assert 'Boyz' in body
+    assert 'no datasheet with this name' in body
+
+
+def test_committing_creates_the_units(client, army_with_unit, db_path):
+    res = client.post('/api/add/commit', json={
+        'rows': [{'datasheet_id': army_with_unit['datasheet_id'],
+                  'count': 20, 'stage_word': 'built'}]})
+
+    assert res.status_code == 200
+    assert len(res.get_json()['units']) == 1
+    with db.connect(db_path) as conn:
+        rows = {r['name']: r for r in col.inventory(conn)}
+        assert rows['Boyz']['owned_count'] == 30, 'the fixture 10 plus these 20'
+
+
+def test_committing_an_unresolved_line_is_refused(client, army_with_unit):
+    res = client.post('/api/add/commit', json={
+        'rows': [{'datasheet_id': None, 'count': 5}]})
+
+    assert res.status_code == 400
+    assert 'still need a datasheet' in res.get_json()['error']

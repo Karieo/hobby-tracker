@@ -49,6 +49,7 @@ from flask import (Flask, abort, jsonify, redirect,  # noqa: E402
                    render_template, request, session)
 from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 
+import bulk_add  # noqa: E402
 import collection as col
 import lists as army_lists  # noqa: E402
 import database as db  # noqa: E402
@@ -796,6 +797,53 @@ def api_discard_scan(queue_id):
     with _write() as conn:
         scan.discard_queue_row(conn, queue_id)
     return jsonify({'success': True})
+
+
+@app.route('/add')
+def add_page():
+    """Paste a shelf in. The door for everything with no barcode left to scan.
+
+    Scanning covers boxes. It covers nothing already built, painted or split
+    out of a box years ago — and those are the models most likely to be missing
+    from the app, because recorded one form at a time they never get recorded.
+    """
+    with _read() as conn:
+        return render_template(
+            'add.html', stages=col.stage_ladder(conn),
+            armies=[a for a in col.list_armies(conn) if a['id']])
+
+
+@app.route('/add/preview', methods=['POST'])
+def add_preview():
+    """Every pasted line, matched or not, for confirmation before anything is
+    written. Nothing is guessed and nothing is dropped."""
+    text = request.form.get('text') or ''
+    system = request.form.get('game_system') or None
+    with _read() as conn:
+        rows = bulk_add.match_lines(conn, bulk_add.parse_lines(text),
+                                    game_system=system)
+        return render_template(
+            'add_preview.html', rows=rows, text=text, game_system=system,
+            stages=col.stage_ladder(conn),
+            stage_words=sorted(set(bulk_add.STAGE_WORDS)),
+            army_id=_int(request.form.get('army_id')),
+            stage_id=_int(request.form.get('stage_id')),
+            armies=[a for a in col.list_armies(conn) if a['id']],
+            unresolved=sum(1 for r in rows if not r['datasheet_id']))
+
+
+@app.route('/api/add/commit', methods=['POST'])
+def api_add_commit():
+    data = _payload()
+    try:
+        with _write() as conn:
+            created = bulk_add.commit(
+                conn, data.get('rows') or [],
+                default_stage_id=_int(data.get('stage_id')),
+                army_id=_int(data.get('army_id')))
+            return jsonify({'units': created})
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
 
 
 @app.route('/box/<code>')

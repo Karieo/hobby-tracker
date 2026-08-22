@@ -51,7 +51,6 @@ import json
 import os
 import re
 import sys
-import unicodedata
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -69,20 +68,10 @@ IMPORTER = 'bsdata'
 
 # ── Name normalisation ───────────────────────────────────
 
-def norm(s):
-    """Fold a unit name to its join key.
-
-    Curly apostrophes, accents and punctuation differ between the two sources
-    ("Grot Tanks" vs "Grot Tanks", "Ork Nob" vs "Ork  Nob"), and none of those
-    differences mean anything. Case, punctuation and whitespace all collapse.
-    """
-    s = unicodedata.normalize('NFKD', s or '')
-    s = s.replace('’', "'").replace('‘', "'")
-    return re.sub(r'[^a-z0-9]+', ' ', s.lower()).strip()
-
-
-def slugify(s):
-    return norm(s).replace(' ', '-')
+# Defined in names.py so every importer, seed and the paste-import parser fold
+# names identically. Re-exported here because the seeds already import it from
+# this module, and one canonical fold is the whole point.
+from names import norm, slugify        # noqa: F401  (re-exported)
 
 
 # ── Catalogue -> faction mapping ─────────────────────────

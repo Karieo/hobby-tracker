@@ -79,6 +79,15 @@ footer { max-width: 60rem; margin: 3rem auto 0; color: var(--muted);
 .panel.empty p:first-child { color: var(--ink); margin-top: 0; }
 .panel.warn { border-color: var(--warn); }
 
+/* Confirming a pasted list. A row needing a decision is marked, and stops
+   being marked the moment it gets one. */
+.addrow { margin-bottom: .6rem; }
+.addrow .what { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; }
+.addrow .row { align-items: end; }
+.skipbox { display: flex; align-items: center; gap: .4rem; min-height: 44px;
+           font-size: .9rem; color: var(--muted); }
+.skipbox input { width: 1.15rem; height: 1.15rem; }
+
 /* What the camera does with a decode. Tap targets stay finger-sized: this is
    chosen one-handed, at a shelf. */
 .modes { display: grid; gap: .5rem; border: 1px solid var(--line);

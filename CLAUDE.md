@@ -26,12 +26,14 @@ in the navigation. "Do not build past step 5" is retired with it. Read
 
 Done: schema and migrations, the BSData + Munitorum importer, Kill Team
 operatives, the collection (armies, kits, units, models, stage pipeline,
-painting and session mode), the scanner with its queue and review screen, and
-kit view/edit/delete.
+painting and session mode), the scanner with its queue and review screen, kit
+view/edit/delete, the inventory view, the own-it check, basing applicability,
+the list builder with its gap report and wishlist, and shelf-scale onboarding
+(queue sweep, per-barcode box page, identify-mode scanning, adopt-all, the
+derived kit catalogue, and paste-import).
 
-Missing, in build order: the inventory view, the own-it check, basing
-applicability, the list builder with its gap report and wishlist, and list
-import. §5 of the spec has the measured state of each.
+Missing: list import (§2.7), still gated on a source. §5 of the spec has the
+measured state of each step.
 
 ## Commands
 
@@ -43,6 +45,7 @@ python3 scripts/fetch_killteam.py    # fetch Kill Team at its pinned SHA
 python3 scripts/import_killteam.py [--dry-run] # Kill Team operatives
 python3 app.py                       # http://localhost:3100
 python3 seed/combat_patrol_magazine.py --status   # magazine seed
+python3 seed/derived_kits.py --status            # researched box contents
 python3 -m pytest                    # tests
 shellcheck backup.sh restore.sh      # the shell half, linted in CI too
 ```
@@ -87,6 +90,10 @@ anyone notices.
   the importer refuses to run without provenance. Filling it in from a model's
   recall, rather than from a source, is the one change to this repo that would
   do real damage — `tests/test_combat_patrol_seed.py` asserts it stays empty.
+  `seed/data/derived_kits.yaml` is the same bargain kept rather than deferred:
+  every entry carries its sources, and **a barcode needs two independent
+  sources agreeing** or the entry ships without one. Wrong contents under a
+  name show up when the box is opened; a wrong barcode is silent.
 - **No scraping** GW for prices, eBay for resale values, or any site for points.
 - **`box_state` is not a model stage.** A sealed box and an opened one both hold
   models "On sprue", but only one carries a resale premium. Keep it on the kit.
