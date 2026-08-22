@@ -3,7 +3,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{% block title %}Collection Tracker{% endblock %}</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+{# Pirata One carries the display voice, Special Elite everything else — the
+   two faces the wireframes are drawn in, served from static/fonts rather than
+   from Google. 62KB for both, and it removes a third party from the path of a
+   screen used on shop wifi. @font-face lives in app.css with real fallbacks,
+   so a font that never arrives degrades to Courier and serif, not to nothing. #}
 <link rel="stylesheet" href="/static/css/app.css?v={{ asset_version }}">
+{# The ground is picked before first paint so the page never flashes Blueprint
+   on the way to Nuln. Inline and tiny for that reason. #}
+<script>
+  try {
+    var g = localStorage.getItem('ground');
+    if (g) document.documentElement.dataset.ground = g;
+  } catch (e) { /* private mode — fall through to prefers-color-scheme */ }
+</script>
 {# Ordered by the hobby's loop, not the build order. Scanning was first here
    because it was built fourth; it is a thing you do once per box and then
    never again, so it sits with the other occasional tools. #}
@@ -16,6 +29,10 @@
   <a href="/kits" {% if request.path.startswith('/kits') %}class="on"{% endif %}>Kits</a>
   <a href="/scan" {% if request.path.startswith('/scan') %}class="on"{% endif %}>Scan</a>
   <a href="/reference" {% if request.path.startswith('/reference') %}class="on"{% endif %}>Data</a>
+  {# Blueprint by day, Nuln at the desk. The OS setting is the default and this
+     overrides it, because a phone in light mode at a dark desk is exactly the
+     case prefers-color-scheme gets wrong. #}
+  <button id="ground" type="button" title="Switch ground">Ground</button>
 </nav>
 <main>
   {% block body %}{% endblock %}

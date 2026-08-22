@@ -329,3 +329,87 @@ def test_datasheet_search_excludes_variants(conn, orks):
     hits = col.search_datasheets(conn, 'Boyz')
     assert len(hits) == 1
     assert hits[0]['id'] == orks['Boyz']
+
+
+# ── Stepping back ────────────────────────────────────────
+#
+# Every tap in a paint session saves immediately and nothing asks "are you
+# sure". That is only tolerable if undo costs one tap too — otherwise the
+# screen becomes one you are careful with, and being careful is friction.
+
+def test_a_model_steps_back_one_stage(conn, orks, stages):
+    unit = col.create_unit(conn, orks['Boyz'], 1, stage_id=stages['Primed']['id'])
+
+    assert col.retreat_unit(conn, unit) == 1
+
+    assert conn.execute('SELECT stage_id FROM models WHERE unit_id = ?',
+                        (unit,)).fetchone()['stage_id'] == stages['Base prepared']['id']
+
+
+def test_retreat_moves_the_most_advanced_not_the_least(conn, orks, stages):
+    """Advance moves the least advanced — "I primed six of ten" means the six
+    that weren't. Undo is the mirror: it takes back the step just taken rather
+    than disturbing something further back."""
+    unit = col.create_unit(conn, orks['Boyz'], 1, stage_id=stages['On sprue']['id'])
+    col.add_models(conn, unit, 1, stages['Painted']['id'])
+
+    col.retreat_unit(conn, unit, count=1)
+
+    at = [r['stage_id'] for r in conn.execute(
+        'SELECT stage_id FROM models WHERE unit_id = ? ORDER BY id', (unit,))]
+    assert stages['On sprue']['id'] in at, 'the sprue model was left alone'
+    assert stages['Painted']['id'] not in at, 'the painted one came back a step'
+
+
+def test_retreat_never_un_owns_a_model(conn, orks, stages):
+    """"I have not started this" and "I do not have this" are different facts.
+    Stepping back off the first owned stage would silently turn one into the
+    other and drop the model out of ownership counts."""
+    unit = col.create_unit(conn, orks['Boyz'], 2, stage_id=stages['On sprue']['id'])
+
+    assert col.retreat_unit(conn, unit) == 0
+
+    stage_ids = {r['stage_id'] for r in conn.execute(
+        'SELECT stage_id FROM models WHERE unit_id = ?', (unit,))}
+    assert stage_ids == {stages['On sprue']['id']}
+
+
+def test_retreat_can_be_narrowed_to_one_stage(conn, orks, stages):
+    unit = col.create_unit(conn, orks['Boyz'], 1, stage_id=stages['Primed']['id'])
+    col.add_models(conn, unit, 1, stages['Painted']['id'])
+
+    col.retreat_unit(conn, unit, count=1, from_stage_id=stages['Primed']['id'])
+
+    at = sorted(r['stage_id'] for r in conn.execute(
+        'SELECT stage_id FROM models WHERE unit_id = ?', (unit,)))
+    assert stages['Painted']['id'] in at, 'the painted model was not touched'
+    assert stages['Base prepared']['id'] in at
+
+
+def test_retreat_undoes_an_advance_exactly(conn, orks, stages):
+    """The property that matters: a mis-tap costs one tap to fix."""
+    unit = col.create_unit(conn, orks['Boyz'], 5, stage_id=stages['Assembled']['id'])
+    before = sorted(r['stage_id'] for r in conn.execute(
+        'SELECT stage_id FROM models WHERE unit_id = ?', (unit,)))
+
+    col.advance_unit(conn, unit)
+    col.retreat_unit(conn, unit)
+
+    after = sorted(r['stage_id'] for r in conn.execute(
+        'SELECT stage_id FROM models WHERE unit_id = ?', (unit,)))
+    assert after == before
+
+
+def test_an_unbased_model_steps_back_over_the_basing_stages(conn, stages):
+    """The ladder a model actually walks, in both directions."""
+    faction = db.upsert_faction(conn, 'Space Marines', 'space-marines')
+    rhino = conn.execute(
+        'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, basing, '
+        "created_at, updated_at) VALUES ('rhino', 'Rhino', ?, 8, 'unbased', ?, ?)",
+        (faction, db.now(), db.now())).lastrowid
+    unit = col.create_unit(conn, rhino, 1, stage_id=stages['Painted']['id'])
+
+    col.retreat_unit(conn, unit)
+
+    assert conn.execute('SELECT stage_id FROM models WHERE unit_id = ?',
+                        (unit,)).fetchone()['stage_id'] == stages['Primed']['id']

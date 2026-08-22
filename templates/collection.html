@@ -36,12 +36,33 @@
     </p>
   {% endif %}
 
+  {# Chip rail, §3b. Direction 1a won because the query stays readable: you can
+     always see what you filtered without opening anything. Sealed carries the
+     rust because it is a thing that wants you, never the accent. #}
+  <nav class="chips" aria-label="Filters">
+    <a class="chip {% if not system and not filter %}on{% endif %}"
+       href="/collection{% if query %}?q={{ query|urlencode }}{% endif %}">All</a>
+    <a class="chip {% if system == 'wh40k' %}on{% endif %}"
+       href="/collection?system=wh40k{% if query %}&q={{ query|urlencode }}{% endif %}">40k</a>
+    <a class="chip {% if system == 'killteam' %}on{% endif %}"
+       href="/collection?system=killteam{% if query %}&q={{ query|urlencode }}{% endif %}">Kill Team</a>
+    <a class="chip {% if filter == 'unpainted' %}on{% endif %}"
+       href="/collection?filter=unpainted{% if query %}&q={{ query|urlencode }}{% endif %}">Unpainted</a>
+    {% if totals.sealed %}
+      <a class="chip wants {% if filter == 'sealed' %}on{% endif %}"
+         href="/collection?filter=sealed{% if query %}&q={{ query|urlencode }}{% endif %}">
+        Sealed {{ totals.sealed }}</a>
+    {% endif %}
+  </nav>
+
+  {# Three tiles, not four. The accent means done and nothing else, so only
+     "battle ready" is filled; the wishlist is the only rust. "Built or beyond"
+     lost its tile because the stage bar above already says where the mass is. #}
   <div class="stats">
-    <div class="stat"><b>{{ totals.owned }}</b><span>models owned</span></div>
-    <div class="stat"><b>{{ totals.built }}</b><span>built or beyond</span></div>
-    <div class="stat"><b>{{ totals.done }}</b><span>battle ready</span></div>
-    <div class="stat {% if totals.wanted %}flag{% endif %}">
-      <b>{{ totals.wanted }}</b><span>on the wishlist</span>
+    <div class="stat"><b>{{ totals.owned }}</b><span>owned</span></div>
+    <div class="stat done"><b>{{ totals.done }}</b><span>battle ready</span></div>
+    <div class="stat {% if totals.wanted %}wants{% endif %}">
+      <b>{{ totals.wanted }}</b><span>wanted</span>
     </div>
   </div>
 

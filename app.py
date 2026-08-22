@@ -256,6 +256,24 @@ def inject_globals():
 
 @app.route('/')
 def index():
+    """Home, from Tracker Wireframes §3a. One number, then the mass, then which
+    army is dragging — and then one named unit to pick back up.
+
+    That last part is why this replaced the armies index here. An index answers
+    "what do I have", which is a question Clay can already answer; it does not
+    answer "what do I do now", and a tracker that only keeps score is one he
+    stops opening. The armies list keeps its own screen at /armies.
+    """
+    with _read() as conn:
+        return render_template(
+            'home.html',
+            summary=col.home_summary(conn),
+            armies=[a for a in col.list_armies(conn) if a['model_count']],
+            stalled=col.stalled_unit(conn))
+
+
+@app.route('/armies')
+def armies_page():
     with _read() as conn:
         armies = col.list_armies(conn)
         factions = col.list_factions(conn)
@@ -275,8 +293,16 @@ def collection_page():
             faction_id=_int(request.args.get('faction_id')),
             game_system=(request.args.get('system') or None),
             include_unowned=bool(query))
+        # Chip filters narrow what is already loaded rather than re-querying:
+        # "unpainted" and "sealed" are questions about the rows on screen, and
+        # keeping them here means the chips cannot disagree with the counts.
+        chip = request.args.get('filter') or ''
+        if chip == 'unpainted':
+            rows = [r for r in rows if r['done_count'] < r['owned_count']]
+        elif chip == 'sealed':
+            rows = [r for r in rows if r['sealed_boxes']]
         return render_template(
-            'collection.html', rows=rows, query=query,
+            'collection.html', rows=rows, query=query, filter=chip,
             system=(request.args.get('system') or ''),
             faction_id=_int(request.args.get('faction_id')),
             factions=col.list_factions(conn),
@@ -287,6 +313,7 @@ def collection_page():
                 'built': sum(r['built_count'] for r in rows),
                 'done': sum(r['done_count'] for r in rows),
                 'wanted': sum(r['wanted_count'] for r in rows),
+                'sealed': sum(r['sealed_boxes'] for r in rows),
             })
 
 
@@ -483,6 +510,22 @@ def api_advance_unit(unit_id):
         if not col.get_unit(conn, unit_id):
             abort(404)
         moved = col.advance_unit(conn, unit_id, count=_int(data.get('count')),
+                                 from_stage_id=_int(data.get('from_stage_id')))
+        return jsonify({'moved': moved,
+                        'breakdown': col.unit_breakdown(conn, unit_id)})
+
+
+@app.route('/api/units/<int:unit_id>/retreat', methods=['POST'])
+def api_retreat_unit(unit_id):
+    """Step models back one stage — the design's −1 control.
+
+    The counterpart to advancing. Every tap in a paint session saves
+    immediately with no confirmation, so there has to be a way back that is
+    just as cheap, or the app becomes something you are careful with.
+    """
+    data = _payload()
+    with _write() as conn:
+        moved = col.retreat_unit(conn, unit_id, count=_int(data.get('count')),
                                  from_stage_id=_int(data.get('from_stage_id')))
         return jsonify({'moved': moved,
                         'breakdown': col.unit_breakdown(conn, unit_id)})

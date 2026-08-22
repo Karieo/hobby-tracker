@@ -1,27 +1,124 @@
+/* The two faces the wireframes are drawn in, served locally. `swap` so text
+   is readable immediately and reflows when the face lands — never invisible. */
+@font-face {
+  font-family: "Pirata One";
+  src: url("/static/fonts/pirata-one.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Special Elite";
+  src: url("/static/fonts/special-elite.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+
 /* Mobile-first. Most use is at a paint desk or in front of a shelf, on a phone
    — desktop is the enhancement, not the baseline. Tap targets stay large
-   enough to hit with a brush in the other hand. */
-:root {
-  --bg: #14161a;
-  --panel: #1c1f26;
-  --line: #2b3039;
-  --ink: #e8eaed;
-  --muted: #9aa3b0;
-  --accent: #7cc47f;
-  --warn: #e0a458;
-  --bad: #e07a7a;
-  --radius: 10px;
+   enough to hit with a brush in the other hand.
 
-  /* The pipeline, cool to warm. Position maps to colour so a squad's state
-     reads from across the desk without parsing a legend. */
-  --s0: #4b5563;  /* Wishlist — not owned, deliberately grey */
-  --s1: #6b7280;  /* On sprue */
-  --s2: #7c8aa5;  /* Assembled */
-  --s3: #6f8fb0;  /* Base prepared */
-  --s4: #5f9ea0;  /* Primed */
-  --s5: #7bb07a;  /* Painted */
-  --s6: #93c47d;  /* Based */
-  --s7: #7cc47f;  /* Battle ready */
+   TWO GROUNDS, from Tracker Wireframes §3. Blueprint is daytime — the shelf
+   and the shop, read under real light. Nuln is the paint desk at night. They
+   run their ramps in opposite directions on purpose: Nuln *brightens* toward
+   done so a finished squad glows across a dim desk, while Blueprint *deepens*
+   toward done and stays legible in daylight. Same ramp, same meaning, tuned to
+   when you are actually looking at it.
+
+   One colour rule holds in both, and it is the whole system:
+
+     accent   teal on paper, brass in the dark — owns the far end of the stage
+              ramp, the done counts, and every primary action.
+     rust     reserved for things that *want* you: sealed boxes, stalled units,
+              the wishlist.
+     nothing else gets colour.
+
+   Corners are square everywhere. The design draws 1,765 of them and not one
+   is rounded; it reads as drafting paper rather than a phone app, and that is
+   the point. */
+:root {
+  color-scheme: light dark;
+
+  /* Blueprint — daytime, shelf, shop */
+  --bg: #e6e2d9;
+  --panel: #fbfaf7;
+  --panel-2: #e8e6e0;
+  --line: #1a1a1a;
+  --rule: rgba(26, 26, 26, 0.18);
+  --ink: #1a1a1a;
+  --muted: rgba(26, 26, 26, 0.55);
+  --faint: rgba(26, 26, 26, 0.35);
+  --accent: #1f6e8c;
+  --accent-ink: #fbfaf7;
+  --accent-wash: #eaf0f3;
+  --rust: #7a1216;
+  --warn: #7a1216;
+  --bad: #7a1216;
+  --radius: 0;
+
+  /* The pipeline. Blueprint deepens toward done. */
+  --s0: #d5d2cb;  /* Wishlist — not owned, deliberately colourless */
+  --s1: #cfcbc2;  /* On sprue */
+  --s2: #bfbcb5;  /* Assembled */
+  --s3: #b4bec6;  /* Base prepared */
+  --s4: #a9bcc8;  /* Primed */
+  --s5: #7fa3b6;  /* Painted */
+  --s6: #4f88a2;  /* Based */
+  --s7: #1f6e8c;  /* Battle ready — the accent owns the far end */
+}
+
+/* Nuln — the paint desk at night. Brightens toward done. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-ground="blueprint"]) {
+    --bg: #1a1c1f;
+    --panel: #25241f;
+    --panel-2: #1f2124;
+    --line: #e5dfd0;
+    --rule: rgba(229, 223, 208, 0.22);
+    --ink: #e5dfd0;
+    --muted: rgba(229, 223, 208, 0.55);
+    --faint: rgba(229, 223, 208, 0.35);
+    --accent: #c79a3b;
+    --accent-ink: #1a1c1f;
+    --accent-wash: rgba(199, 154, 59, 0.14);
+    --rust: #c2603f;
+    --warn: #c2603f;
+    --bad: #c2603f;
+
+    --s0: #3c3f45;
+    --s1: #494b50;
+    --s2: #5d6068;
+    --s3: #6f6a5c;
+    --s4: #8e8b84;
+    --s5: #a08b56;
+    --s6: #b3934a;
+    --s7: #c79a3b;
+  }
+}
+
+/* The same ground, chosen by hand rather than by the OS. A phone in light mode
+   at a dark desk is exactly the case prefers-color-scheme gets wrong. */
+:root[data-ground="nuln"] {
+  --bg: #1a1c1f;
+  --panel: #25241f;
+  --panel-2: #1f2124;
+  --line: #e5dfd0;
+  --rule: rgba(229, 223, 208, 0.22);
+  --ink: #e5dfd0;
+  --muted: rgba(229, 223, 208, 0.55);
+  --faint: rgba(229, 223, 208, 0.35);
+  --accent: #c79a3b;
+  --accent-ink: #1a1c1f;
+  --accent-wash: rgba(199, 154, 59, 0.14);
+  --rust: #c2603f;
+  --warn: #c2603f;
+  --bad: #c2603f;
+
+  --s0: #3c3f45;
+  --s1: #494b50;
+  --s2: #5d6068;
+  --s3: #6f6a5c;
+  --s4: #8e8b84;
+  --s5: #a08b56;
+  --s6: #b3934a;
+  --s7: #c79a3b;
 }
 
 * { box-sizing: border-box; }
@@ -36,7 +133,10 @@ body {
   padding: 0 1rem 3rem;
   background: var(--bg);
   color: var(--ink);
-  font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font: 16px/1.6 "Special Elite", Courier, ui-monospace, monospace;
+  /* Special Elite is a typewriter face and sits small for its point size, so
+     the baseline is a notch up from the old sans to keep body text legible
+     with a brush in the other hand. */
 }
 
 main { max-width: 60rem; margin: 0 auto; }
@@ -52,7 +152,7 @@ h2 { font-size: 1rem; margin: 2rem 0 .6rem; text-transform: uppercase;
 .crumb a { color: var(--muted); text-decoration: none; }
 .pct { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--accent); }
 .hidden { display: none; }
-code { background: var(--bg); padding: .1rem .35rem; border-radius: 4px;
+code { background: var(--bg); padding: .1rem .35rem; border-radius: 0;
        font-size: .85em; }
 
 /* ── Chrome ─────────────────────────────────────────── */
@@ -62,7 +162,7 @@ code { background: var(--bg); padding: .1rem .35rem; border-radius: 4px;
   border-bottom: 1px solid var(--line); margin-bottom: 1.25rem;
 }
 .nav a { text-decoration: none; color: var(--muted); padding: .4rem .7rem;
-         border-radius: 999px; font-size: .9rem; }
+         border-radius: 0; font-size: .9rem; }
 .nav a.on { background: var(--panel); color: var(--ink); }
 .nav .brand { margin-right: auto; font-weight: 700; color: var(--ink);
               padding-left: 0; }
@@ -74,7 +174,7 @@ footer { max-width: 60rem; margin: 3rem auto 0; color: var(--muted);
 
 /* ── Panels, stats ──────────────────────────────────── */
 .panel { background: var(--panel); border: 1px solid var(--line);
-         border-radius: var(--radius); padding: 1rem; }
+         border-radius: 0; padding: 1rem; }
 .panel.empty { text-align: center; color: var(--muted); }
 .panel.empty p:first-child { color: var(--ink); margin-top: 0; }
 .panel.warn { border-color: var(--warn); }
@@ -93,18 +193,21 @@ footer { max-width: 60rem; margin: 3rem auto 0; color: var(--muted);
 .modes { display: grid; gap: .5rem; border: 1px solid var(--line);
          margin: 0 0 1rem; }
 .modes label { display: grid; grid-template-columns: auto 1fr; gap: .1rem .6rem;
-               align-items: center; padding: .5rem; border-radius: 8px;
+               align-items: center; padding: .5rem; border-radius: 0;
                min-height: 44px; cursor: pointer; }
 .modes label:has(input:checked) { background: var(--panel-2, rgba(127,127,127,.12)); }
 .modes input { grid-row: span 2; width: 1.15rem; height: 1.15rem; }
 .modes .muted { grid-column: 2; font-size: .85rem; }
 
-.stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: .6rem;
+/* Three across at every width. The design puts owned / battle ready / wanted
+   in one row on purpose — they are one sentence, and wrapping the last one
+   onto its own line reads as a separate fact. */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem;
          margin-bottom: 1.5rem; }
-@media (min-width: 40rem) { .stats { grid-template-columns: repeat(4, 1fr); } }
 .stat { background: var(--panel); border: 1px solid var(--line);
-        border-radius: var(--radius); padding: .7rem; }
-.stat b { display: block; font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+        border-radius: 0; padding: .7rem; }
+.stat b { display: block; font-size: 1.3rem; font-variant-numeric: tabular-nums;
+          line-height: 1.1; }
 .stat span { color: var(--muted); font-size: .78rem; }
 .stat.flag b { color: var(--warn); }
 
@@ -112,7 +215,7 @@ footer { max-width: 60rem; margin: 3rem auto 0; color: var(--muted);
 .cards { list-style: none; margin: 0; padding: 0; display: grid; gap: .7rem; }
 @media (min-width: 44rem) { .cards { grid-template-columns: repeat(2, 1fr); } }
 .card { background: var(--panel); border: 1px solid var(--line);
-        border-radius: var(--radius); }
+        border-radius: 0; }
 .card > a { display: block; padding: .9rem; text-decoration: none; }
 .card.unassigned { border-style: dashed; }
 .card-head { display: flex; justify-content: space-between; align-items: baseline;
@@ -122,7 +225,7 @@ footer { max-width: 60rem; margin: 3rem auto 0; color: var(--muted);
 .card p { margin: .4rem 0 0; }
 
 /* ── Stage bar ──────────────────────────────────────── */
-.bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden;
+.bar { display: flex; height: 8px; border-radius: 0; overflow: hidden;
        background: var(--bg); margin: .6rem 0; }
 .seg { display: block; height: 100%; }
 .s0 { background: var(--s0); } .s1 { background: var(--s1); }
@@ -133,7 +236,7 @@ footer { max-width: 60rem; margin: 3rem auto 0; color: var(--muted);
 /* ── Units ──────────────────────────────────────────── */
 .units { list-style: none; margin: 0; padding: 0; display: grid; gap: .7rem; }
 .unit { background: var(--panel); border: 1px solid var(--line);
-        border-radius: var(--radius); padding: .9rem; }
+        border-radius: 0; padding: .9rem; }
 .unit-head { display: flex; justify-content: space-between; align-items: baseline;
              gap: .5rem; }
 .unit-head a { text-decoration: none; }
@@ -160,12 +263,15 @@ footer { max-width: 60rem; margin: 3rem auto 0; color: var(--muted);
   .actions .advance { flex: 0 1 auto; }
 }
 button, .ghost {
-  font: inherit; border-radius: 8px; padding: .6rem .9rem;
+  font: inherit; border-radius: 0; padding: .6rem .9rem;
   border: 1px solid var(--line); background: var(--panel); color: var(--ink);
   cursor: pointer; text-decoration: none; display: inline-block;
   min-height: 44px;              /* thumb-sized, per Apple's own guidance */
 }
-button.advance, button.go, button[type="submit"] {
+/* `a.go` as well as `button.go`: several screens use a link as the primary
+   action (Home's Paint, the catalogue's rows), and without this it renders as
+   underlined body text next to real buttons. */
+button.advance, button.go, a.go, button[type="submit"] {
   background: var(--accent); color: #10231a; border-color: var(--accent);
   font-weight: 600;
 }
@@ -181,7 +287,7 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 
 /* ── Pipeline list ──────────────────────────────────── */
 .pipe { list-style: none; margin: 0 0 1rem; padding: 0;
-        border: 1px solid var(--line); border-radius: var(--radius);
+        border: 1px solid var(--line); border-radius: 0;
         overflow: hidden; }
 .pipe li { display: flex; align-items: center; gap: .6rem;
            padding: .6rem .8rem; background: var(--panel);
@@ -193,7 +299,7 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 .pipe-name { flex: 1; }
 .pipe-count { font-variant-numeric: tabular-nums; }
 .pipe-count b { font-size: 1.05rem; }
-.dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.dot { width: 10px; height: 10px; border-radius: 0; flex: none; }
 .tick { padding: .35rem .6rem; font-size: .85rem; min-height: 36px; }
 .pipe.big li { padding: 1rem .9rem; font-size: 1.1rem; }
 .pipe.big .tick { min-height: 52px; padding: .7rem 1.1rem; font-size: 1rem; }
@@ -202,7 +308,7 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 /* ── Bulk model list ────────────────────────────────── */
 .bulk-bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center;
             padding: .6rem; background: var(--panel);
-            border: 1px solid var(--line); border-radius: var(--radius) var(--radius) 0 0;
+            border: 1px solid var(--line); border-radius: 0;
             border-bottom: 0; }
 /* Inputs default to full width for the stacked forms; inside the bulk bar they
    sit on one line with the buttons instead. */
@@ -210,7 +316,7 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 .bulk-bar button { margin-top: 0; }
 .bulk-bar .check { padding: 0 .3rem; }
 .models { list-style: none; margin: 0 0 1rem; padding: 0;
-          border: 1px solid var(--line); border-radius: 0 0 var(--radius) var(--radius);
+          border: 1px solid var(--line); border-radius: 0;
           max-height: 22rem; overflow-y: auto; }
 .models li { border-bottom: 1px solid var(--line); }
 .models li:last-child { border-bottom: 0; }
@@ -225,7 +331,7 @@ label { display: block; margin-bottom: .7rem; font-size: .9rem;
 input, select, textarea {
   width: 100%; padding: .6rem; margin-top: .25rem;
   background: var(--bg); color: var(--ink);
-  border: 1px solid var(--line); border-radius: 8px;
+  border: 1px solid var(--line); border-radius: 0;
   font-size: 16px;               /* below 16px, iOS zooms the whole page in */
   min-height: 44px;
 }
@@ -239,7 +345,7 @@ form.panel.row { margin-bottom: .5rem; }
 .error { color: var(--bad); font-size: .875rem; min-height: 1.2em; }
 
 .results { list-style: none; margin: -.4rem 0 .8rem; padding: 0;
-           border: 1px solid var(--line); border-radius: 8px;
+           border: 1px solid var(--line); border-radius: 0;
            max-height: 15rem; overflow-y: auto; }
 .results li { padding: .6rem .7rem; cursor: pointer;
               border-bottom: 1px solid var(--line); font-size: .9rem; }
@@ -254,14 +360,14 @@ th, td { text-align: left; padding: .55rem .4rem;
          border-bottom: 1px solid var(--line); vertical-align: top; }
 th { color: var(--muted); font-weight: 600; white-space: nowrap; }
 tr.gone { opacity: .5; }
-.badge { border-radius: 999px; padding: .1rem .5rem; font-size: .78rem;
+.badge { border-radius: 0; padding: .1rem .5rem; font-size: .78rem;
          border: 1px solid var(--line); }
 .badge.owned { color: var(--accent); border-color: var(--accent); }
 .badge.listed { color: var(--warn); border-color: var(--warn); }
 
 .pipeline { list-style: none; margin: 0; padding: 0;
             display: flex; flex-wrap: wrap; gap: .4rem; }
-.pipeline li { border: 1px solid var(--line); border-radius: 999px;
+.pipeline li { border: 1px solid var(--line); border-radius: 0;
                padding: .25rem .7rem; font-size: .85rem; color: var(--muted); }
 .pipeline li.owned { color: var(--ink); }
 .pipeline li.terminal { border-color: var(--accent); color: var(--accent); }
@@ -271,7 +377,7 @@ tr.gone { opacity: .5; }
   position: fixed; left: 50%; transform: translateX(-50%);
   bottom: max(1.25rem, env(safe-area-inset-bottom));
   background: var(--accent); color: #10231a;
-  padding: .7rem 1.1rem; border-radius: 999px; font-weight: 600;
+  padding: .7rem 1.1rem; border-radius: 0; font-weight: 600;
   box-shadow: 0 6px 20px rgba(0, 0, 0, .45); z-index: 50;
   transition: opacity .35s, transform .35s;
 }
@@ -285,7 +391,7 @@ tr.gone { opacity: .5; }
 
 
 /* ── Scanner ────────────────────────────────────────── */
-.scanner { position: relative; border-radius: var(--radius); overflow: hidden;
+.scanner { position: relative; border-radius: 0; overflow: hidden;
            background: #000; border: 1px solid var(--line); aspect-ratio: 4 / 3; }
 .scanner video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .scanner-overlay { position: absolute; inset: 0; display: flex;
@@ -293,7 +399,7 @@ tr.gone { opacity: .5; }
                    pointer-events: none; }
 /* A frame to aim with. Barcodes are wide and short, so the reticle is too. */
 .reticle { width: 78%; height: 28%; border: 2px solid var(--accent);
-           border-radius: 8px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .35); }
+           border-radius: 0; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .35); }
 .scanner-status { position: absolute; left: 0; right: 0; bottom: 0; margin: 0;
                   padding: .5rem .75rem; font-size: .85rem;
                   background: rgba(0, 0, 0, .65); color: var(--muted); }
@@ -302,21 +408,21 @@ tr.gone { opacity: .5; }
 
 .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: .85em; letter-spacing: .02em; }
-.pill { background: var(--line); border-radius: 999px; padding: .05rem .5rem;
+.pill { background: var(--line); border-radius: 0; padding: .05rem .5rem;
         font-size: .78rem; margin-left: .3rem; }
 .warnline { color: var(--warn); font-size: .85rem; margin: .3rem 0; }
 
 .scans { list-style: none; margin: 0; padding: 0; }
 .scans li { display: flex; gap: .5rem; align-items: center;
             padding: .55rem .7rem; border: 1px solid var(--line);
-            border-radius: 8px; margin-bottom: .35rem; font-size: .9rem; }
+            border-radius: 0; margin-bottom: .35rem; font-size: .9rem; }
 /* Green edge = the local table already knows this box. */
 .scans li.known { border-left: 3px solid var(--accent); }
 
 /* ── Review queue ───────────────────────────────────── */
 .queue { list-style: none; margin: 0; padding: 0; display: grid; gap: .7rem; }
 .qrow { background: var(--panel); border: 1px solid var(--line);
-        border-radius: var(--radius); padding: .9rem; }
+        border-radius: 0; padding: .9rem; }
 .qrow.ready { border-left: 3px solid var(--accent); }
 .qhead { display: flex; justify-content: space-between; gap: 1rem;
          align-items: flex-start; }
@@ -326,7 +432,7 @@ tr.gone { opacity: .5; }
 
 /* ── Kit template contents ──────────────────────────── */
 .contents { list-style: none; margin: 0 0 .8rem; padding: 0;
-            border: 1px solid var(--line); border-radius: 8px; }
+            border: 1px solid var(--line); border-radius: 0; }
 .contents:empty { display: none; }
 .contents li { display: flex; gap: .6rem; align-items: center;
                padding: .55rem .7rem; border-bottom: 1px solid var(--line); }
@@ -368,7 +474,7 @@ button.link { background: none; border: none; color: var(--accent); padding: 0;
    most often needs to give. */
 .catalogue { list-style: none; margin: 0; padding: 0; display: grid; gap: .7rem; }
 .cat-row { background: var(--panel); border: 1px solid var(--line);
-           border-radius: 10px; padding: .8rem .9rem; }
+           border-radius: 0; padding: .8rem .9rem; }
 .cat-row.owned { border-color: var(--accent); }
 .cat-head { display: flex; justify-content: space-between; align-items: baseline;
             gap: .6rem; }
@@ -377,3 +483,129 @@ button.link { background: none; border: none; color: var(--accent); padding: 0;
 .cat-row .actions { margin-top: .6rem; }
 .cat-row .actions button { min-height: 38px; padding: .35rem .7rem;
                            font-size: .85rem; }
+
+/* ── Tracker Wireframes §3: type and chrome ──────────────
+   Pirata One carries the display voice — screen titles and unit names, the
+   things you read at a glance. Special Elite does everything else. Both are
+   loaded in base.html with real fallbacks, so a font that never arrives
+   degrades to Courier and serif rather than to nothing. */
+
+h1, h2, h3, .display {
+  font-family: "Pirata One", "Special Elite", Georgia, serif;
+  font-weight: 400;
+  letter-spacing: .01em;
+  line-height: 1.15;
+}
+h1 { font-size: 2rem; }
+h2 { font-size: 1.4rem; }
+
+/* Small caps, letterspaced: the design's label voice. Used for anything that
+   names a number rather than being one. */
+.stat span, .crumb, .nav a, th, .label {
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  font-size: .68rem;
+}
+
+/* The headline percentage on Home. One number, answering "how am I doing". */
+.headline { text-align: center; padding: 1.4rem 0 .6rem; }
+.headline .cap { color: var(--muted); font-size: .8rem; }
+.headline .big {
+  font-family: "Pirata One", Georgia, serif;
+  font-size: 4.2rem; line-height: 1; color: var(--accent);
+  display: block; margin: .2rem 0 .4rem;
+}
+.headline .sub { color: var(--muted); font-size: .8rem; }
+
+/* Small multiples: one row per army, mini ramp + percentage. Answers "which
+   army is dragging" without leaving the screen. */
+.multiples { display: grid; gap: .55rem; margin: .6rem 0 1.2rem; }
+.multiple { display: grid; grid-template-columns: 1fr 2fr auto; gap: .6rem;
+            align-items: center; font-size: .82rem; }
+.multiple .mname { color: var(--ink); overflow: hidden; text-overflow: ellipsis;
+                   white-space: nowrap; }
+.multiple .mpct { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Chip rail: filters always visible, one tap to change (direction 1a, settled
+   by §3b). Costs a little height and buys a query you can always read. */
+.chips { display: flex; gap: .4rem; overflow-x: auto; padding: .1rem 0 .6rem;
+         -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip {
+  flex: 0 0 auto; padding: .35rem .7rem; border: 1px solid var(--rule);
+  color: var(--muted); text-decoration: none; white-space: nowrap;
+  text-transform: uppercase; letter-spacing: .1em; font-size: .66rem;
+  min-height: 34px; display: inline-flex; align-items: center;
+}
+.chip.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+/* A chip that wants you — sealed boxes — carries the rust, never the accent. */
+.chip.wants { color: var(--rust); border-color: var(--rust); }
+.chip.wants.on { background: var(--rust); color: var(--panel); }
+
+/* Stat tiles. The done count is the only one that gets the accent fill; the
+   wishlist is the only one that gets rust. Everything else is plain. */
+.stat.done { background: var(--accent); border-color: var(--accent); }
+.stat.done b, .stat.done span { color: var(--accent-ink); }
+.stat.wants { border-color: var(--rust); }
+.stat.wants b, .stat.wants span { color: var(--rust); }
+
+/* The stage ramp on a paint session: one row per stage, −1 / count / +1.
+   Every tap saves immediately, so there is no save button to forget. */
+.ramp { display: grid; gap: .5rem; margin: .8rem 0 1rem; }
+.rung { display: grid; grid-template-columns: auto 1fr auto; gap: .6rem;
+        align-items: center; border: 1px solid var(--rule);
+        padding: .5rem .6rem; background: var(--panel); }
+.rung .swatch { width: 14px; height: 14px; border: 1px solid var(--rule); }
+.rung .rname { font-size: .85rem; }
+.rung.empty .rname { color: var(--faint); }
+.rung.na { border-style: dashed; }
+.rung.na .rname { color: var(--faint); text-decoration: line-through; }
+.rung .nudge { display: flex; align-items: center; gap: .3rem; }
+.rung .nudge button { min-height: 40px; min-width: 40px; padding: 0 .5rem;
+                      font-size: .8rem; }
+.rung .count { min-width: 2.2rem; text-align: center;
+               font-variant-numeric: tabular-nums; border: 1px solid var(--rule);
+               min-height: 40px; display: inline-flex; align-items: center;
+               justify-content: center; background: var(--panel-2); }
+
+/* Things that want you. Never the accent — the accent means done. */
+.wants-you { color: var(--rust); }
+.sealed { color: var(--rust); }
+
+/* Ground toggle in the nav: a phone in light mode at a dark desk is exactly
+   the case prefers-color-scheme gets wrong. */
+#ground {
+  margin-left: auto; background: none; border: 1px solid var(--rule);
+  color: var(--muted); min-height: 30px; padding: 0 .5rem; font-size: .62rem;
+  text-transform: uppercase; letter-spacing: .1em; cursor: pointer;
+}
+
+/* A small multiple's bar: same data, glanceable width. */
+.bar.mini { height: 8px; }
+.multiple { text-decoration: none; color: inherit; }
+.multiple:hover .mname { color: var(--accent); }
+.pickup { justify-content: space-between; align-items: center; }
+
+
+/* A link acting as a button needs the box a <button> gets for free. */
+a.go {
+  text-decoration: none; display: inline-flex; align-items: center;
+  justify-content: center; min-height: 44px; padding: 0 .9rem;
+  border: 1px solid var(--accent);
+}
+
+
+/* Search: the field takes the room, the controls stay on the same line. It is
+   the first thing on the collection screen and a three-line search box pushes
+   the actual results below the fold on a phone. */
+.search { flex-wrap: nowrap; }
+.search input { flex: 1 1 6rem; min-width: 0; }
+.search select { flex: 0 1 7rem; min-width: 0; font-size: .8rem; }
+.search button, .search .ghost { flex: 0 0 auto; white-space: nowrap; }
+@media (max-width: 26rem) {
+  .search { flex-wrap: wrap; }
+  .search input { flex: 1 1 100%; }
+}
+
+/* Header actions never wrap mid-phrase. */
+.page > .ghost, .page > a.ghost { white-space: nowrap; }

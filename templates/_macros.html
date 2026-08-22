@@ -1,8 +1,8 @@
 {# Stage bar: one segment per stage that actually has models, in pipeline order.
    Colour runs cool-to-warm along the pipeline so a squad's state reads at a
    glance from across the desk without anyone parsing a legend. #}
-{% macro stage_bar(unit) %}
-  <div class="bar" role="img"
+{% macro stage_bar(unit, mini=False) %}
+  <div class="bar{% if mini %} mini{% endif %}" role="img"
        aria-label="{% for s in unit.segments %}{{ s.count }} {{ s.name }}{% if not loop.last %}, {% endif %}{% endfor %}">
     {% for seg in unit.segments %}
       <span class="seg s{{ seg.position }}" style="width: {{ '%.2f'|format(seg.width) }}%"
