@@ -740,6 +740,133 @@ def _segments(ladder, counts, total):
             for s in ladder if counts.get(s['id'])]
 
 
+def inventory(conn, query=None, faction_id=None, game_system=None,
+              include_unowned=False, limit=200):
+    """What Clay owns, one row per datasheet: how many, and what state.
+
+    Grouped by datasheet rather than by army or by box, because the questions
+    this answers are about the miniature and not where it happens to live:
+    "how many Boyz do I have, and how many are built?"
+
+    ``include_unowned`` is what makes this the own-it check as well as the
+    inventory. Searching from a shop has to answer "you own none of these"
+    just as clearly as "you own two", so with a query the walk starts at
+    `datasheets` and ownership is a LEFT JOIN. Without one it starts from the
+    collection, because a bare list of 2,895 datasheets is not an inventory.
+
+    Two things are deliberately not merged:
+
+    - **Disposed kits leave the counts.** A sold box keeps its rows, per the
+      invariant, but Clay does not own it any more.
+    - **Wishlist models are counted apart from owned ones.** They are things
+      he wants, not things on the shelf.
+    """
+    first_owned = db.first_owned_stage(conn)
+    clauses, args = [], []
+    if query and query.strip():
+        clauses.append('d.name LIKE ?')
+        args.append(f'%{query.strip()}%')
+    if faction_id:
+        clauses.append('d.faction_id = ?')
+        args.append(faction_id)
+    if game_system:
+        clauses.append('d.game_system = ?')
+        args.append(game_system)
+    # Deprecated 40,000 printings stay out of the picker and out of here, for
+    # the same reason: Clay does not own a [Legends] Vyper, he owns a Vyper.
+    clauses.append("(d.variant IS NULL OR d.game_system <> 'wh40k')")
+    where = ('WHERE ' + ' AND '.join(clauses)) if clauses else ''
+    having = '' if include_unowned else 'HAVING owned_count > 0 OR wanted_count > 0'
+
+    rows = [dict(r) for r in conn.execute(f"""
+        SELECT d.id AS datasheet_id, d.name, d.effort, d.game_system, d.variant,
+               f.name AS faction_name,
+               COALESCE(SUM(CASE WHEN st.is_owned THEN 1 ELSE 0 END), 0)
+                                                            AS owned_count,
+               COALESCE(SUM(CASE WHEN st.id IS NOT NULL AND NOT st.is_owned
+                                 THEN 1 ELSE 0 END), 0)     AS wanted_count,
+               COALESCE(SUM(CASE WHEN st.is_owned AND st.id <> ?
+                                 THEN 1 ELSE 0 END), 0)     AS built_count,
+               COALESCE(SUM(CASE WHEN st.is_terminal THEN 1 ELSE 0 END), 0)
+                                                            AS done_count,
+               COUNT(DISTINCT CASE WHEN k.box_state = 'sealed' THEN k.id END)
+                                                            AS sealed_boxes,
+               COUNT(DISTINCT u.id)                         AS unit_count,
+               COUNT(DISTINCT k.id)                         AS kit_count,
+               MAX(m.stage_changed_at)                      AS last_activity
+          FROM datasheets d
+          LEFT JOIN factions f ON f.id = d.faction_id
+          LEFT JOIN units u    ON u.datasheet_id = d.id AND {_ACTIVE_UNIT}
+          LEFT JOIN kits k     ON k.id = u.kit_id
+          LEFT JOIN models m   ON m.unit_id = u.id
+          LEFT JOIN stages st  ON st.id = m.stage_id
+          {where}
+         GROUP BY d.id
+         {having}
+         ORDER BY (owned_count + wanted_count) = 0, d.name
+         LIMIT ?
+    """, [first_owned['id'], *args, limit])]
+
+    if not rows:
+        return rows
+
+    ids = [r['datasheet_id'] for r in rows]
+    marks = ','.join('?' * len(ids))
+    spread = {}
+    for r in conn.execute(f"""
+        SELECT u.datasheet_id, m.stage_id, COUNT(*) AS n
+          FROM units u JOIN models m ON m.unit_id = u.id
+         WHERE u.datasheet_id IN ({marks}) AND {_ACTIVE_UNIT}
+         GROUP BY u.datasheet_id, m.stage_id
+    """, ids):
+        spread.setdefault(r['datasheet_id'], {})[r['stage_id']] = r['n']
+
+    ladder = stage_ladder(conn)
+    for row in rows:
+        counts = spread.get(row['datasheet_id'], {})
+        row['stage_counts'] = counts
+        row['segments'] = _segments(ladder, counts,
+                                    row['owned_count'] + row['wanted_count'])
+        row['effort_total'] = row['owned_count'] * row['effort']
+        row['effort_done'] = row['done_count'] * row['effort']
+        row['completion'] = _pct(row['effort_done'], row['effort_total'])
+        row['owns_any'] = row['owned_count'] > 0
+    return rows
+
+
+def owned_summary(conn, datasheet_id):
+    """The own-it check: one datasheet, answered before you reach the till.
+
+    Deliberately its own function rather than a filter over inventory(). This
+    is the fastest question in the app and the one asked standing in a shop,
+    and it has to answer for a datasheet Clay owns *none* of — where inventory,
+    which walks from `units`, returns no row at all.
+    """
+    sheet = conn.execute("""
+        SELECT d.*, f.name AS faction_name FROM datasheets d
+          LEFT JOIN factions f ON f.id = d.faction_id WHERE d.id = ?
+    """, (datasheet_id,)).fetchone()
+    if not sheet:
+        return None
+
+    rows = inventory(conn, include_unowned=True)
+    match = next((r for r in rows if r['datasheet_id'] == datasheet_id), None)
+    summary = {
+        'datasheet_id': datasheet_id,
+        'name': sheet['name'],
+        'faction_name': sheet['faction_name'],
+        'game_system': sheet['game_system'],
+        'variant': sheet['variant'],
+        'owned_count': 0, 'wanted_count': 0, 'built_count': 0,
+        'done_count': 0, 'sealed_boxes': 0, 'unit_count': 0, 'kit_count': 0,
+        'stage_counts': {}, 'segments': [], 'completion': 0,
+    }
+    if match:
+        summary.update(match)
+    summary['owns_any'] = summary['owned_count'] > 0
+    return summary
+
+
 def list_factions(conn):
     return [dict(r) for r in conn.execute(
         'SELECT * FROM factions ORDER BY name')]

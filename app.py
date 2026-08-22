@@ -262,6 +262,42 @@ def index():
                            summary=summary)
 
 
+@app.route('/collection')
+def collection_page():
+    """What I own, how many, and what state — and, with a query, the own-it
+    check: the same screen answers "you own none of these" from a shop."""
+    query = (request.args.get('q') or '').strip()
+    with _read() as conn:
+        rows = col.inventory(
+            conn, query=query or None,
+            faction_id=_int(request.args.get('faction_id')),
+            game_system=(request.args.get('system') or None),
+            include_unowned=bool(query))
+        return render_template(
+            'collection.html', rows=rows, query=query,
+            system=(request.args.get('system') or ''),
+            faction_id=_int(request.args.get('faction_id')),
+            factions=col.list_factions(conn),
+            stages=col.stage_ladder(conn),
+            totals={
+                'datasheets': len(rows),
+                'owned': sum(r['owned_count'] for r in rows),
+                'built': sum(r['built_count'] for r in rows),
+                'done': sum(r['done_count'] for r in rows),
+                'wanted': sum(r['wanted_count'] for r in rows),
+            })
+
+
+@app.route('/api/collection/<int:datasheet_id>')
+def api_owned_summary(datasheet_id):
+    """One datasheet's ownership, for a scan that asks before it adds."""
+    with _read() as conn:
+        summary = col.owned_summary(conn, datasheet_id)
+        if not summary:
+            abort(404)
+        return jsonify(summary)
+
+
 @app.route('/api/armies', methods=['POST'])
 def api_create_army():
     data = _payload()

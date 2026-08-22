@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% from "_macros.html" import stage_bar %}
+{% block title %}Collection · Collection Tracker{% endblock %}
+{% block body %}
+  <header class="page">
+    <div>
+      <h1>Collection</h1>
+      <p class="muted">
+        What you own, how many, and what state they are in.
+      </p>
+    </div>
+  </header>
+
+  {# Search is the own-it check. With a query the walk starts at the whole
+     catalogue, so "you own none of these" is an answer this screen can give —
+     which is the question you ask holding a box in a shop. #}
+  <form class="search" method="get" action="/collection">
+    <label class="sr-only" for="q">Search</label>
+    <input id="q" name="q" value="{{ query }}" autocomplete="off"
+           placeholder="Search everything — owned or not…">
+    <select name="system" aria-label="game system">
+      <option value="">All systems</option>
+      <option value="wh40k" {% if system == 'wh40k' %}selected{% endif %}>Warhammer 40,000</option>
+      <option value="killteam" {% if system == 'killteam' %}selected{% endif %}>Kill Team</option>
+    </select>
+    <button class="go" type="submit">Search</button>
+    {% if query or system %}<a class="ghost" href="/collection">Clear</a>{% endif %}
+  </form>
+
+  {% if query %}
+    <p class="hint">
+      Searching everything, owned or not — so a nil answer is still an answer.
+    </p>
+  {% endif %}
+
+  <div class="stats">
+    <div class="stat"><b>{{ totals.owned }}</b><span>models owned</span></div>
+    <div class="stat"><b>{{ totals.built }}</b><span>built or beyond</span></div>
+    <div class="stat"><b>{{ totals.done }}</b><span>battle ready</span></div>
+    <div class="stat {% if totals.wanted %}flag{% endif %}">
+      <b>{{ totals.wanted }}</b><span>on the wishlist</span>
+    </div>
+  </div>
+
+  {% if not rows %}
+    <div class="panel">
+      {% if query %}
+        <p><b>Nothing matches "{{ query }}".</b></p>
+        <p class="hint">
+          No datasheet by that name in either system. Check the spelling, or
+          it may be a kit name rather than a unit name.
+        </p>
+      {% else %}
+        <p><b>Nothing recorded yet.</b></p>
+        <p class="hint">
+          <a href="/scan">Scan a box</a> to put its models in, or
+          <a href="/armies">add a unit by hand</a>.
+        </p>
+      {% endif %}
+    </div>
+  {% else %}
+    <ul class="units">
+      {% for r in rows %}
+        <li class="{% if not r.owns_any %}zero{% endif %}">
+          <div class="what">
+            <b>{{ r.name }}</b>
+            <span class="muted">
+              {% if r.game_system != 'wh40k' %}Kill Team{% if r.variant %} {{ r.variant }}{% endif %} · {% endif %}
+              {{ r.faction_name or 'no faction' }}
+            </span>
+          </div>
+
+          {% if r.owns_any %}
+            <p class="counts">
+              <b>{{ r.owned_count }}</b> owned ·
+              <b>{{ r.built_count }}</b> built ·
+              <b>{{ r.done_count }}</b> battle ready
+              {% if r.sealed_boxes %}
+                · <span class="sealed">{{ r.sealed_boxes }} still sealed</span>
+              {% endif %}
+              {% if r.wanted_count %}
+                · <span class="muted">{{ r.wanted_count }} wanted</span>
+              {% endif %}
+            </p>
+            {{ stage_bar(r) }}
+          {% else %}
+            <p class="counts muted">
+              You own none.
+              {% if r.wanted_count %}{{ r.wanted_count }} on the wishlist.{% endif %}
+            </p>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+    {% if rows|length >= 200 %}
+      <p class="hint">
+        Showing the first 200. Narrow the search to see the rest — nothing has
+        been dropped, it is just not all on screen.
+      </p>
+    {% endif %}
+  {% endif %}
+{% endblock %}

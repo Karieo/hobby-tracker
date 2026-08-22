@@ -543,3 +543,61 @@ def test_disposing_is_not_deleting(client, db_path, army_with_unit):
         kit = conn.execute('SELECT * FROM kits WHERE id = ?', (kit_id,)).fetchone()
         assert kit['status'] == 'sold'
         assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 10
+
+
+# ── The collection screen (spec §2.1, §2.3) ──────────────
+
+def test_the_collection_screen_shows_what_is_owned(client, db_path, army_with_unit):
+    body = client.get('/collection').get_data(as_text=True)
+
+    assert 'Boyz' in body
+    assert '10' in body
+
+
+def test_searching_the_collection_answers_for_something_unowned(client, db_path,
+                                                                army_with_unit):
+    """The own-it check over HTTP: a nil answer is still an answer."""
+    with db.connect(db_path) as conn:
+        faction = conn.execute("SELECT id FROM factions LIMIT 1").fetchone()[0]
+        conn.execute(
+            'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+            "created_at, updated_at) VALUES ('grot', 'Gretchin', ?, 1, ?, ?)",
+            (faction, db.now(), db.now()))
+
+    body = client.get('/collection?q=Gretchin').get_data(as_text=True)
+
+    assert 'Gretchin' in body
+    assert 'You own none' in body
+
+
+def test_the_bare_collection_screen_is_not_a_catalogue_dump(client, db_path,
+                                                            army_with_unit):
+    with db.connect(db_path) as conn:
+        faction = conn.execute("SELECT id FROM factions LIMIT 1").fetchone()[0]
+        conn.execute(
+            'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+            "created_at, updated_at) VALUES ('grot', 'Gretchin', ?, 1, ?, ?)",
+            (faction, db.now(), db.now()))
+
+    body = client.get('/collection').get_data(as_text=True)
+
+    assert 'Boyz' in body
+    assert 'Gretchin' not in body, 'unowned datasheets appear only under search'
+
+
+def test_the_ownership_api_answers_for_one_datasheet(client, army_with_unit):
+    res = client.get(f"/api/collection/{army_with_unit['datasheet_id']}")
+
+    assert res.status_code == 200
+    assert res.json['owns_any'] is True
+    assert res.json['owned_count'] == 10
+
+
+def test_the_ownership_api_404s_for_a_missing_datasheet(client):
+    assert client.get('/api/collection/999').status_code == 404
+
+
+def test_the_nav_leads_with_the_collection_not_the_scanner(client):
+    """Spec §1: scanning is onboarding, not the point."""
+    body = client.get('/collection').get_data(as_text=True)
+    assert body.index('/collection') < body.index('/scan')

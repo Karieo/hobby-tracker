@@ -313,3 +313,19 @@ tr.gone { opacity: .5; }
 .contents li:last-child { border-bottom: 0; }
 .contents li > span:first-child { flex: 1; }
 .contents .drop { padding: .3rem .6rem; min-height: 32px; font-size: .8rem; }
+
+/* ── Collection ──────────────────────────────────────
+   The inventory, and — when a search is running — the own-it check. A row for
+   a datasheet Clay owns none of has to read as a real answer rather than an
+   empty slot, so it is dimmed but never hidden. */
+.search { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center;
+          margin: 0 0 1rem; }
+.search input { flex: 1 1 12rem; margin-top: 0; }
+.search select { flex: 0 1 10rem; margin-top: 0; }
+.search button, .search .ghost { margin-top: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden;
+           clip: rect(0 0 0 0); white-space: nowrap; }
+.units li.zero { opacity: .55; }
+.counts { margin: .35rem 0 .5rem; font-size: .9rem; }
+.counts b { font-variant-numeric: tabular-nums; }
+.sealed { color: var(--warn); }
