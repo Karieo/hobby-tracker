@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% from "_macros.html" import stage_bar %}
+{% block title %}Hobby · Collection Tracker{% endblock %}
+{% block body %}
+{# Home, from Tracker Wireframes §3a/3d. One number answers "how am I doing",
+   the bar answers "where is the mass", the small multiples answer "which army
+   is dragging" — and then one named unit answers "what do I do now", which is
+   the only one of the four that stops the app being a scoreboard. #}
+
+  <section class="headline">
+    <p class="cap">of everything you own is battle ready</p>
+    <b class="big">{{ summary.completion }}%</b>
+    <p class="sub">
+      {{ summary.done }} of {{ summary.models }} models
+      {%- if summary.sealed %} ·
+        <span class="sealed">{{ summary.sealed }}
+          box{{ '' if summary.sealed == 1 else 'es' }} still sealed</span>
+      {%- endif %}
+    </p>
+  </section>
+
+  {{ stage_bar(summary) }}
+
+  {% if armies %}
+    <h2 class="label">By army</h2>
+    <div class="multiples">
+      {% for a in armies %}
+        <a class="multiple"
+           href="{{ '/armies/unassigned' if a.id is none else '/armies/' ~ a.id }}">
+          <span class="mname">{{ a.name }}</span>
+          {{ stage_bar(a, mini=True) }}
+          <span class="mpct">{{ a.completion }}%</span>
+        </a>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {# Anti-abandonment, §6 of the spec: opening the app on a day with no plan
+     should still hand you something to do. One unit, one tap to the screen
+     that moves it. #}
+  {% if stalled %}
+    <h2 class="label">Pick up where you left off</h2>
+    <div class="panel row pickup">
+      <div>
+        <b>{{ stalled.display_name }}</b>
+        <p class="muted">
+          {{ stalled.model_count - stalled.done }} left
+          {%- if stalled.army_name %} · {{ stalled.army_name }}{% endif %}
+          {%- if stalled.stale %} ·
+            <span class="wants-you">untouched {{ stalled.idle_days }} days</span>
+          {%- endif %}
+        </p>
+      </div>
+      <a class="go" href="/paint/{{ stalled.id }}">Paint</a>
+    </div>
+  {% endif %}
+
+  <form class="search" method="get" action="/collection">
+    <label class="sr-only" for="q">Search</label>
+    <input id="q" name="q" autocomplete="off"
+           placeholder="Search everything — owned or not…">
+    <button class="go" type="submit">Go</button>
+  </form>
+
+  {% if not summary.models %}
+    <div class="panel empty">
+      <p>Nothing in the collection yet.</p>
+      <p class="muted">
+        <a href="/scan">Scan a box</a>, <a href="/add">paste a list</a>, or
+        browse <a href="/catalogue">the catalogue</a>.
+      </p>
+    </div>
+  {% endif %}
+{% endblock %}

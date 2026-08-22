@@ -58,18 +58,40 @@ function paintTimestamps(root = document) {
 /* ── Stage movement ─────────────────────────────────────── */
 
 function repaintPipe(breakdown) {
-  const pipe = $('.pipe');
+  const pipe = $('.pipe') || $('.ramp');
   if (!pipe || !breakdown) return;
-  breakdown.forEach((stage, i) => {
-    const li = pipe.children[i];
+  // Matched by stage id, not by index: the paint ramp renders only the owned
+  // stages, so the wishlist rung is missing and positions no longer line up.
+  breakdown.forEach((stage) => {
+    const li = $(`[data-stage="${stage.id}"]`, pipe);
     if (!li) return;
-    $('.pipe-count b', li).textContent = stage.count;
+    const count = $('.pipe-count b', li) || $('.count b', li);
+    if (count) count.textContent = stage.count;
     const pct = $('.pipe-count .muted', li);
     if (pct) pct.textContent = `${stage.percent}%`;
     li.classList.toggle('zero', stage.count === 0);
+    li.classList.toggle('empty', stage.count === 0);
     const tick = $('.tick', li);
     if (tick) tick.disabled = !stage.can_advance;
+    // Nothing at this stage means nothing to step back.
+    const untick = $('.untick', li);
+    if (untick) untick.disabled = stage.count === 0;
   });
+}
+
+/* Stepping back. The mirror of advance(), and deliberately just as cheap:
+ * every tap in a session saves immediately with no confirmation, so undo has
+ * to cost one tap too, or the screen becomes one you are careful with. */
+async function retreat(unitId, body) {
+  try {
+    const data = await post(`/api/units/${unitId}/retreat`, body);
+    if (!data.moved) { toast('Nothing to step back', 'warn'); return; }
+    repaintPipe(data.breakdown);
+    toast(`${data.moved} model${data.moved === 1 ? '' : 's'} stepped back`);
+    if ($('.units')) setTimeout(() => location.reload(), 700);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 async function advance(unitId, body, label) {
@@ -113,6 +135,13 @@ document.addEventListener('click', (e) => {
   const tick = e.target.closest('button.tick');
   if (tick && tick.dataset.unit) {
     advance(tick.dataset.unit, {count: 1, from_stage_id: Number(tick.dataset.from)});
+    return;
+  }
+
+  const untick = e.target.closest('button.untick');
+  if (untick && untick.dataset.unit) {
+    retreat(untick.dataset.unit,
+            {count: 1, from_stage_id: Number(untick.dataset.from)});
     return;
   }
 });
@@ -467,3 +496,19 @@ $$('input.picker').forEach((input) => {
 });
 
 paintTimestamps();
+
+/* Blueprint by day, Nuln at the desk.
+ *
+ * The OS setting is the default; this overrides it and remembers, because a
+ * phone in light mode at a dark desk is exactly the case prefers-color-scheme
+ * gets wrong — and the paint session is the screen that matters most at night.
+ */
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#ground')) return;
+  const root = document.documentElement;
+  const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const current = root.dataset.ground || (dark ? 'nuln' : 'blueprint');
+  const next = current === 'nuln' ? 'blueprint' : 'nuln';
+  root.dataset.ground = next;
+  try { localStorage.setItem('ground', next); } catch (err) { /* private mode */ }
+});

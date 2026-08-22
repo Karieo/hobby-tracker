@@ -459,6 +459,56 @@ def advance_unit(conn, unit_id, count=None, from_stage_id=None):
     return moved
 
 
+def retreat_unit(conn, unit_id, count=None, from_stage_id=None):
+    """Move models back one stage. Returns the number that moved.
+
+    The mirror of ``advance_unit``, and the design's ``−1`` control. It exists
+    because the primary interaction is a single tap with no confirmation: one
+    fat-fingered "advance all" with wet hands would otherwise be unrecoverable,
+    and an app you are afraid to tap is one you stop tapping.
+
+    Where advance moves the *least* advanced models, this moves the *most*
+    advanced — undoing the step that just happened rather than disturbing
+    something further back. Models at the first owned stage have nowhere to go
+    and are skipped; retreating never un-owns a model, because "I have not
+    started this" and "I do not have this" are different facts.
+    """
+    basing = conn.execute(
+        'SELECT d.basing FROM units u JOIN datasheets d ON d.id = u.datasheet_id '
+        'WHERE u.id = ?', (unit_id,)).fetchone()
+    ladder = stages_for(conn, basing['basing'] if basing else None)
+    owned = [s for s in ladder if s['is_owned']]
+    preceding = {}
+    for earlier, later in zip(owned, owned[1:]):
+        preceding[later['id']] = earlier['id']
+
+    sql = """
+        SELECT m.id, m.stage_id FROM models m
+          JOIN stages s ON s.id = m.stage_id
+         WHERE m.unit_id = ? AND s.is_owned = 1
+    """
+    args = [unit_id]
+    if from_stage_id is not None:
+        sql += ' AND m.stage_id = ?'
+        args.append(from_stage_id)
+    sql += ' ORDER BY s.position DESC, m.id DESC'
+    candidates = conn.execute(sql, args).fetchall()
+    if count is not None:
+        candidates = candidates[:max(0, count)]
+
+    stamp = db.now()
+    moved = 0
+    for model in candidates:
+        target = preceding.get(model['stage_id'])
+        if target is None:
+            continue
+        _apply_stage(conn, model['id'], model['stage_id'], target, stamp)
+        moved += 1
+    if moved:
+        _touch_unit(conn, unit_id)
+    return moved
+
+
 def set_models_stage(conn, model_ids, stage_id):
     """Put a hand-picked set of models at one stage. Returns how many changed.
 
@@ -965,6 +1015,87 @@ def inventory(conn, query=None, faction_id=None, game_system=None,
                               if row['basing'] is None and row['owns_any']
                               else None)
     return rows
+
+
+def home_summary(conn):
+    """The one number the Home screen leads with, and what sits under it.
+
+    Effort-weighted, per the invariant: a Knight and a Termagant are both
+    "1 model", which makes a model-count percentage meaningless. The raw counts
+    ride alongside so the percentage can be checked, never instead of it.
+
+    ``sealed`` is counted from kits rather than models on purpose. A sealed box
+    and an opened one both hold models "On sprue" — box_state is a fact about
+    the box, and it is the one that carries a resale premium and the one that
+    means "there is work here you have not started".
+    """
+    row = conn.execute(f"""
+        SELECT COUNT(m.id)                                          AS models,
+               COALESCE(SUM(CASE WHEN st.is_owned THEN 1 ELSE 0 END), 0) AS owned,
+               COALESCE(SUM(CASE WHEN st.is_terminal THEN 1 ELSE 0 END), 0) AS done,
+               COALESCE(SUM(CASE WHEN st.is_owned THEN d.effort ELSE 0 END), 0)
+                                                                    AS effort_total,
+               COALESCE(SUM(CASE WHEN st.is_terminal THEN d.effort ELSE 0 END), 0)
+                                                                    AS effort_done
+          FROM units u
+          JOIN datasheets d ON d.id = u.datasheet_id
+          JOIN models m     ON m.unit_id = u.id
+          JOIN stages st    ON st.id = m.stage_id
+         WHERE {_ACTIVE_UNIT}
+    """).fetchone()
+
+    sealed = conn.execute(
+        "SELECT COUNT(*) AS n FROM kits "
+        " WHERE status = 'owned' AND box_state = 'sealed'").fetchone()['n']
+
+    counts = {r['stage_id']: r['n'] for r in conn.execute(f"""
+        SELECT m.stage_id, COUNT(*) AS n
+          FROM units u JOIN models m ON m.unit_id = u.id
+         WHERE {_ACTIVE_UNIT}
+         GROUP BY m.stage_id
+    """)}
+    ladder = stage_ladder(conn)
+
+    return {
+        'models': row['owned'],
+        'done': row['done'],
+        'completion': _pct(row['effort_done'], row['effort_total']),
+        'sealed': sealed,
+        'segments': _segments(ladder, counts, row['owned']),
+    }
+
+
+def stalled_unit(conn, days=14):
+    """The thing to pick back up: furthest from done, longest untouched.
+
+    Anti-abandonment, not statistics. A tracker that only shows totals gives
+    Clay nothing to do when he opens it; this names one unit and offers the
+    one action that moves it. Finished units are excluded — they are not work.
+    """
+    row = conn.execute(f"""
+        SELECT u.id, u.nickname, d.name AS datasheet_name, a.name AS army_name,
+               COUNT(m.id)                                          AS model_count,
+               COALESCE(SUM(CASE WHEN st.is_terminal THEN 1 ELSE 0 END), 0) AS done,
+               MAX(m.stage_changed_at)                              AS last_touched,
+               julianday('now') - julianday(MAX(m.stage_changed_at)) AS idle_days
+          FROM units u
+          JOIN datasheets d ON d.id = u.datasheet_id
+          JOIN models m     ON m.unit_id = u.id
+          JOIN stages st    ON st.id = m.stage_id
+          LEFT JOIN armies a ON a.id = u.army_id
+         WHERE {_ACTIVE_UNIT} AND st.is_owned = 1
+         GROUP BY u.id
+        HAVING done < model_count
+         ORDER BY idle_days DESC
+         LIMIT 1
+    """).fetchone()
+    if not row:
+        return None
+    out = dict(row)
+    out['display_name'] = out['nickname'] or out['datasheet_name']
+    out['idle_days'] = int(out['idle_days'] or 0)
+    out['stale'] = out['idle_days'] >= days
+    return out
 
 
 def owned_summary(conn, datasheet_id):

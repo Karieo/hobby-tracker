@@ -34,19 +34,46 @@
   <div class="session" data-unit="{{ unit.id }}">
     <p class="crumb"><a href="/paint">← Pick another</a></p>
     <h1>{{ unit.display_name }}</h1>
-    <p class="muted">{{ unit.army_name or 'Unassigned' }}</p>
+    {# "1 of 3 done" rather than a percentage: at the desk the useful number is
+       how many are left in front of you, not a proportion. #}
+    {%- set owned = breakdown | selectattr('is_owned') | sum(attribute='count') %}
+    {%- set done = breakdown | selectattr('is_terminal') | sum(attribute='count') %}
+    <p class="muted">
+      {{ unit.faction_name or unit.army_name or 'Unassigned' }}
+      · {{ done }} of {{ owned }} done
+    </p>
 
-    <ul class="pipe big" id="session-pipe">
+    {# The ramp, §3c/3f. A pipeline rather than a list of occupied stages —
+       empty rungs stay visible and muted, because "nothing is primed yet" is
+       information. The whole ladder is on screen, so the shape of the work is
+       readable without counting.
+
+       −1 sits beside +1 because every tap here saves immediately and nothing
+       asks "are you sure": a mis-tap with wet hands has to cost one more tap
+       to undo, not a trip to another screen. #}
+    <ul class="ramp" id="session-pipe">
       {% for s in breakdown %}
-        <li class="{% if not s.count %}zero{% endif %} {% if s.is_terminal %}terminal{% endif %}"
-            data-stage="{{ s.id }}">
-          <span class="dot s{{ s.position }}"></span>
-          <span class="pipe-name">{{ s.name }}</span>
-          <span class="pipe-count"><b>{{ s.count }}</b></span>
-          <button class="tick big" data-unit="{{ unit.id }}" data-from="{{ s.id }}"
-                  {% if not s.can_advance %}disabled{% endif %}
-                  aria-label="advance one model from {{ s.name }}">+1 →</button>
-        </li>
+        {% if s.is_owned %}
+          <li class="rung {% if not s.count %}empty{% endif %}
+                     {% if s.is_terminal %}terminal{% endif %}"
+              data-stage="{{ s.id }}">
+            <span class="swatch s{{ s.position }}"></span>
+            <span class="rname">{{ s.name }}</span>
+            <span class="nudge">
+              <button class="untick" data-unit="{{ unit.id }}" data-from="{{ s.id }}"
+                      {% if not s.count %}disabled{% endif %}
+                      aria-label="step one model back from {{ s.name }}">−1</button>
+              <span class="count"><b>{{ s.count }}</b></span>
+              {% if s.is_terminal %}
+                <button disabled aria-hidden="true">—</button>
+              {% else %}
+                <button class="tick" data-unit="{{ unit.id }}" data-from="{{ s.id }}"
+                        {% if not s.can_advance %}disabled{% endif %}
+                        aria-label="advance one model from {{ s.name }}">+1</button>
+              {% endif %}
+            </span>
+          </li>
+        {% endif %}
       {% endfor %}
     </ul>
 

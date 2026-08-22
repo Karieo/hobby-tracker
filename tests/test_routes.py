@@ -920,3 +920,37 @@ def test_the_catalogue_searches_by_name(client, catalogued_box):
 
 def test_wanting_a_box_that_does_not_exist_is_a_400(client):
     assert client.post('/api/templates/999/want').status_code == 400
+
+
+# ── Home, from Tracker Wireframes §3a ────────────────────
+
+def test_home_leads_with_the_effort_weighted_percentage(client, army_with_unit):
+    body = client.get('/').get_data(as_text=True)
+    assert 'battle ready' in body
+    assert 'headline' in body
+
+
+def test_home_offers_something_to_pick_back_up(client, army_with_unit):
+    """A tracker that only keeps score is one you stop opening."""
+    body = client.get('/').get_data(as_text=True)
+    assert 'Pick up where you left off' in body
+
+
+def test_the_armies_index_kept_its_own_screen(client, army_with_unit):
+    assert client.get('/armies').status_code == 200
+
+
+def test_stepping_back_over_http(client, army_with_unit):
+    unit_id = army_with_unit['unit_id']
+    client.post(f'/api/units/{unit_id}/advance', json={})
+
+    res = client.post(f'/api/units/{unit_id}/retreat', json={'count': 1})
+
+    assert res.status_code == 200
+    assert res.get_json()['moved'] == 1
+
+
+def test_the_collection_chip_rail_filters(client, army_with_unit):
+    body = client.get('/collection').get_data(as_text=True)
+    assert 'chips' in body and 'Unpainted' in body
+    assert client.get('/collection?filter=unpainted').status_code == 200
