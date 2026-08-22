@@ -321,7 +321,22 @@ def sweep_queue(conn, army_id=None, stage_id=None, **kit_fields):
 # working: an EAN lookup can return nothing, a vision model can be confidently
 # wrong, and either way Clay is standing at a shelf with a box in his hand.
 
-def list_templates(conn, query=None):
+def list_templates(conn, query=None, faction_id=None, owned=None,
+                   with_contents=False):
+    """Boxes the app knows about, and how many of each Clay has.
+
+    The same query serves two screens with different questions. `/templates`
+    asks "what have I defined", which is bookkeeping. `/catalogue` asks "what
+    exists, and do I have it" — which is the question a catalogue is *for*, and
+    the one that turns researched contents into something that pays Clay back
+    rather than sitting in a dropdown.
+
+    ``owned`` filters to 'yes' or 'no'. Owning is counted from kits rather than
+    models because the unit here is a box: two Combat Patrols are two boxes
+    even after the models scatter into different armies. Disposed kits do not
+    count — a sold box is one he no longer has, which is the whole point of
+    asking.
+    """
     sql = """
         SELECT t.*, f.name AS faction_name,
                (SELECT COUNT(*) FROM kit_template_units u
@@ -329,14 +344,51 @@ def list_templates(conn, query=None):
                (SELECT COALESCE(SUM(model_count), 0) FROM kit_template_units u
                  WHERE u.kit_template_id = t.id)            AS model_count,
                (SELECT COUNT(*) FROM barcodes b
-                 WHERE b.kit_template_id = t.id)            AS barcode_count
+                 WHERE b.kit_template_id = t.id)            AS barcode_count,
+               (SELECT COUNT(*) FROM kits k
+                 WHERE k.kit_template_id = t.id
+                   AND k.status = 'owned')                  AS owned_count,
+               (SELECT COUNT(*) FROM models m
+                  JOIN units un ON un.id = m.unit_id
+                  JOIN stages s ON s.id = m.stage_id AND s.is_owned = 0
+                 WHERE un.datasheet_id IN (
+                     SELECT datasheet_id FROM kit_template_units
+                      WHERE kit_template_id = t.id))        AS wanted_count
           FROM kit_templates t LEFT JOIN factions f ON f.id = t.faction_id
     """
-    args = []
+    where, args = [], []
     if query:
-        sql += ' WHERE t.name LIKE ?'
-        args.append(f'%{query.strip()}%')
-    return [dict(r) for r in conn.execute(sql + ' ORDER BY t.name, t.year', args)]
+        # Name *or* a unit inside it. On a catalogue "Boyz" is the obvious
+        # thing to type, and the box that holds them is called Combat Patrol:
+        # Orks — a name-only search answers "no such box" to a question the
+        # data can answer perfectly well.
+        where.append("""(t.name LIKE ? OR EXISTS (
+            SELECT 1 FROM kit_template_units u JOIN datasheets d ON d.id = u.datasheet_id
+             WHERE u.kit_template_id = t.id AND d.name LIKE ?))""")
+        args += [f'%{query.strip()}%'] * 2
+    if faction_id:
+        where.append('t.faction_id = ?')
+        args.append(faction_id)
+    if owned == 'yes':
+        where.append('owned_count > 0')
+    elif owned == 'no':
+        where.append('owned_count = 0')
+    if where:
+        sql += ' WHERE ' + ' AND '.join(where)
+
+    rows = [dict(r) for r in conn.execute(sql + ' ORDER BY t.name, t.year', args)]
+    if with_contents:
+        by_template = {}
+        for row in conn.execute("""
+            SELECT u.kit_template_id, u.model_count, d.name AS datasheet_name
+              FROM kit_template_units u
+              JOIN datasheets d ON d.id = u.datasheet_id
+             ORDER BY u.id
+        """):
+            by_template.setdefault(row['kit_template_id'], []).append(dict(row))
+        for row in rows:
+            row['contents'] = by_template.get(row['id'], [])
+    return rows
 
 
 def get_template(conn, template_id):

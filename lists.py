@@ -217,19 +217,88 @@ def raise_wishlist(conn, list_id):
 
 
 def wishlist(conn):
-    """Everything wanted but not owned, and what raised it."""
+    """Everything wanted but not owned, and what raised it.
+
+    Two kinds of provenance, and they answer different questions. A list says
+    *why* Clay wants it — seven Boyz short for Saturday. A kit template says
+    *what to buy*: "11 Boyz, 1 Trukk" is a parts list, "Orks: Trukk Boyz" is a
+    thing on a shelf in a shop with a price on it.
+    """
     return [dict(r) for r in conn.execute("""
         SELECT d.id AS datasheet_id, d.name, d.game_system,
                f.name AS faction_name,
                COUNT(m.id)                                  AS wanted,
                COUNT(m.wishlist_source_list_id)             AS from_lists,
-               GROUP_CONCAT(DISTINCT l.name)                AS list_names
+               COUNT(m.wishlist_source_template_id)         AS from_boxes,
+               GROUP_CONCAT(DISTINCT l.name)                AS list_names,
+               GROUP_CONCAT(DISTINCT t.name)                AS box_names
           FROM models m
           JOIN stages s        ON s.id = m.stage_id AND s.is_owned = 0
           JOIN units u         ON u.id = m.unit_id
           JOIN datasheets d    ON d.id = u.datasheet_id
           LEFT JOIN factions f ON f.id = d.faction_id
           LEFT JOIN army_lists l ON l.id = m.wishlist_source_list_id
+          LEFT JOIN kit_templates t ON t.id = m.wishlist_source_template_id
          GROUP BY d.id
          ORDER BY d.name
     """)]
+
+
+def want_template(conn, template_id):
+    """Put a box's contents on the wishlist, and remember which box.
+
+    The catalogue's payback. Browsing "what exists" is only half useful if
+    finding something you want leaves you to type its contents in by hand.
+
+    Idempotent per box, the same bargain `raise_wishlist` makes per list:
+    running it again tops up to the box's contents rather than stacking a
+    second copy. Counted per box rather than per datasheet on purpose — wanting
+    two different boxes that both contain Boyz means wanting both boxes, and
+    collapsing them would silently under-order.
+    """
+    template = conn.execute('SELECT * FROM kit_templates WHERE id = ?',
+                            (template_id,)).fetchone()
+    if not template:
+        raise ValueError(f'no kit template {template_id}')
+    contents = conn.execute(
+        'SELECT * FROM kit_template_units WHERE kit_template_id = ?',
+        (template_id,)).fetchall()
+    if not contents:
+        raise ValueError(f'kit template "{template["name"]}" has no contents '
+                         'defined — there is nothing to want')
+
+    wishlist_stage = db.wishlist_stage(conn)
+    already = {}
+    for row in conn.execute("""
+        SELECT u.datasheet_id, COUNT(m.id) AS n
+          FROM models m JOIN units u ON u.id = m.unit_id
+         WHERE m.wishlist_source_template_id = ?
+         GROUP BY u.datasheet_id
+    """, (template_id,)):
+        already[row['datasheet_id']] = row['n']
+
+    added = 0
+    for line in contents:
+        want = line['model_count'] - already.get(line['datasheet_id'], 0)
+        if want <= 0:
+            continue
+        unit_id = col.create_unit(conn, line['datasheet_id'], want,
+                                  stage_id=wishlist_stage['id'])
+        conn.execute('UPDATE models SET wishlist_source_template_id = ? '
+                     'WHERE unit_id = ?', (template_id, unit_id))
+        added += want
+    return added
+
+
+def unwant_template(conn, template_id):
+    """Take a box back off the wishlist. Only the models it put there."""
+    unit_ids = [r['unit_id'] for r in conn.execute(
+        'SELECT DISTINCT unit_id FROM models '
+        ' WHERE wishlist_source_template_id = ?', (template_id,))]
+    cur = conn.execute('DELETE FROM models WHERE wishlist_source_template_id = ?',
+                       (template_id,))
+    for unit_id in unit_ids:
+        if not conn.execute('SELECT 1 FROM models WHERE unit_id = ?',
+                            (unit_id,)).fetchone():
+            conn.execute('DELETE FROM units WHERE id = ?', (unit_id,))
+    return cur.rowcount

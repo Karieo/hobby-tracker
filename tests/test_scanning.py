@@ -310,3 +310,85 @@ def test_a_template_lists_the_barcodes_that_point_at_it(conn, template):
 def test_lookup_is_optional_and_returns_nothing_by_default():
     """Onboarding must work identically when the lookup gives nothing."""
     assert scan.lookup_code('5011921204021') is None
+
+
+# ── The catalogue view of templates ──────────────────────
+#
+# The same query serves two questions. /templates asks "what have I defined",
+# which is bookkeeping. /catalogue asks "what exists, and do I have it".
+
+def _sheet(conn, name):
+    faction = db.upsert_faction(conn, 'Orks', 'orks')
+    return conn.execute(
+        'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+        'created_at, updated_at) VALUES (?,?,?,1,?,?)',
+        (name.lower(), name, faction, db.now(), db.now())).lastrowid
+
+
+def test_a_template_counts_the_boxes_owned_not_the_models(conn):
+    """Two Combat Patrols are two boxes even after the models scatter into
+    different armies."""
+    sheet = _sheet(conn, 'Boyz')
+    template = scan.create_template(conn, 'Combat Patrol: Orks',
+                                    [{'datasheet_id': sheet, 'model_count': 20}])
+    col.instantiate_template(conn, template)
+    col.instantiate_template(conn, template)
+
+    assert scan.list_templates(conn)[0]['owned_count'] == 2
+
+
+def test_a_sold_box_stops_counting_as_owned(conn):
+    sheet = _sheet(conn, 'Boyz')
+    template = scan.create_template(conn, 'Combat Patrol: Orks',
+                                    [{'datasheet_id': sheet, 'model_count': 20}])
+    kit_id, _ = col.instantiate_template(conn, template)
+
+    col.dispose_kit(conn, kit_id, 'sold')
+
+    assert scan.list_templates(conn)[0]['owned_count'] == 0
+
+
+def test_filtering_to_what_is_not_owned(conn):
+    sheet = _sheet(conn, 'Boyz')
+    have = scan.create_template(conn, 'Have it',
+                                [{'datasheet_id': sheet, 'model_count': 10}])
+    scan.create_template(conn, 'Want it',
+                         [{'datasheet_id': sheet, 'model_count': 10}])
+    col.instantiate_template(conn, have)
+
+    assert [t['name'] for t in scan.list_templates(conn, owned='no')] == ['Want it']
+    assert [t['name'] for t in scan.list_templates(conn, owned='yes')] == ['Have it']
+
+
+def test_contents_are_attached_only_when_asked_for(conn):
+    sheet = _sheet(conn, 'Boyz')
+    scan.create_template(conn, 'Combat Patrol: Orks',
+                         [{'datasheet_id': sheet, 'model_count': 20}])
+
+    assert 'contents' not in scan.list_templates(conn)[0]
+    row = scan.list_templates(conn, with_contents=True)[0]
+    assert row['contents'][0]['datasheet_name'] == 'Boyz'
+
+
+def test_a_template_knows_it_is_wanted(conn):
+    import lists
+    sheet = _sheet(conn, 'Boyz')
+    template = scan.create_template(conn, 'Combat Patrol: Orks',
+                                    [{'datasheet_id': sheet, 'model_count': 20}])
+
+    lists.want_template(conn, template)
+
+    assert scan.list_templates(conn)[0]['wanted_count'] == 20
+
+
+def test_the_catalogue_finds_a_box_by_what_is_inside_it(conn):
+    """"Boyz" is the obvious thing to type. The box is called Combat Patrol:
+    Orks, and a name-only search would answer "no such box" to a question the
+    data can answer."""
+    sheet = _sheet(conn, 'Beast Snagga Boyz')
+    scan.create_template(conn, 'Combat Patrol: Orks',
+                         [{'datasheet_id': sheet, 'model_count': 20}])
+
+    assert len(scan.list_templates(conn, 'Boyz')) == 1
+    assert len(scan.list_templates(conn, 'Combat Patrol')) == 1, 'name still works'
+    assert scan.list_templates(conn, 'Necron') == []

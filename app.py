@@ -916,6 +916,66 @@ def api_scan_sweep():
 # Built by hand first, deliberately: onboarding must never depend on an EAN
 # lookup answering or a vision model being right.
 
+@app.route('/catalogue')
+def catalogue_page():
+    """What exists, and whether Clay has it.
+
+    `/templates` is bookkeeping — the boxes he has defined. This asks the
+    question a catalogue is for, and is where researched contents stop being a
+    dropdown entry and start being useful: browse, see what you own, and put
+    what you don't on the wishlist.
+    """
+    owned = request.args.get('owned')
+    with _read() as conn:
+        return render_template(
+            'catalogue.html',
+            templates=scan.list_templates(
+                conn, request.args.get('q'),
+                faction_id=_int(request.args.get('faction_id')),
+                owned=owned if owned in ('yes', 'no') else None,
+                with_contents=True),
+            factions=col.list_factions(conn),
+            query=request.args.get('q') or '',
+            owned=owned or '',
+            faction_id=_int(request.args.get('faction_id')))
+
+
+@app.route('/api/templates/<int:template_id>/want', methods=['POST'])
+def api_want_template(template_id):
+    """Put a box's contents on the wishlist, remembering the box."""
+    try:
+        with _write() as conn:
+            added = army_lists.want_template(conn, template_id)
+            return jsonify({'added': added})
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.route('/api/templates/<int:template_id>/want', methods=['DELETE'])
+def api_unwant_template(template_id):
+    with _write() as conn:
+        return jsonify({'removed': army_lists.unwant_template(conn, template_id)})
+
+
+@app.route('/api/templates/<int:template_id>/own', methods=['POST'])
+def api_own_template(template_id):
+    """"I have this one" — the box and every model in it, in one action.
+
+    The same call the scanner makes when it recognises a barcode. Reached from
+    the catalogue for a box Clay owns but never scanned.
+    """
+    data = _payload()
+    try:
+        with _write() as conn:
+            kit_id, unit_ids = col.instantiate_template(
+                conn, template_id,
+                stage_id=_int(data.get('stage_id')),
+                box_state=(data.get('box_state') or 'opened'))
+            return jsonify({'kit': kit_id, 'units': unit_ids}), 201
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
 @app.route('/templates')
 def templates_page():
     with _read() as conn:
