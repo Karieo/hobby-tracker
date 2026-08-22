@@ -362,3 +362,18 @@ button.link { background: none; border: none; color: var(--accent); padding: 0;
              justify-content: space-between; padding: .35rem 0;
              border-top: 1px solid var(--line); font-size: .9rem; }
 .unit-line button { min-height: 38px; padding: .35rem .7rem; font-size: .85rem; }
+
+/* Catalogue: what exists, and whether it is on the shelf. Owned rows are
+   tinted rather than hidden — "I already have this" is the answer the screen
+   most often needs to give. */
+.catalogue { list-style: none; margin: 0; padding: 0; display: grid; gap: .7rem; }
+.cat-row { background: var(--panel); border: 1px solid var(--line);
+           border-radius: 10px; padding: .8rem .9rem; }
+.cat-row.owned { border-color: var(--accent); }
+.cat-head { display: flex; justify-content: space-between; align-items: baseline;
+            gap: .6rem; }
+.cat-head a { text-decoration: none; color: inherit; }
+.cat-state { flex: 0 0 auto; }
+.cat-row .actions { margin-top: .6rem; }
+.cat-row .actions button { min-height: 38px; padding: .35rem .7rem;
+                           font-size: .85rem; }

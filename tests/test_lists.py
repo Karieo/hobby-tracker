@@ -252,3 +252,104 @@ def test_list_summaries_carry_readiness(conn, sheets, stages):
     assert by_name['Ready']['ready'] is True
     assert by_name['Short']['ready'] is False
     assert by_name['Short']['to_buy'] == 5
+
+
+# ── Wanting a box from the catalogue ─────────────────────
+#
+# The catalogue's payback. Browsing "what exists" is only half useful if
+# finding something you want leaves you to type its contents in by hand.
+
+@pytest.fixture
+def box(conn, sheets, orks):
+    import scanning as scan
+    return scan.create_template(
+        conn, 'Orks: Trukk Boyz',
+        [{'datasheet_id': sheets['Boyz'], 'model_count': 11},
+         {'datasheet_id': sheets['Nobz'], 'model_count': 1}],
+        faction_id=orks, year=2026)
+
+
+def test_wanting_a_box_wants_its_contents(conn, box):
+    added = lists.want_template(conn, box)
+
+    assert added == 12
+    wanted = {r['name']: r['wanted'] for r in lists.wishlist(conn)}
+    assert wanted == {'Boyz': 11, 'Nobz': 1}
+
+
+def test_a_wanted_box_says_which_box_to_buy(conn, box):
+    """"11 Boyz, 1 Trukk" is a parts list. "Orks: Trukk Boyz" is a purchase."""
+    lists.want_template(conn, box)
+
+    row = next(r for r in lists.wishlist(conn) if r['name'] == 'Boyz')
+
+    assert row['from_boxes'] == 11
+    assert 'Orks: Trukk Boyz' in row['box_names']
+
+
+def test_wanting_the_same_box_twice_does_not_stack(conn, box):
+    lists.want_template(conn, box)
+
+    assert lists.want_template(conn, box) == 0
+    assert sum(r['wanted'] for r in lists.wishlist(conn)) == 12
+
+
+def test_two_boxes_sharing_a_unit_are_both_wanted(conn, box, sheets, orks):
+    """Wanting two boxes that both hold Boyz means wanting two boxes.
+    Collapsing them by datasheet would silently under-order."""
+    import scanning as scan
+    other = scan.create_template(conn, 'Orks: Boyz',
+                                 [{'datasheet_id': sheets['Boyz'],
+                                   'model_count': 11}],
+                                 faction_id=orks, year=2026)
+    lists.want_template(conn, box)
+
+    lists.want_template(conn, other)
+
+    row = next(r for r in lists.wishlist(conn) if r['name'] == 'Boyz')
+    assert row['wanted'] == 22
+
+
+def test_a_wanted_box_is_not_an_owned_box(conn, box):
+    lists.want_template(conn, box)
+
+    assert col.inventory(conn)[0]['owned_count'] == 0
+    assert conn.execute('SELECT COUNT(*) FROM kits').fetchone()[0] == 0
+
+
+def test_unwanting_removes_only_what_that_box_added(conn, box, sheets, stages):
+    own(conn, stages, sheets['Boyz'], 5)          # unrelated, actually owned
+    lists.want_template(conn, box)
+
+    lists.unwant_template(conn, box)
+
+    assert lists.wishlist(conn) == []
+    assert col.inventory(conn)[0]['owned_count'] == 5, 'his real models stay'
+
+
+def test_unwanting_leaves_a_want_from_a_list_alone(conn, box, sheets):
+    """Two reasons to want the same models. Dropping one must not drop both."""
+    lid = lists.create_list(conn, 'Saturday')
+    lists.add_entry(conn, lid, sheets['Boyz'], 20)
+    lists.raise_wishlist(conn, lid)
+    lists.want_template(conn, box)
+
+    lists.unwant_template(conn, box)
+
+    row = next(r for r in lists.wishlist(conn) if r['name'] == 'Boyz')
+    assert row['wanted'] == 20
+    assert row['from_lists'] == 20
+
+
+def test_a_box_with_no_contents_cannot_be_wanted(conn):
+    empty = conn.execute(
+        'INSERT INTO kit_templates (name, created_at, updated_at) '
+        'VALUES (?, ?, ?)', ('Mystery', db.now(), db.now())).lastrowid
+
+    with pytest.raises(ValueError, match='nothing to want'):
+        lists.want_template(conn, empty)
+
+
+def test_wanting_a_box_that_does_not_exist_is_refused(conn):
+    with pytest.raises(ValueError, match='no kit template'):
+        lists.want_template(conn, 999)

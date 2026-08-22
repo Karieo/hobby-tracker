@@ -842,3 +842,81 @@ def test_committing_an_unresolved_line_is_refused(client, army_with_unit):
 
     assert res.status_code == 400
     assert 'still need a datasheet' in res.get_json()['error']
+
+
+# ── The catalogue screen ─────────────────────────────────
+
+@pytest.fixture
+def catalogued_box(db_path):
+    with db.connect(db_path) as conn:
+        faction_id = db.upsert_faction(conn, 'Orks', 'orks')
+        sheet = conn.execute(
+            'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+            "created_at, updated_at) VALUES ('boyz', 'Boyz', ?, 1, ?, ?)",
+            (faction_id, db.now(), db.now())).lastrowid
+        import scanning as scan
+        return scan.create_template(
+            conn, 'Orks: Trukk Boyz',
+            [{'datasheet_id': sheet, 'model_count': 11}],
+            faction_id=faction_id, year=2026)
+
+
+def test_the_catalogue_lists_a_box_it_knows(client, catalogued_box):
+    body = client.get('/catalogue').get_data(as_text=True)
+    assert 'Orks: Trukk Boyz' in body
+    assert '11× Boyz' in body, 'contents show without opening the box'
+
+
+def test_the_catalogue_is_in_the_nav(client):
+    assert 'href="/catalogue"' in client.get('/').get_data(as_text=True)
+
+
+def test_an_empty_catalogue_says_how_to_fill_it(client):
+    body = client.get('/catalogue').get_data(as_text=True)
+    assert 'seed/derived_kits.py' in body
+
+
+def test_wanting_a_box_over_http(client, catalogued_box):
+    res = client.post(f'/api/templates/{catalogued_box}/want')
+
+    assert res.status_code == 200
+    assert res.get_json()['added'] == 11
+    assert 'On the wishlist' in client.get('/catalogue').get_data(as_text=True)
+
+
+def test_unwanting_a_box_over_http(client, catalogued_box):
+    client.post(f'/api/templates/{catalogued_box}/want')
+
+    res = client.delete(f'/api/templates/{catalogued_box}/want')
+
+    assert res.get_json()['removed'] == 11
+    assert 'Want it' in client.get('/catalogue').get_data(as_text=True)
+
+
+def test_owning_a_box_from_the_catalogue(client, catalogued_box):
+    """The same action the scanner takes on a known barcode, for a box Clay
+    owns but never scanned."""
+    res = client.post(f'/api/templates/{catalogued_box}/own', json={})
+
+    assert res.status_code == 201
+    assert len(res.get_json()['units']) == 1
+    assert 'Own' in client.get('/catalogue').get_data(as_text=True)
+
+
+def test_the_catalogue_filters_to_what_is_not_owned(client, catalogued_box):
+    assert 'Orks: Trukk Boyz' in client.get(
+        '/catalogue?owned=no').get_data(as_text=True)
+
+    client.post(f'/api/templates/{catalogued_box}/own', json={})
+
+    assert 'Orks: Trukk Boyz' not in client.get(
+        '/catalogue?owned=no').get_data(as_text=True)
+
+
+def test_the_catalogue_searches_by_name(client, catalogued_box):
+    assert 'Trukk' in client.get('/catalogue?q=Trukk').get_data(as_text=True)
+    assert 'Trukk' not in client.get('/catalogue?q=Necron').get_data(as_text=True)
+
+
+def test_wanting_a_box_that_does_not_exist_is_a_400(client):
+    assert client.post('/api/templates/999/want').status_code == 400

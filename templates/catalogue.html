@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Catalogue · Collection Tracker{% endblock %}
+{% block body %}
+  <header class="page">
+    <div>
+      <h1>Catalogue</h1>
+      <p class="hint">
+        Boxes the app knows the contents of — what exists, not just what you
+        own. Contents are researched from published sources and carry them.
+      </p>
+    </div>
+    <a class="ghost" href="/templates">Define a box</a>
+  </header>
+
+  <form class="panel row" id="cat-filter" method="get" action="/catalogue">
+    <label>Search
+      <input name="q" value="{{ query }}" placeholder="Combat Patrol, Boyz…"
+             autocomplete="off">
+    </label>
+    <label>Faction
+      <select name="faction_id">
+        <option value="">All</option>
+        {% for f in factions %}
+          <option value="{{ f.id }}" {% if faction_id == f.id %}selected{% endif %}>
+            {{ f.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Show
+      <select name="owned">
+        <option value="" {% if not owned %}selected{% endif %}>Everything</option>
+        <option value="no" {% if owned == 'no' %}selected{% endif %}>Don't own</option>
+        <option value="yes" {% if owned == 'yes' %}selected{% endif %}>Own already</option>
+      </select>
+    </label>
+    <button class="go">Filter</button>
+    {% if query or owned or faction_id %}
+      <a class="ghost" href="/catalogue">Clear</a>
+    {% endif %}
+  </form>
+
+  {% if not templates %}
+    <div class="panel empty">
+      {% if query or owned or faction_id %}
+        <p>Nothing matches.</p>
+        <p class="muted"><a href="/catalogue">Clear the filters</a></p>
+      {% else %}
+        <p>The catalogue is empty.</p>
+        <p class="muted">
+          Run <code>python3 seed/derived_kits.py</code> to load the researched
+          boxes, or <a href="/templates">define one by hand</a>.
+        </p>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <ul class="catalogue">
+    {% for t in templates %}
+      <li class="cat-row {% if t.owned_count %}owned{% endif %}"
+          data-template="{{ t.id }}">
+        <div class="cat-head">
+          <div>
+            <a href="/templates/{{ t.id }}"><b>{{ t.name }}</b></a>
+            {% if t.year %}<span class="muted">{{ t.year }}</span>{% endif %}
+            {% if t.faction_name %}
+              <span class="muted">· {{ t.faction_name }}</span>
+            {% endif %}
+          </div>
+          <div class="cat-state">
+            {% if t.owned_count %}
+              <span class="ok-badge">
+                Own{% if t.owned_count > 1 %} ×{{ t.owned_count }}{% endif %}
+              </span>
+            {% elif t.wanted_count %}
+              <span class="pill">Wanted</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <p class="muted">
+          {{ t.model_count }} model{{ '' if t.model_count == 1 else 's' }}
+          in {{ t.unit_count }} unit{{ '' if t.unit_count == 1 else 's' }}
+          {%- if t.contents %} ·
+            {% for c in t.contents %}{{ c.model_count }}× {{ c.datasheet_name }}
+              {%- if not loop.last %}, {% endif %}
+            {%- endfor %}
+          {%- endif %}
+        </p>
+
+        {# A box with no barcode is still fully usable — it is reachable by
+           name, and it learns its own code the first time one is scanned and
+           filled in. Said here so a missing code does not read as broken. #}
+        {% if not t.barcode_count %}
+          <p class="hint">
+            No barcode yet — scan a box and fill it in from this template, and
+            the app learns the code for good.
+          </p>
+        {% endif %}
+
+        <div class="actions">
+          {% if t.wanted_count %}
+            <button class="ghost cat-unwant">On the wishlist ✓</button>
+          {% else %}
+            <button class="ghost cat-want">Want it</button>
+          {% endif %}
+          <button class="go cat-own">I have this →</button>
+          <a class="ghost" href="/templates/{{ t.id }}">Contents &amp; sources</a>
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+{% endblock %}
+
+{% block scripts %}
+  <script src="/static/js/catalogue.js?v={{ asset_version }}"></script>
+{% endblock %}
