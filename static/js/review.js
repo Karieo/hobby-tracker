@@ -132,6 +132,22 @@ document.addEventListener('change', async (e) => {
   } catch (err) { toast(err.message, 'error'); }
 });
 
+// The codes nobody has defined yet, in one block to hand to whoever does the
+// looking up. Contents get researched once per product and seeded.
+document.addEventListener('click', async (e) => {
+  const button = e.target.closest('#copy-codes');
+  if (!button) return;
+  const codes = button.dataset.codes || '';
+  try {
+    await navigator.clipboard.writeText(codes);
+    toast('Copied — paste them wherever the lookup happens');
+  } catch {
+    // Clipboard access needs a secure context and a user gesture, and iOS
+    // withholds it often enough that a silent failure would be baffling.
+    prompt('Copy these codes:', codes.split('\n').join(' '));
+  }
+});
+
 function refreshCounts(summary) {
   if (!summary) return;
   const stats = $$('.stat b');

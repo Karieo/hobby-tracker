@@ -130,6 +130,26 @@
       they are absent from progress and from the gap report until you say what
       is in them.
     </p>
+    {% set unknown_codes = awaiting | selectattr('code')
+                                   | rejectattr('suggested_template_id')
+                                   | map(attribute='code') | unique | list %}
+    {% if unknown_codes %}
+      {# The codes nobody has defined yet, in one block to hand to whoever is
+         doing the looking up. Contents get researched once per product and
+         seeded — see seed/data/README-derived.md. #}
+      <div class="panel">
+        <div class="actions">
+          <button class="ghost" id="copy-codes"
+                  data-codes="{{ unknown_codes | join('\n') }}">
+            Copy {{ unknown_codes|length }} unknown code{{ '' if unknown_codes|length == 1 else 's' }}
+          </button>
+        </div>
+        <p class="hint">
+          Paste them wherever the lookup happens. Once each is in the
+          catalogue, every copy here offers to fill itself in.
+        </p>
+      </div>
+    {% endif %}
     <ul class="queue">
       {% for kit in awaiting %}
         <li class="qrow" data-kit="{{ kit.id }}">
