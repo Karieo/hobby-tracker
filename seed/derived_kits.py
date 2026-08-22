@@ -52,6 +52,9 @@ import scanning as scan
 # the magazine seed: a unit that matched there matches here.
 from combat_patrol_magazine import match_datasheet
 
+DATA_DIR = os.path.join(_ROOT, 'seed', 'data', 'kits')
+# The original single file. Still read if it exists, so an older checkout and
+# a hand-written one-off both keep working.
 DATA_PATH = os.path.join(_ROOT, 'seed', 'data', 'derived_kits.yaml')
 IMPORTER = 'derived_kits'
 # The schema's allowed set, and the accurate word for what this is: reviewed
@@ -60,7 +63,48 @@ CONTENTS_SOURCE = 'seed'
 
 
 def load_data(path=None):
-    with open(path or DATA_PATH, encoding='utf-8') as fh:
+    """Every catalogue entry, from one file or from the whole directory.
+
+    Split per game system and faction because this file grows without bound —
+    the range is hundreds of products and the weekly sweep adds to it
+    unattended. One flat file would make every diff unreadable and every
+    concurrent edit a conflict, which for an auto-merging job means the
+    catalogue silently stops growing.
+
+    Duplicate name+year across files is refused rather than merged: two files
+    disagreeing about one box is exactly the corruption the provenance rules
+    exist to catch, and picking a winner would hide it.
+    """
+    if path:
+        return _read_one(path)
+
+    entries, seen = [], {}
+    for source in _data_files():
+        for entry in _read_one(source).get('kits') or []:
+            key = ((entry.get('name') or '').strip().lower(), entry.get('year'))
+            if key in seen:
+                raise ValueError(
+                    f'{entry.get("name")} ({entry.get("year") or "no year"}) '
+                    f'appears in both {os.path.basename(seen[key])} and '
+                    f'{os.path.basename(source)} — one box, one entry')
+            seen[key] = source
+            entry.setdefault('_source_file', os.path.relpath(source, _ROOT))
+            entries.append(entry)
+    return {'kits': entries}
+
+
+def _data_files():
+    """The single file first, then the per-faction ones in a stable order."""
+    found = [DATA_PATH] if os.path.exists(DATA_PATH) else []
+    if os.path.isdir(DATA_DIR):
+        found += sorted(os.path.join(DATA_DIR, name)
+                        for name in os.listdir(DATA_DIR)
+                        if name.endswith(('.yaml', '.yml')))
+    return found
+
+
+def _read_one(path):
+    with open(path, encoding='utf-8') as fh:
         return yaml.safe_load(fh) or {}
 
 
@@ -129,9 +173,22 @@ def check_barcode(entry, label):
 # ── Import ───────────────────────────────────────────────
 
 def seed(conn, data, dry_run=False):
-    """Create or update a kit template per entry. Idempotent on name+year."""
+    """Create or update a kit template per entry. Idempotent on name+year.
+
+    Unresolved lines are cleared and re-recorded each run, the same as every
+    other importer here, and for a sharper reason: this one runs weekly and
+    unattended. A brand-new release reaches the catalogue *before* BSData has
+    its datasheet — Warboss Nazdreg went on pre-order the day this was written
+    and no rules data mentions him yet — so its contents legitimately fail to
+    match on the first run and resolve on a later one once BSData catches up.
+    Without clearing, that expected sequence would leave a duplicate row every
+    week forever, and the backlog that is supposed to mean "these need a human"
+    would become noise nobody reads.
+    """
     report = {'created': 0, 'updated': 0, 'barcodes_linked': 0,
               'unresolved': [], 'skipped': [], 'kits': []}
+    if not dry_run:
+        db.clear_unresolved(conn, IMPORTER)
 
     for entry in data.get('kits') or []:
         name = entry['name'].strip()
@@ -186,7 +243,7 @@ def seed(conn, data, dry_run=False):
 
         code = (entry.get('barcode') or '').strip()
         if code:
-            scan.link_barcode(conn, code, template_id)
+            scan.link_barcode(conn, code, template_id, link_source='seed')
             report['barcodes_linked'] += 1
 
     return report
@@ -220,8 +277,9 @@ def find_template(conn, name, year):
 def status(data):
     entries = data.get('kits') or []
     with_code = [e for e in entries if (e.get('barcode') or '').strip()]
-    print(f'{len(entries)} kit{"" if len(entries) == 1 else "s"} in '
-          f'{os.path.relpath(DATA_PATH, _ROOT)}')
+    files = [os.path.relpath(p, _ROOT) for p in _data_files()]
+    print(f'{len(entries)} kit{"" if len(entries) == 1 else "s"} across '
+          f'{len(files)} file{"" if len(files) == 1 else "s"}')
     print(f'{len(with_code)} with a corroborated barcode, '
           f'{len(entries) - len(with_code)} reachable by name only')
     for entry in entries:

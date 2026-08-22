@@ -337,3 +337,72 @@ def test_adopt_all_honours_the_stage_default(conn, template):
 
     at = {r['stage_id'] for r in conn.execute('SELECT stage_id FROM models')}
     assert at == {stages['Assembled']}
+
+
+# ── Learning a barcode from a scan ───────────────────────
+#
+# The catalogue and the scanner each know half of a box, and only one half can
+# be researched. Retailers publish the Games Workshop product code everywhere
+# and the EAN almost nowhere, so contents can be looked up and barcodes cannot.
+# The person holding the box is the one with the number — so the act of saying
+# "this box is a Combat Patrol" has to teach the scanner, permanently.
+
+def test_adopting_teaches_the_scanner_what_that_code_is(conn, template):
+    kit_id = scan.shelve_queue_row(conn, _queue(conn))[0]
+
+    col.adopt_template(conn, kit_id, template)
+
+    assert scan.template_for_code(conn, '5011921225712')['id'] == template
+
+
+def test_the_next_copy_of_that_box_resolves_by_itself(conn, template):
+    """The whole point. Answer once, never again — including for the three
+    other copies still on the shelf."""
+    first = scan.shelve_queue_row(conn, _queue(conn))[0]
+    col.adopt_template(conn, first, template)
+
+    qid = _queue(conn)                      # same code, scanned again
+
+    assert [r for r in scan.queue_rows(conn) if r['id'] == qid][0]['ready']
+
+
+def test_a_learned_link_is_marked_as_coming_from_a_scan(conn, template):
+    kit_id = scan.shelve_queue_row(conn, _queue(conn))[0]
+    col.adopt_template(conn, kit_id, template)
+
+    row = conn.execute('SELECT link_source FROM barcodes WHERE code = ?',
+                       ('5011921225712',)).fetchone()
+    assert row['link_source'] == 'scanned'
+
+
+def test_a_box_recorded_by_hand_teaches_nothing(conn, template):
+    """No scan, no code, nothing to learn — and nothing invented."""
+    kit_id = col.create_kit(conn, 'Ork box from Dave')
+    col.adopt_template(conn, kit_id, template)
+
+    assert conn.execute('SELECT COUNT(*) FROM barcodes').fetchone()[0] == 0
+
+
+def test_the_seed_never_overrules_what_clay_scanned(conn, template):
+    """Clay held the plastic; the catalogue read a web page. If they disagree
+    about what a code means, the box in his hands wins."""
+    kit_id = scan.shelve_queue_row(conn, _queue(conn))[0]
+    col.adopt_template(conn, kit_id, template)
+    other = scan.create_template(conn, 'Something else',
+                                 [{'datasheet_id': 1, 'model_count': 1}])
+
+    linked = scan.link_barcode(conn, '5011921225712', other, link_source='seed')
+
+    assert linked is False
+    assert scan.template_for_code(conn, '5011921225712')['id'] == template
+
+
+def test_a_later_scan_can_correct_an_earlier_one(conn, template):
+    """Clay is allowed to change his mind about his own box."""
+    other = scan.create_template(conn, 'Something else',
+                                 [{'datasheet_id': 1, 'model_count': 1}])
+    scan.link_barcode(conn, '5011921225712', other, link_source='scanned')
+
+    assert scan.link_barcode(conn, '5011921225712', template,
+                             link_source='scanned') is True
+    assert scan.template_for_code(conn, '5011921225712')['id'] == template

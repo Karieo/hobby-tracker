@@ -239,3 +239,123 @@ def test_every_shipped_barcode_is_corroborated():
     for row in seeder.load_data().get('kits') or []:
         if (row.get('barcode') or '').strip():
             assert len(row.get('barcode_sources') or []) >= 2, row['name']
+
+
+# ── Many files, one catalogue ────────────────────────────
+#
+# The catalogue is no longer a file Clay reads top to bottom. It is hundreds of
+# products across per-faction files, extended weekly by an unattended job, so
+# the loader has to hold up without anyone watching the diff.
+
+def _write_kits(directory, name, entries):
+    path = directory / name
+    path.write_text(yaml.safe_dump({'kits': entries}, sort_keys=False),
+                    encoding='utf-8')
+    return path
+
+
+def _entry(name, year=2024, unit='Boyz'):
+    return {'name': name, 'year': year, 'faction': 'orks',
+            'contents': [{'unit': unit, 'models': 10}],
+            'sources': {'urls': ['https://example.invalid/a',
+                                 'https://example.invalid/b'],
+                        'retrieved_on': '2026-08-22', 'confidence': 'high',
+                        'corroborated_by': 2}}
+
+
+def test_entries_from_every_file_are_loaded(tmp_path, monkeypatch):
+    monkeypatch.setattr(seeder, 'DATA_DIR', str(tmp_path))
+    monkeypatch.setattr(seeder, 'DATA_PATH', str(tmp_path / 'nonexistent.yaml'))
+    _write_kits(tmp_path, 'orks.yaml', [_entry('Combat Patrol: Orks')])
+    _write_kits(tmp_path, 'necrons.yaml', [_entry('Combat Patrol: Necrons')])
+
+    names = {k['name'] for k in seeder.load_data()['kits']}
+
+    assert names == {'Combat Patrol: Orks', 'Combat Patrol: Necrons'}
+
+
+def test_the_same_box_in_two_files_is_refused(tmp_path, monkeypatch):
+    """Two files disagreeing about one box is the corruption the provenance
+    rules exist to catch. Picking a winner would hide it."""
+    monkeypatch.setattr(seeder, 'DATA_DIR', str(tmp_path))
+    monkeypatch.setattr(seeder, 'DATA_PATH', str(tmp_path / 'nonexistent.yaml'))
+    _write_kits(tmp_path, 'a.yaml', [_entry('Combat Patrol: Orks')])
+    _write_kits(tmp_path, 'b.yaml', [_entry('Combat Patrol: Orks')])
+
+    with pytest.raises(ValueError, match='one box, one entry'):
+        seeder.load_data()
+
+
+def test_the_same_name_in_different_years_lives_in_one_file(tmp_path, monkeypatch):
+    """Combat Patrol: Orks is a 2021 box and a 2024 box. Both are real."""
+    monkeypatch.setattr(seeder, 'DATA_DIR', str(tmp_path))
+    monkeypatch.setattr(seeder, 'DATA_PATH', str(tmp_path / 'nonexistent.yaml'))
+    _write_kits(tmp_path, 'orks.yaml', [_entry('Combat Patrol: Orks', 2021),
+                                        _entry('Combat Patrol: Orks', 2024)])
+
+    assert len(seeder.load_data()['kits']) == 2
+
+
+def test_each_entry_remembers_which_file_it_came_from(tmp_path, monkeypatch):
+    """So an unattended job's report says where to go and look."""
+    monkeypatch.setattr(seeder, 'DATA_DIR', str(tmp_path))
+    monkeypatch.setattr(seeder, 'DATA_PATH', str(tmp_path / 'nonexistent.yaml'))
+    _write_kits(tmp_path, 'orks.yaml', [_entry('Combat Patrol: Orks')])
+
+    assert seeder.load_data()['kits'][0]['_source_file'].endswith('orks.yaml')
+
+
+def test_an_explicit_path_still_reads_just_that_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(seeder, 'DATA_DIR', str(tmp_path))
+    one = _write_kits(tmp_path, 'orks.yaml', [_entry('Combat Patrol: Orks')])
+    _write_kits(tmp_path, 'necrons.yaml', [_entry('Combat Patrol: Necrons')])
+
+    assert len(seeder.load_data(str(one))['kits']) == 1
+
+
+def test_the_shipped_catalogue_is_split_by_faction():
+    """A single flat file does not survive hundreds of entries or an
+    unattended weekly writer."""
+    assert os.path.isdir(seeder.DATA_DIR), 'seed/data/kits/ is the catalogue now'
+    assert seeder._data_files(), 'no catalogue files found'
+
+
+# ── Running weekly, unattended ───────────────────────────
+
+def test_unresolved_lines_do_not_pile_up_across_runs(conn, orks):
+    """The sweep runs every week. A new release reaches the catalogue before
+    BSData has its datasheet, so failing to match once is expected — leaving a
+    duplicate row every week for it is not."""
+    data = {'kits': [_entry('Ork Command Wave', unit='Warboss Nazdreg')]}
+
+    for _ in range(3):
+        seeder.seed(conn, data)
+
+    rows = db.open_unresolved(conn, importer=seeder.IMPORTER)
+    assert len(rows) == 1, 'three runs, one outstanding question'
+
+
+def test_a_line_that_starts_matching_stops_being_unresolved(conn, orks):
+    """BSData catches up days after a release. The next run should clear the
+    backlog entry rather than leaving it there looking unanswered."""
+    data = {'kits': [_entry('Ork Command Wave', unit='Warboss Nazdreg')]}
+    seeder.seed(conn, data)
+    assert db.open_unresolved(conn, importer=seeder.IMPORTER)
+
+    faction_id = db.get_faction_by_slug(conn, 'orks')['id']
+    conn.execute('INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+                 'created_at, updated_at) VALUES (?,?,?,1,?,?)',
+                 ('nazdreg', 'Warboss Nazdreg', faction_id, db.now(), db.now()))
+    seeder.seed(conn, data)
+
+    assert db.open_unresolved(conn, importer=seeder.IMPORTER) == []
+
+
+def test_a_dry_run_leaves_the_existing_backlog_alone(conn, orks):
+    seeder.seed(conn, {'kits': [_entry('Ork Command Wave', unit='Warboss Nazdreg')]})
+    before = len(db.open_unresolved(conn, importer=seeder.IMPORTER))
+
+    seeder.seed(conn, {'kits': [_entry('Something Else', unit='Also Missing')]},
+                dry_run=True)
+
+    assert len(db.open_unresolved(conn, importer=seeder.IMPORTER)) == before
