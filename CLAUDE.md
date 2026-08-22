@@ -4,8 +4,8 @@ Guidance for Claude Code working in this repository.
 
 ## What this is
 
-A single-user tracker for **one hobby with four activities — buying, building,
-painting, playing** — and the handoffs between them. Every model is tracked
+A single-user tracker for **three hobbies in one — building, painting,
+playing**, with buying as the way in — and the handoffs between them. Every model is tracked
 individually from sprue to battle ready, across multiple armies and game
 systems. Barcode scanning is *onboarding*, not the point: you scan a box once
 and never again.

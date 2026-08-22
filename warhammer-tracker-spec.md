@@ -11,10 +11,10 @@ as the first item in the navigation.
 
 ## 1 · What this is
 
-**One hobby, three activities: buying, building, painting, playing.** They are
-not separate tools that happen to share a database. The whole point is the
-handoff between them, and the app is worth having only to the extent those
-handoffs are seamless.
+**Three hobbies in one: building, painting, playing** — with buying as the way
+in. Clay's framing, and the right one. They are not separate tools that happen
+to share a database: the whole point is the handoff between them, and the app
+is worth having only to the extent those handoffs are seamless.
 
 Everything else — inventory, barcodes, points, effort weighting — exists to
 serve that loop. None of it is the goal.
@@ -72,14 +72,23 @@ Sprue to assembled. Clippers, glue, a desk.
 Primed, base coated, based, battle ready.
 
 **Basing is not universal, and this is a real modelling problem.** A Rhino has
-no base. Today the pipeline makes `Base prepared` and `Based` mandatory for
-every model, so a vehicle either sits at a stage it can never leave or gets
-falsely advanced — and because progress is effort-weighted, a false advance
-quietly inflates how finished the collection looks.
+no base. A pipeline that makes `Base prepared` and `Based` mandatory for every
+model either strands a vehicle at a stage it can never leave or advances it
+through one that never happened — and because progress is effort-weighted, a
+false advance on an effort-8 vehicle quietly inflates how finished the whole
+collection looks.
 
-**Stages are applicable per model, not universal.** A model with no base is
-measured out of five stages, not seven. The applicability is proposed from the
-rules data and confirmed by Clay — never guessed, in keeping with §4.
+**So stages are applicable per model, not universal.** A model with no base is
+measured out of five stages instead of seven.
+
+Which models those are cannot be derived. Rhino, Land Raider and Trukk are
+`Vehicle` and have no base; Redemptor Dreadnought, Killa Kans and Deff Dread
+are `Vehicle + Walker` and do. That correlation held across the nine checked by
+hand, and it is a correlation, not a rule GW publishes — whether a kit ships
+with a base is a fact about the plastic, and BSData describes the rules. So it
+surfaces as a question next to the model, which stops being asked once
+answered, and until then nothing is reclassified. Proposed and confirmed, never
+guessed, per §4.
 
 > **Hands off to:** playing. A unit reaching battle ready is what makes a list
 > fieldable.
