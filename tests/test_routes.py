@@ -441,3 +441,105 @@ def test_the_review_screen_lists_boxes_awaiting_contents(client, db_path):
 
     assert 'Recorded, contents not yet known' in body
     assert 'Unidentified box 5011921225712' in body
+
+
+# ── One kit: view, edit, delete ──────────────────────────
+#
+# The Kits table could show a kit holding "0 units, 0 models" and offer
+# nowhere to go and find out why, and nothing anywhere could correct a name or
+# remove a mis-scan.
+
+def _a_kit(client, db_path, **fields):
+    res = client.post('/api/kits', json={'name': 'Wrecka Krew', **fields})
+    assert res.status_code == 201
+    return res.json['id']
+
+
+def test_the_kit_page_renders_and_lists_its_contents(client, db_path, army_with_unit):
+    kit_id = _a_kit(client, db_path)
+    with db.connect(db_path) as conn:
+        conn.execute('UPDATE units SET kit_id = ? WHERE id = ?',
+                     (kit_id, army_with_unit['unit_id']))
+
+    body = client.get(f'/kits/{kit_id}').get_data(as_text=True)
+
+    assert 'Wrecka Krew' in body
+    assert 'Boyz' in body, 'the units inside the box are the point of the page'
+
+
+def test_a_missing_kit_is_a_404(client):
+    assert client.get('/kits/999').status_code == 404
+
+
+def test_editing_only_touches_the_fields_sent(client, db_path):
+    """A form posting three fields must not blank the other seven."""
+    kit_id = _a_kit(client, db_path, notes='keep me', acquired_on='2026-01-02')
+
+    assert client.post(f'/api/kits/{kit_id}',
+                       json={'name': 'Wrecka Krew 2024'}).status_code == 200
+
+    with db.connect(db_path) as conn:
+        kit = conn.execute('SELECT * FROM kits WHERE id = ?', (kit_id,)).fetchone()
+    assert kit['name'] == 'Wrecka Krew 2024'
+    assert kit['notes'] == 'keep me'
+    assert kit['acquired_on'] == '2026-01-02'
+
+
+def test_a_kit_cannot_be_renamed_to_nothing(client, db_path):
+    kit_id = _a_kit(client, db_path)
+    res = client.post(f'/api/kits/{kit_id}', json={'name': '   '})
+    assert res.status_code == 400
+    with db.connect(db_path) as conn:
+        assert conn.execute('SELECT name FROM kits WHERE id = ?',
+                            (kit_id,)).fetchone()[0] == 'Wrecka Krew'
+
+
+def test_deleting_takes_its_units_and_models_with_it(client, db_path, army_with_unit):
+    kit_id = _a_kit(client, db_path)
+    with db.connect(db_path) as conn:
+        conn.execute('UPDATE units SET kit_id = ? WHERE id = ?',
+                     (kit_id, army_with_unit['unit_id']))
+
+    assert client.delete(f'/api/kits/{kit_id}').status_code == 200
+
+    with db.connect(db_path) as conn:
+        assert conn.execute('SELECT COUNT(*) FROM kits').fetchone()[0] == 0
+        assert conn.execute('SELECT COUNT(*) FROM units').fetchone()[0] == 0
+        assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 0
+
+
+def test_deleting_a_scanned_kit_keeps_the_scan(client, db_path):
+    """The scan really did happen — the queue is the audit trail of how the
+    collection was built. It just stops pointing at a kit that is gone."""
+    client.post('/api/scan', json={'code': '5011921225712'})
+    with db.connect(db_path) as conn:
+        queue_id = conn.execute('SELECT id FROM scan_queue').fetchone()[0]
+    kit_id = client.post(f'/api/scan/{queue_id}/shelve', json={}).json['kits'][0]
+
+    assert client.delete(f'/api/kits/{kit_id}').status_code == 200
+
+    with db.connect(db_path) as conn:
+        row = conn.execute('SELECT * FROM scan_queue WHERE id = ?',
+                           (queue_id,)).fetchone()
+    assert row is not None, 'the scan is history, not a consequence of the kit'
+    assert row['kit_id'] is None
+
+
+def test_deleting_a_missing_kit_is_a_404(client):
+    assert client.delete('/api/kits/999').status_code == 404
+
+
+def test_disposing_is_not_deleting(client, db_path, army_with_unit):
+    """The invariant, asserted rather than assumed: a sold kit keeps every row."""
+    kit_id = _a_kit(client, db_path)
+    with db.connect(db_path) as conn:
+        conn.execute('UPDATE units SET kit_id = ? WHERE id = ?',
+                     (kit_id, army_with_unit['unit_id']))
+
+    assert client.post(f'/api/kits/{kit_id}/status',
+                       json={'status': 'sold', 'price': '25.00'}).status_code == 200
+
+    with db.connect(db_path) as conn:
+        kit = conn.execute('SELECT * FROM kits WHERE id = ?', (kit_id,)).fetchone()
+        assert kit['status'] == 'sold'
+        assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 10

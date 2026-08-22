@@ -108,6 +108,14 @@ does nothing forever (Settings → Safari → Camera to undo).
 **Then the collection view** — the other half of step 5, and the last thing
 before v1 is done. No blockers.
 
+**Done since:** the Kits table was read-only — a kit could show "0 units, 0
+models" with nowhere to go and find out why, and nothing anywhere could correct
+a name or remove a mis-scan. `/kits/<id>` now shows a box's contents, edits its
+details, fills an empty one in from a template, and deletes one recorded in
+error. Deleting is kept explicitly distinct from disposal: it names the units
+and models it will destroy, and points at the status control for anything Clay
+actually owned.
+
 **Open questions for Clay:**
 
 - **Other game systems.** If he owns Age of Sigmar, Necromunda or Horus Heresy

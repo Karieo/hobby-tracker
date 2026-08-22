@@ -457,6 +457,57 @@ def api_create_kit():
     return jsonify({'id': kit_id}), 201
 
 
+@app.route('/kits/<int:kit_id>')
+def kit_page(kit_id):
+    """One box: what it is, what is in it, and what can be done about it."""
+    with _read() as conn:
+        kit = col.get_kit(conn, kit_id)
+        if not kit:
+            abort(404)
+        return render_template(
+            'kit.html', kit=kit,
+            units=col.list_units(conn, kit_id=kit_id),
+            stages=col.stage_ladder(conn),
+            factions=col.list_factions(conn),
+            armies=[a for a in col.list_armies(conn) if a['id']],
+            templates=col.list_templates_with_contents(conn))
+
+
+@app.route('/api/kits/<int:kit_id>', methods=['POST'])
+def api_update_kit(kit_id):
+    data = _payload()
+    fields = {}
+    for key in ('name', 'source', 'source_ref', 'acquired_on', 'notes'):
+        if key in data:
+            fields[key] = (data.get(key) or '').strip() or None
+    if 'name' in fields and not fields['name']:
+        return jsonify({'error': 'A kit needs a name'}), 400
+    if 'box_state' in data:
+        fields['box_state'] = data['box_state']
+    if 'faction_id' in data:
+        fields['faction_id'] = _int(data.get('faction_id'))
+    if 'cost' in data:
+        cost = data.get('cost')
+        fields['cost_cents'] = round(float(cost) * 100) if cost else None
+    try:
+        with _write() as conn:
+            col.update_kit(conn, kit_id, **fields)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'success': True})
+
+
+@app.route('/api/kits/<int:kit_id>', methods=['DELETE'])
+def api_delete_kit(kit_id):
+    """A mis-scan or a duplicate. Selling one is a status change, not this."""
+    try:
+        with _write() as conn:
+            col.delete_kit(conn, kit_id)
+    except ValueError:
+        abort(404)
+    return jsonify({'success': True})
+
+
 @app.route('/api/kits/<int:kit_id>/status', methods=['POST'])
 def api_kit_status(kit_id):
     data = _payload()

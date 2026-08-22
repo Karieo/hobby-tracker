@@ -179,9 +179,17 @@ def army_stats(conn, army_id):
 
 # ── Units ────────────────────────────────────────────────
 
-def list_units(conn, army_id=None, unassigned=False, include_disposed=False):
+def list_units(conn, army_id=None, unassigned=False, include_disposed=False,
+               kit_id=None):
     """Units with the per-stage counts the stage bar is drawn from."""
     clauses, args = [], []
+    if kit_id is not None:
+        # A kit's own units, disposed or not: the kit page has to show what is
+        # in the box even when the box has been sold, or its contents vanish
+        # from the one screen that exists to explain them.
+        clauses.append('u.kit_id = ?')
+        args.append(kit_id)
+        include_disposed = True
     if unassigned:
         clauses.append('u.army_id IS NULL')
     elif army_id is not None:
@@ -504,6 +512,51 @@ def create_kit(conn, name, **fields):
         'created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         (name, *[data[c] for c in cols], db.now(), db.now()))
     return cur.lastrowid
+
+
+def update_kit(conn, kit_id, **fields):
+    """Correct a kit's own details. Contents are edited through its units.
+
+    Only the keys passed are touched, so a form that submits three fields
+    cannot blank the other seven. `name` is refused empty rather than accepted
+    and rendered as a nameless row.
+    """
+    kit = get_kit(conn, kit_id)
+    if not kit:
+        raise ValueError(f'no kit {kit_id}')
+
+    editable = ('name', 'faction_id', 'source', 'source_ref', 'acquired_on',
+                'cost_cents', 'box_state', 'notes', 'photo_url')
+    updates = {k: v for k, v in fields.items() if k in editable}
+    if 'name' in updates and not (updates['name'] or '').strip():
+        raise ValueError('a kit needs a name')
+    if not updates:
+        return kit_id
+
+    assignments = ', '.join(f'{k} = ?' for k in updates)
+    conn.execute(f'UPDATE kits SET {assignments}, updated_at = ? WHERE id = ?',
+                 (*updates.values(), db.now(), kit_id))
+    return kit_id
+
+
+def delete_kit(conn, kit_id):
+    """Only for a genuine data-entry mistake — a mis-scan, a duplicate.
+
+    Getting rid of models Clay actually had is `dispose_kit`, which keeps every
+    row: a sold kit leaves ownership counts but stays queryable, which is what
+    makes the spend history honest and "didn't I used to have one of those?"
+    answerable. This is the undo for recording something that was never true.
+
+    Its units go with it, and their models and stage history cascade from
+    there. A scan that produced this kit keeps its own row — the scan really
+    did happen, and the queue is the audit trail of how the collection was
+    built — but stops pointing at a kit that no longer exists.
+    """
+    if not get_kit(conn, kit_id):
+        raise ValueError(f'no kit {kit_id}')
+    conn.execute('UPDATE scan_queue SET kit_id = NULL WHERE kit_id = ?', (kit_id,))
+    conn.execute('DELETE FROM units WHERE kit_id = ?', (kit_id,))
+    conn.execute('DELETE FROM kits WHERE id = ?', (kit_id,))
 
 
 def instantiate_template(conn, kit_template_id, army_id=None, stage_id=None,

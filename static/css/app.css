@@ -151,6 +151,9 @@ button.advance, button.go, button[type="submit"] {
 }
 button.primary { flex: 1; }
 button.huge { width: 100%; font-size: 1.15rem; padding: 1.1rem; min-height: 64px; }
+/* Outlined rather than filled: this is the one control in the app that
+   destroys history, and it should read as a warning, not an invitation. */
+button.danger { background: transparent; color: var(--bad); border-color: var(--bad); }
 button:disabled { opacity: .4; cursor: not-allowed; }
 .ghost { background: transparent; color: var(--muted); font-size: .9rem; }
 .stepper { display: flex; gap: .3rem; align-items: center; }
@@ -199,13 +202,14 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 /* ── Forms ──────────────────────────────────────────── */
 label { display: block; margin-bottom: .7rem; font-size: .9rem;
         color: var(--muted); }
-input, select {
+input, select, textarea {
   width: 100%; padding: .6rem; margin-top: .25rem;
   background: var(--bg); color: var(--ink);
   border: 1px solid var(--line); border-radius: 8px;
   font-size: 16px;               /* below 16px, iOS zooms the whole page in */
   min-height: 44px;
 }
+textarea { resize: vertical; font-family: inherit; }
 .stack label:last-of-type { margin-bottom: 1rem; }
 .row { display: flex; flex-wrap: wrap; gap: .7rem; align-items: flex-end; }
 .row > label { flex: 1; min-width: 8rem; margin-bottom: 0; }
