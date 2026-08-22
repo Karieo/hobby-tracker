@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}{{ list.name }} · Collection Tracker{% endblock %}
+{% block body %}
+  <header class="page">
+    <div>
+      <p class="crumb"><a href="/lists">← Lists</a></p>
+      <h1>{{ list.name }}</h1>
+      <p class="muted">
+        {{ list.faction_name or 'no faction' }}
+        {% if list.detachment %} · {{ list.detachment }}{% endif %}
+        · {{ gap.points_total }}{% if list.points_limit %} / {{ list.points_limit }}{% endif %} pts
+      </p>
+    </div>
+  </header>
+
+  {# The two halves are kept apart because they are different evenings: one is
+     a trip to a shop, the other is a night at the desk. #}
+  <div class="stats">
+    <div class="stat {% if gap.to_buy %}flag{% endif %}">
+      <b>{{ gap.to_buy }}</b><span>to buy</span>
+    </div>
+    <div class="stat {% if gap.to_paint %}flag{% endif %}">
+      <b>{{ gap.to_paint }}</b><span>to paint</span>
+    </div>
+    <div class="stat"><b>{{ gap.points_total }}</b><span>points</span></div>
+    <div class="stat"><b>{{ gap.entries|length }}</b><span>units</span></div>
+  </div>
+
+  {% if gap.ready %}
+    <div class="panel"><p><b>Ready to field.</b> Everything is owned and battle ready.</p></div>
+  {% elif gap.fieldable %}
+    <div class="panel warn">
+      <p><b>You can field this today.</b> Everything is owned; {{ gap.to_paint }}
+         model{{ '' if gap.to_paint == 1 else 's' }} would go on the table unpainted.</p>
+    </div>
+  {% endif %}
+
+  <h2>Units <span class="muted">{{ gap.entries|length }}</span></h2>
+  {% if gap.entries %}
+    <ul class="units">
+      {% for e in gap.entries %}
+        <li>
+          <div class="what">
+            <b>{{ e.datasheet_name }}</b>
+            <span class="muted">
+              {{ e.model_count }} model{{ '' if e.model_count == 1 else 's' }}
+              {% if e.points_snapshot %} · {{ e.points_snapshot }} pts{% endif %}
+            </span>
+          </div>
+          <p class="counts">
+            {% if e.ready %}
+              <span class="ok-badge">Ready</span>
+            {% else %}
+              {% if e.buy %}<b class="short">{{ e.buy }}</b> to buy{% endif %}
+              {% if e.buy and e.paint %} · {% endif %}
+              {% if e.paint %}<b>{{ e.paint }}</b> to paint{% endif %}
+            {% endif %}
+            <span class="muted"> · own {{ e.owned_count }}, {{ e.done_count }} ready</span>
+          </p>
+          <div class="actions">
+            <button class="ghost entry-remove" data-entry="{{ e.id }}">Remove</button>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="hint">Nothing in this list yet.</p>
+  {% endif %}
+
+  <h2>Add a unit</h2>
+  <form id="add-entry" class="stack" data-list="{{ list.id }}">
+    <label>Unit
+      <input class="picker" autocomplete="off" data-target="#pick-datasheet"
+             placeholder="Start typing — Beast Snagga Boyz…">
+      <input type="hidden" id="pick-datasheet" name="datasheet_id">
+      <ul class="results" hidden></ul>
+    </label>
+    <label>Models<input id="pick-count" name="model_count" type="number" min="1" value="1"></label>
+    <div class="actions"><button class="go" type="submit">Add</button></div>
+  </form>
+
+  {% if gap.to_buy %}
+    <h2>Take it to the shop</h2>
+    <p class="hint">
+      Puts the {{ gap.to_buy }} model{{ '' if gap.to_buy == 1 else 's' }} you do
+      not own on the wishlist, tagged with this list. Runs again safely — it
+      tops up to the shortfall rather than adding a second copy.
+    </p>
+    <div class="actions">
+      <button class="go" id="raise-wishlist" data-list="{{ list.id }}">
+        Add {{ gap.to_buy }} to the wishlist
+      </button>
+    </div>
+  {% endif %}
+{% endblock %}

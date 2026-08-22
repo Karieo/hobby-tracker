@@ -14,6 +14,8 @@ is effort-weighted (``datasheets.effort`` per model); raw counts travel
 alongside rather than instead.
 """
 
+import json
+
 import database as db
 
 # A box recorded before anyone said what is in it. Prefixed rather than left
@@ -39,6 +41,58 @@ _ACTIVE_UNIT = """
 def stage_ladder(conn):
     """Stages in pipeline order, as plain dicts."""
     return [dict(r) for r in db.get_stages(conn)]
+
+
+# Keywords that suggest a model has no base. Vehicle without Walker: measured
+# against the imported data, Rhino / Land Raider / Trukk / Predator /
+# Battlewagon are Vehicle alone and have none, while Redemptor Dreadnought /
+# Killa Kans / Deff Dread are Vehicle + Walker and do.
+#
+# A hint, never a decision — nine models checked by hand is a correlation, not
+# a rule GW publishes, and one wrong classification is silent and flatters the
+# numbers. It pre-fills a control Clay confirms, exactly as box contents do.
+def basing_hint(keywords):
+    """'unbased' if the keywords suggest no base, else None. Suggestion only."""
+    if not keywords:
+        return None
+    if isinstance(keywords, str):
+        try:
+            keywords = json.loads(keywords)
+        except (TypeError, ValueError):
+            return None
+    keywords = set(keywords or ())
+    if 'Vehicle' in keywords and 'Walker' not in keywords:
+        return 'unbased'
+    return None
+
+
+def set_basing(conn, datasheet_id, basing):
+    """Record whether this datasheet's models sit on a base.
+
+    Clay's to set, never inferred. `None` clears it back to "nobody has said",
+    which behaves as based.
+    """
+    if basing not in (None, 'based', 'unbased'):
+        raise ValueError(f'unknown basing {basing!r}')
+    if not conn.execute('SELECT 1 FROM datasheets WHERE id = ?',
+                        (datasheet_id,)).fetchone():
+        raise ValueError(f'no datasheet {datasheet_id}')
+    conn.execute('UPDATE datasheets SET basing = ?, updated_at = ? WHERE id = ?',
+                 (basing, db.now(), datasheet_id))
+
+
+def stages_for(conn, basing=None, ladder=None):
+    """The ladder a model with this basing actually walks.
+
+    `basing` is the datasheet's: 'unbased' drops the basing stages, 'based' and
+    None keep them. None means nobody has said yet, and it behaves exactly as
+    before — nothing is reclassified behind Clay's back, because the rules data
+    cannot tell us and guessing would overstate progress. See migration 004.
+    """
+    ladder = ladder if ladder is not None else stage_ladder(conn)
+    if basing != 'unbased':
+        return ladder
+    return [s for s in ladder if not s['is_basing']]
 
 
 def next_stage(conn, stage_id):
@@ -179,9 +233,17 @@ def army_stats(conn, army_id):
 
 # ── Units ────────────────────────────────────────────────
 
-def list_units(conn, army_id=None, unassigned=False, include_disposed=False):
+def list_units(conn, army_id=None, unassigned=False, include_disposed=False,
+               kit_id=None):
     """Units with the per-stage counts the stage bar is drawn from."""
     clauses, args = [], []
+    if kit_id is not None:
+        # A kit's own units, disposed or not: the kit page has to show what is
+        # in the box even when the box has been sold, or its contents vanish
+        # from the one screen that exists to explain them.
+        clauses.append('u.kit_id = ?')
+        args.append(kit_id)
+        include_disposed = True
     if unassigned:
         clauses.append('u.army_id IS NULL')
     elif army_id is not None:
@@ -359,7 +421,13 @@ def advance_unit(conn, unit_id, count=None, from_stage_id=None):
     six is the failure this app is built to avoid. ``from_stage_id`` narrows it
     to one stage, for the per-stage increment control.
     """
-    ladder = stage_ladder(conn)
+    # The unit's own ladder, not the universal one: a model with no base steps
+    # straight from Primed to Painted, and never lands on a stage that does not
+    # apply to it.
+    basing = conn.execute(
+        'SELECT d.basing FROM units u JOIN datasheets d ON d.id = u.datasheet_id '
+        'WHERE u.id = ?', (unit_id,)).fetchone()
+    ladder = stages_for(conn, basing['basing'] if basing else None)
     following = {}
     for earlier, later in zip(ladder, ladder[1:]):
         following[earlier['id']] = later['id']
@@ -504,6 +572,51 @@ def create_kit(conn, name, **fields):
         'created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         (name, *[data[c] for c in cols], db.now(), db.now()))
     return cur.lastrowid
+
+
+def update_kit(conn, kit_id, **fields):
+    """Correct a kit's own details. Contents are edited through its units.
+
+    Only the keys passed are touched, so a form that submits three fields
+    cannot blank the other seven. `name` is refused empty rather than accepted
+    and rendered as a nameless row.
+    """
+    kit = get_kit(conn, kit_id)
+    if not kit:
+        raise ValueError(f'no kit {kit_id}')
+
+    editable = ('name', 'faction_id', 'source', 'source_ref', 'acquired_on',
+                'cost_cents', 'box_state', 'notes', 'photo_url')
+    updates = {k: v for k, v in fields.items() if k in editable}
+    if 'name' in updates and not (updates['name'] or '').strip():
+        raise ValueError('a kit needs a name')
+    if not updates:
+        return kit_id
+
+    assignments = ', '.join(f'{k} = ?' for k in updates)
+    conn.execute(f'UPDATE kits SET {assignments}, updated_at = ? WHERE id = ?',
+                 (*updates.values(), db.now(), kit_id))
+    return kit_id
+
+
+def delete_kit(conn, kit_id):
+    """Only for a genuine data-entry mistake — a mis-scan, a duplicate.
+
+    Getting rid of models Clay actually had is `dispose_kit`, which keeps every
+    row: a sold kit leaves ownership counts but stays queryable, which is what
+    makes the spend history honest and "didn't I used to have one of those?"
+    answerable. This is the undo for recording something that was never true.
+
+    Its units go with it, and their models and stage history cascade from
+    there. A scan that produced this kit keeps its own row — the scan really
+    did happen, and the queue is the audit trail of how the collection was
+    built — but stops pointing at a kit that no longer exists.
+    """
+    if not get_kit(conn, kit_id):
+        raise ValueError(f'no kit {kit_id}')
+    conn.execute('UPDATE scan_queue SET kit_id = NULL WHERE kit_id = ?', (kit_id,))
+    conn.execute('DELETE FROM units WHERE kit_id = ?', (kit_id,))
+    conn.execute('DELETE FROM kits WHERE id = ?', (kit_id,))
 
 
 def instantiate_template(conn, kit_template_id, army_id=None, stage_id=None,
@@ -685,6 +798,139 @@ def _segments(ladder, counts, total):
              'is_terminal': bool(s['is_terminal']),
              'is_owned': bool(s['is_owned'])}
             for s in ladder if counts.get(s['id'])]
+
+
+def inventory(conn, query=None, faction_id=None, game_system=None,
+              include_unowned=False, limit=200):
+    """What Clay owns, one row per datasheet: how many, and what state.
+
+    Grouped by datasheet rather than by army or by box, because the questions
+    this answers are about the miniature and not where it happens to live:
+    "how many Boyz do I have, and how many are built?"
+
+    ``include_unowned`` is what makes this the own-it check as well as the
+    inventory. Searching from a shop has to answer "you own none of these"
+    just as clearly as "you own two", so with a query the walk starts at
+    `datasheets` and ownership is a LEFT JOIN. Without one it starts from the
+    collection, because a bare list of 2,895 datasheets is not an inventory.
+
+    Two things are deliberately not merged:
+
+    - **Disposed kits leave the counts.** A sold box keeps its rows, per the
+      invariant, but Clay does not own it any more.
+    - **Wishlist models are counted apart from owned ones.** They are things
+      he wants, not things on the shelf.
+    """
+    first_owned = db.first_owned_stage(conn)
+    clauses, args = [], []
+    if query and query.strip():
+        clauses.append('d.name LIKE ?')
+        args.append(f'%{query.strip()}%')
+    if faction_id:
+        clauses.append('d.faction_id = ?')
+        args.append(faction_id)
+    if game_system:
+        clauses.append('d.game_system = ?')
+        args.append(game_system)
+    # Deprecated 40,000 printings stay out of the picker and out of here, for
+    # the same reason: Clay does not own a [Legends] Vyper, he owns a Vyper.
+    clauses.append("(d.variant IS NULL OR d.game_system <> 'wh40k')")
+    where = ('WHERE ' + ' AND '.join(clauses)) if clauses else ''
+    having = '' if include_unowned else 'HAVING owned_count > 0 OR wanted_count > 0'
+
+    rows = [dict(r) for r in conn.execute(f"""
+        SELECT d.id AS datasheet_id, d.name, d.effort, d.game_system, d.variant,
+               f.name AS faction_name,
+               COALESCE(SUM(CASE WHEN st.is_owned THEN 1 ELSE 0 END), 0)
+                                                            AS owned_count,
+               COALESCE(SUM(CASE WHEN st.id IS NOT NULL AND NOT st.is_owned
+                                 THEN 1 ELSE 0 END), 0)     AS wanted_count,
+               COALESCE(SUM(CASE WHEN st.is_owned AND st.id <> ?
+                                 THEN 1 ELSE 0 END), 0)     AS built_count,
+               COALESCE(SUM(CASE WHEN st.is_terminal THEN 1 ELSE 0 END), 0)
+                                                            AS done_count,
+               COUNT(DISTINCT CASE WHEN k.box_state = 'sealed' THEN k.id END)
+                                                            AS sealed_boxes,
+               COUNT(DISTINCT u.id)                         AS unit_count,
+               COUNT(DISTINCT k.id)                         AS kit_count,
+               d.basing, d.keywords,
+               MAX(m.stage_changed_at)                      AS last_activity
+          FROM datasheets d
+          LEFT JOIN factions f ON f.id = d.faction_id
+          LEFT JOIN units u    ON u.datasheet_id = d.id AND {_ACTIVE_UNIT}
+          LEFT JOIN kits k     ON k.id = u.kit_id
+          LEFT JOIN models m   ON m.unit_id = u.id
+          LEFT JOIN stages st  ON st.id = m.stage_id
+          {where}
+         GROUP BY d.id
+         {having}
+         ORDER BY (owned_count + wanted_count) = 0, d.name
+         LIMIT ?
+    """, [first_owned['id'], *args, limit])]
+
+    if not rows:
+        return rows
+
+    ids = [r['datasheet_id'] for r in rows]
+    marks = ','.join('?' * len(ids))
+    spread = {}
+    for r in conn.execute(f"""
+        SELECT u.datasheet_id, m.stage_id, COUNT(*) AS n
+          FROM units u JOIN models m ON m.unit_id = u.id
+         WHERE u.datasheet_id IN ({marks}) AND {_ACTIVE_UNIT}
+         GROUP BY u.datasheet_id, m.stage_id
+    """, ids):
+        spread.setdefault(r['datasheet_id'], {})[r['stage_id']] = r['n']
+
+    ladder = stage_ladder(conn)
+    for row in rows:
+        counts = spread.get(row['datasheet_id'], {})
+        row['stage_counts'] = counts
+        row['segments'] = _segments(ladder, counts,
+                                    row['owned_count'] + row['wanted_count'])
+        row['effort_total'] = row['owned_count'] * row['effort']
+        row['effort_done'] = row['done_count'] * row['effort']
+        row['completion'] = _pct(row['effort_done'], row['effort_total'])
+        row['owns_any'] = row['owned_count'] > 0
+        # Only worth asking about a model Clay actually has, and only while
+        # nobody has answered.
+        row['basing_hint'] = (basing_hint(row['keywords'])
+                              if row['basing'] is None and row['owns_any']
+                              else None)
+    return rows
+
+
+def owned_summary(conn, datasheet_id):
+    """The own-it check: one datasheet, answered before you reach the till.
+
+    Deliberately its own function rather than a filter over inventory(). This
+    is the fastest question in the app and the one asked standing in a shop,
+    and it has to answer for a datasheet Clay owns *none* of — where inventory,
+    which walks from `units`, returns no row at all.
+    """
+    sheet = conn.execute("""
+        SELECT d.*, f.name AS faction_name FROM datasheets d
+          LEFT JOIN factions f ON f.id = d.faction_id WHERE d.id = ?
+    """, (datasheet_id,)).fetchone()
+    if not sheet:
+        return None
+
+    rows = inventory(conn, include_unowned=True)
+    match = next((r for r in rows if r['datasheet_id'] == datasheet_id), None)
+    summary = {
+        'datasheet_id': datasheet_id,
+        'name': sheet['name'],
+        'faction_name': sheet['faction_name'],
+        'game_system': sheet['game_system'],
+        'variant': sheet['variant'],
+        'owned_count': 0, 'wanted_count': 0, 'built_count': 0,
+        'done_count': 0, 'sealed_boxes': 0, 'unit_count': 0, 'kit_count': 0,
+        'stage_counts': {}, 'segments': [], 'completion': 0,
+    }
+    if match:
+        summary.update(match)
+    summary['owns_any'] = summary['owned_count'] > 0
+    return summary
 
 
 def list_factions(conn):

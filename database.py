@@ -123,6 +123,13 @@ def first_owned_stage(conn):
     ).fetchone()
 
 
+def wishlist_stage(conn):
+    """The one stage with is_owned = 0 — things Clay wants but does not have."""
+    return conn.execute(
+        'SELECT * FROM stages WHERE is_owned = 0 ORDER BY position LIMIT 1'
+    ).fetchone()
+
+
 def terminal_stage(conn):
     return conn.execute(
         'SELECT * FROM stages WHERE is_terminal = 1 ORDER BY position LIMIT 1'

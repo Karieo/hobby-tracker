@@ -68,7 +68,7 @@
       {% for k in kits %}
         <tr class="{% if k.status not in ('owned', 'listed') %}gone{% endif %}">
           <td>
-            <b>{{ k.name }}</b>
+            <a href="/kits/{{ k.id }}"><b>{{ k.name }}</b></a>
             {% if k.faction_name %}<br><span class="muted">{{ k.faction_name }}</span>{% endif %}
             {% if k.source_ref %}<br><span class="muted">{{ k.source_ref }}</span>{% endif %}
           </td>

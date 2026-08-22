@@ -250,6 +250,148 @@ $$('select.kit-status').forEach((select) => {
   });
 });
 
+/* ── Lists ───────────────────────────────────────────────
+ * The keystone: the only screen that says what to do next, and why. */
+
+const newList = $('#new-list');
+if (newList) {
+  newList.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {};
+    new FormData(newList).forEach((v, k) => { if (v !== '') body[k] = v; });
+    try {
+      const data = await post('/api/lists', body);
+      location.href = `/lists/${data.id}`;
+    } catch (err) { toast(err.message, 'error'); }
+  });
+}
+
+const addEntry = $('#add-entry');
+if (addEntry) {
+  addEntry.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {};
+    new FormData(addEntry).forEach((v, k) => { if (v !== '') body[k] = v; });
+    if (!body.datasheet_id) { toast('Pick a unit from the list first'); return; }
+    try {
+      await post(`/api/lists/${addEntry.dataset.list}/entries`, body);
+      location.reload();
+    } catch (err) { toast(err.message, 'error'); }
+  });
+}
+
+document.addEventListener('click', async (e) => {
+  const remove = e.target.closest('.entry-remove');
+  if (remove) {
+    try {
+      await post(`/api/lists/entries/${remove.dataset.entry}`, null, 'DELETE');
+      location.reload();
+    } catch (err) { toast(err.message, 'error'); }
+    return;
+  }
+
+  const raise = e.target.closest('#raise-wishlist');
+  if (raise) {
+    raise.disabled = true;
+    try {
+      const data = await post(`/api/lists/${raise.dataset.list}/wishlist`, {});
+      toast(data.added
+        ? `${data.added} added to the wishlist`
+        : 'Already on the wishlist');
+      location.reload();
+    } catch (err) {
+      raise.disabled = false;
+      toast(err.message, 'error');
+    }
+  }
+});
+
+/* ── Basing applicability ────────────────────────────────
+ * Whether a model has a base is a fact about the plastic, and the rules data
+ * cannot tell us — a Rhino and a Dreadnought are both effort-8 vehicles and
+ * only one has a base. So the app asks, once, next to the model it is asking
+ * about, and stops asking as soon as it has an answer. */
+$$('.basing-set').forEach((button) => {
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      await post(`/api/datasheets/${button.dataset.datasheet}/basing`,
+                 {basing: button.dataset.basing || null});
+      location.reload();
+    } catch (err) {
+      button.disabled = false;
+      toast(err.message, 'error');
+    }
+  });
+});
+
+/* ── One kit ─────────────────────────────────────────────
+ * The kit page was the missing half of the Kits table: it could show "0 units,
+ * 0 models" and offer nowhere to go and find out why, and nothing anywhere
+ * could correct a name or remove a mis-scan. */
+
+const kitEdit = $('#kit-edit');
+if (kitEdit) {
+  kitEdit.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {};
+    new FormData(kitEdit).forEach((v, k) => { body[k] = v; });
+    const button = $('button[type=submit]', kitEdit);
+    button.disabled = true;
+    try {
+      await post(`/api/kits/${kitEdit.dataset.kit}`, body);
+      toast('Saved');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+
+const kitDelete = $('#kit-delete');
+if (kitDelete) {
+  kitDelete.addEventListener('click', async () => {
+    // Spelled out rather than "are you sure?": this is the one control here
+    // that destroys history, and the count is what makes it real.
+    const units = Number(kitDelete.dataset.units) || 0;
+    const models = Number(kitDelete.dataset.models) || 0;
+    const carries = units
+      ? ` and its ${units} unit${units === 1 ? '' : 's'} (${models} model${models === 1 ? '' : 's'}, with their stage history)`
+      : '';
+    if (!confirm(`Delete this kit${carries}? This cannot be undone.\n\n`
+                 + 'If you owned it and sold it, close this and use the status '
+                 + 'control instead — that keeps the models and the spend history.')) {
+      return;
+    }
+    kitDelete.disabled = true;
+    try {
+      await post(`/api/kits/${kitDelete.dataset.kit}`, null, 'DELETE');
+      location.href = '/kits';
+    } catch (err) {
+      kitDelete.disabled = false;
+      toast(err.message, 'error');
+    }
+  });
+}
+
+const kitAdopt = $('#kit-adopt');
+if (kitAdopt) {
+  kitAdopt.addEventListener('click', async () => {
+    const templateId = $('#adopt-template').value;
+    if (!templateId) { toast('Pick which box this is first'); return; }
+    kitAdopt.disabled = true;
+    try {
+      await post(`/api/kits/${kitAdopt.dataset.kit}/adopt`,
+                 {kit_template_id: templateId});
+      location.reload();
+    } catch (err) {
+      kitAdopt.disabled = false;
+      toast(err.message, 'error');
+    }
+  });
+}
+
 /* ── Datasheet picker ────────────────────────────────────
  * Never a free-text field. A unit must point at a real imported datasheet, or
  * points, gaps and purchase advice all quietly go wrong later. */

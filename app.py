@@ -49,7 +49,8 @@ from flask import (Flask, abort, jsonify, redirect,  # noqa: E402
                    render_template, request, session)
 from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 
-import collection as col  # noqa: E402
+import collection as col
+import lists as army_lists  # noqa: E402
 import database as db  # noqa: E402
 import scanning as scan  # noqa: E402
 
@@ -262,6 +263,135 @@ def index():
                            summary=summary)
 
 
+@app.route('/collection')
+def collection_page():
+    """What I own, how many, and what state — and, with a query, the own-it
+    check: the same screen answers "you own none of these" from a shop."""
+    query = (request.args.get('q') or '').strip()
+    with _read() as conn:
+        rows = col.inventory(
+            conn, query=query or None,
+            faction_id=_int(request.args.get('faction_id')),
+            game_system=(request.args.get('system') or None),
+            include_unowned=bool(query))
+        return render_template(
+            'collection.html', rows=rows, query=query,
+            system=(request.args.get('system') or ''),
+            faction_id=_int(request.args.get('faction_id')),
+            factions=col.list_factions(conn),
+            stages=col.stage_ladder(conn),
+            totals={
+                'datasheets': len(rows),
+                'owned': sum(r['owned_count'] for r in rows),
+                'built': sum(r['built_count'] for r in rows),
+                'done': sum(r['done_count'] for r in rows),
+                'wanted': sum(r['wanted_count'] for r in rows),
+            })
+
+
+# ── Lists (spec §2.6) ────────────────────────────────────
+#
+# The only part of the app that pulls. Everything else waits for Clay to feel
+# like moving a model; a list names a target and says what stands in the way.
+
+@app.route('/lists')
+def lists_page():
+    with _read() as conn:
+        return render_template('lists.html', lists=army_lists.list_lists(conn),
+                               factions=col.list_factions(conn),
+                               wants=army_lists.wishlist(conn))
+
+
+@app.route('/lists/<int:list_id>')
+def list_page(list_id):
+    with _read() as conn:
+        army_list = army_lists.get_list(conn, list_id)
+        if not army_list:
+            abort(404)
+        return render_template('list.html', list=army_list,
+                               gap=army_lists.list_gap(conn, list_id))
+
+
+@app.route('/api/lists', methods=['POST'])
+def api_create_list():
+    data = _payload()
+    try:
+        with _write() as conn:
+            list_id = army_lists.create_list(
+                conn, data.get('name') or '',
+                faction_id=_int(data.get('faction_id')),
+                detachment=(data.get('detachment') or '').strip() or None,
+                points_limit=_int(data.get('points_limit')))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'id': list_id}), 201
+
+
+@app.route('/api/lists/<int:list_id>', methods=['DELETE'])
+def api_delete_list(list_id):
+    with _write() as conn:
+        if not army_lists.get_list(conn, list_id):
+            abort(404)
+        army_lists.delete_list(conn, list_id)
+    return jsonify({'success': True})
+
+
+@app.route('/api/lists/<int:list_id>/entries', methods=['POST'])
+def api_add_entry(list_id):
+    data = _payload()
+    try:
+        with _write() as conn:
+            entry_id = army_lists.add_entry(
+                conn, list_id, _int(data.get('datasheet_id')),
+                _int(data.get('model_count'), 1))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'id': entry_id}), 201
+
+
+@app.route('/api/lists/entries/<int:entry_id>', methods=['DELETE'])
+def api_remove_entry(entry_id):
+    with _write() as conn:
+        army_lists.remove_entry(conn, entry_id)
+    return jsonify({'success': True})
+
+
+@app.route('/api/lists/<int:list_id>/wishlist', methods=['POST'])
+def api_raise_wishlist(list_id):
+    """Turn the buy half of the gap into wants. The handoff to the shop."""
+    try:
+        with _write() as conn:
+            if not army_lists.get_list(conn, list_id):
+                abort(404)
+            added = army_lists.raise_wishlist(conn, list_id)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'added': added})
+
+
+@app.route('/api/datasheets/<int:datasheet_id>/basing', methods=['POST'])
+def api_set_basing(datasheet_id):
+    """Whether this datasheet's models have a base. Clay's call, never ours —
+    the rules data cannot tell them apart. See migration 004."""
+    basing = (_payload().get('basing') or '').strip() or None
+    try:
+        with _write() as conn:
+            col.set_basing(conn, datasheet_id, basing)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'success': True, 'basing': basing})
+
+
+@app.route('/api/collection/<int:datasheet_id>')
+def api_owned_summary(datasheet_id):
+    """One datasheet's ownership, for a scan that asks before it adds."""
+    with _read() as conn:
+        summary = col.owned_summary(conn, datasheet_id)
+        if not summary:
+            abort(404)
+        return jsonify(summary)
+
+
 @app.route('/api/armies', methods=['POST'])
 def api_create_army():
     data = _payload()
@@ -455,6 +585,57 @@ def api_create_kit():
             box_state=(data.get('box_state') or 'sealed'),
             notes=(data.get('notes') or '').strip() or None)
     return jsonify({'id': kit_id}), 201
+
+
+@app.route('/kits/<int:kit_id>')
+def kit_page(kit_id):
+    """One box: what it is, what is in it, and what can be done about it."""
+    with _read() as conn:
+        kit = col.get_kit(conn, kit_id)
+        if not kit:
+            abort(404)
+        return render_template(
+            'kit.html', kit=kit,
+            units=col.list_units(conn, kit_id=kit_id),
+            stages=col.stage_ladder(conn),
+            factions=col.list_factions(conn),
+            armies=[a for a in col.list_armies(conn) if a['id']],
+            templates=col.list_templates_with_contents(conn))
+
+
+@app.route('/api/kits/<int:kit_id>', methods=['POST'])
+def api_update_kit(kit_id):
+    data = _payload()
+    fields = {}
+    for key in ('name', 'source', 'source_ref', 'acquired_on', 'notes'):
+        if key in data:
+            fields[key] = (data.get(key) or '').strip() or None
+    if 'name' in fields and not fields['name']:
+        return jsonify({'error': 'A kit needs a name'}), 400
+    if 'box_state' in data:
+        fields['box_state'] = data['box_state']
+    if 'faction_id' in data:
+        fields['faction_id'] = _int(data.get('faction_id'))
+    if 'cost' in data:
+        cost = data.get('cost')
+        fields['cost_cents'] = round(float(cost) * 100) if cost else None
+    try:
+        with _write() as conn:
+            col.update_kit(conn, kit_id, **fields)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'success': True})
+
+
+@app.route('/api/kits/<int:kit_id>', methods=['DELETE'])
+def api_delete_kit(kit_id):
+    """A mis-scan or a duplicate. Selling one is a status change, not this."""
+    try:
+        with _write() as conn:
+            col.delete_kit(conn, kit_id)
+    except ValueError:
+        abort(404)
+    return jsonify({'success': True})
 
 
 @app.route('/api/kits/<int:kit_id>/status', methods=['POST'])

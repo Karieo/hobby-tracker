@@ -441,3 +441,237 @@ def test_the_review_screen_lists_boxes_awaiting_contents(client, db_path):
 
     assert 'Recorded, contents not yet known' in body
     assert 'Unidentified box 5011921225712' in body
+
+
+# ── One kit: view, edit, delete ──────────────────────────
+#
+# The Kits table could show a kit holding "0 units, 0 models" and offer
+# nowhere to go and find out why, and nothing anywhere could correct a name or
+# remove a mis-scan.
+
+def _a_kit(client, db_path, **fields):
+    res = client.post('/api/kits', json={'name': 'Wrecka Krew', **fields})
+    assert res.status_code == 201
+    return res.json['id']
+
+
+def test_the_kit_page_renders_and_lists_its_contents(client, db_path, army_with_unit):
+    kit_id = _a_kit(client, db_path)
+    with db.connect(db_path) as conn:
+        conn.execute('UPDATE units SET kit_id = ? WHERE id = ?',
+                     (kit_id, army_with_unit['unit_id']))
+
+    body = client.get(f'/kits/{kit_id}').get_data(as_text=True)
+
+    assert 'Wrecka Krew' in body
+    assert 'Boyz' in body, 'the units inside the box are the point of the page'
+
+
+def test_a_missing_kit_is_a_404(client):
+    assert client.get('/kits/999').status_code == 404
+
+
+def test_editing_only_touches_the_fields_sent(client, db_path):
+    """A form posting three fields must not blank the other seven."""
+    kit_id = _a_kit(client, db_path, notes='keep me', acquired_on='2026-01-02')
+
+    assert client.post(f'/api/kits/{kit_id}',
+                       json={'name': 'Wrecka Krew 2024'}).status_code == 200
+
+    with db.connect(db_path) as conn:
+        kit = conn.execute('SELECT * FROM kits WHERE id = ?', (kit_id,)).fetchone()
+    assert kit['name'] == 'Wrecka Krew 2024'
+    assert kit['notes'] == 'keep me'
+    assert kit['acquired_on'] == '2026-01-02'
+
+
+def test_a_kit_cannot_be_renamed_to_nothing(client, db_path):
+    kit_id = _a_kit(client, db_path)
+    res = client.post(f'/api/kits/{kit_id}', json={'name': '   '})
+    assert res.status_code == 400
+    with db.connect(db_path) as conn:
+        assert conn.execute('SELECT name FROM kits WHERE id = ?',
+                            (kit_id,)).fetchone()[0] == 'Wrecka Krew'
+
+
+def test_deleting_takes_its_units_and_models_with_it(client, db_path, army_with_unit):
+    kit_id = _a_kit(client, db_path)
+    with db.connect(db_path) as conn:
+        conn.execute('UPDATE units SET kit_id = ? WHERE id = ?',
+                     (kit_id, army_with_unit['unit_id']))
+
+    assert client.delete(f'/api/kits/{kit_id}').status_code == 200
+
+    with db.connect(db_path) as conn:
+        assert conn.execute('SELECT COUNT(*) FROM kits').fetchone()[0] == 0
+        assert conn.execute('SELECT COUNT(*) FROM units').fetchone()[0] == 0
+        assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 0
+
+
+def test_deleting_a_scanned_kit_keeps_the_scan(client, db_path):
+    """The scan really did happen — the queue is the audit trail of how the
+    collection was built. It just stops pointing at a kit that is gone."""
+    client.post('/api/scan', json={'code': '5011921225712'})
+    with db.connect(db_path) as conn:
+        queue_id = conn.execute('SELECT id FROM scan_queue').fetchone()[0]
+    kit_id = client.post(f'/api/scan/{queue_id}/shelve', json={}).json['kits'][0]
+
+    assert client.delete(f'/api/kits/{kit_id}').status_code == 200
+
+    with db.connect(db_path) as conn:
+        row = conn.execute('SELECT * FROM scan_queue WHERE id = ?',
+                           (queue_id,)).fetchone()
+    assert row is not None, 'the scan is history, not a consequence of the kit'
+    assert row['kit_id'] is None
+
+
+def test_deleting_a_missing_kit_is_a_404(client):
+    assert client.delete('/api/kits/999').status_code == 404
+
+
+def test_disposing_is_not_deleting(client, db_path, army_with_unit):
+    """The invariant, asserted rather than assumed: a sold kit keeps every row."""
+    kit_id = _a_kit(client, db_path)
+    with db.connect(db_path) as conn:
+        conn.execute('UPDATE units SET kit_id = ? WHERE id = ?',
+                     (kit_id, army_with_unit['unit_id']))
+
+    assert client.post(f'/api/kits/{kit_id}/status',
+                       json={'status': 'sold', 'price': '25.00'}).status_code == 200
+
+    with db.connect(db_path) as conn:
+        kit = conn.execute('SELECT * FROM kits WHERE id = ?', (kit_id,)).fetchone()
+        assert kit['status'] == 'sold'
+        assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 10
+
+
+# ── The collection screen (spec §2.1, §2.3) ──────────────
+
+def test_the_collection_screen_shows_what_is_owned(client, db_path, army_with_unit):
+    body = client.get('/collection').get_data(as_text=True)
+
+    assert 'Boyz' in body
+    assert '10' in body
+
+
+def test_searching_the_collection_answers_for_something_unowned(client, db_path,
+                                                                army_with_unit):
+    """The own-it check over HTTP: a nil answer is still an answer."""
+    with db.connect(db_path) as conn:
+        faction = conn.execute("SELECT id FROM factions LIMIT 1").fetchone()[0]
+        conn.execute(
+            'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+            "created_at, updated_at) VALUES ('grot', 'Gretchin', ?, 1, ?, ?)",
+            (faction, db.now(), db.now()))
+
+    body = client.get('/collection?q=Gretchin').get_data(as_text=True)
+
+    assert 'Gretchin' in body
+    assert 'You own none' in body
+
+
+def test_the_bare_collection_screen_is_not_a_catalogue_dump(client, db_path,
+                                                            army_with_unit):
+    with db.connect(db_path) as conn:
+        faction = conn.execute("SELECT id FROM factions LIMIT 1").fetchone()[0]
+        conn.execute(
+            'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+            "created_at, updated_at) VALUES ('grot', 'Gretchin', ?, 1, ?, ?)",
+            (faction, db.now(), db.now()))
+
+    body = client.get('/collection').get_data(as_text=True)
+
+    assert 'Boyz' in body
+    assert 'Gretchin' not in body, 'unowned datasheets appear only under search'
+
+
+def test_the_ownership_api_answers_for_one_datasheet(client, army_with_unit):
+    res = client.get(f"/api/collection/{army_with_unit['datasheet_id']}")
+
+    assert res.status_code == 200
+    assert res.json['owns_any'] is True
+    assert res.json['owned_count'] == 10
+
+
+def test_the_ownership_api_404s_for_a_missing_datasheet(client):
+    assert client.get('/api/collection/999').status_code == 404
+
+
+def test_the_nav_leads_with_the_collection_not_the_scanner(client):
+    """Spec §1: scanning is onboarding, not the point."""
+    body = client.get('/collection').get_data(as_text=True)
+    assert body.index('/collection') < body.index('/scan')
+
+
+# ── Lists, the gap and the wishlist (spec §2.6) ──────────
+
+def _a_list(client, name='Saturday'):
+    res = client.post('/api/lists', json={'name': name})
+    assert res.status_code == 201
+    return res.json['id']
+
+
+def test_a_list_shows_its_gap(client, db_path, army_with_unit):
+    """Owns 10 Boyz, none finished; the list asks for 20."""
+    list_id = _a_list(client)
+    client.post(f'/api/lists/{list_id}/entries',
+                json={'datasheet_id': army_with_unit['datasheet_id'],
+                      'model_count': 20})
+
+    body = client.get(f'/lists/{list_id}').get_data(as_text=True)
+
+    assert 'to buy' in body and 'to paint' in body
+    assert '10' in body
+
+
+def test_a_list_needs_a_name_over_http(client):
+    res = client.post('/api/lists', json={'name': '  '})
+    assert res.status_code == 400
+
+
+def test_raising_the_wishlist_creates_wants_not_owns(client, db_path,
+                                                     army_with_unit):
+    list_id = _a_list(client)
+    client.post(f'/api/lists/{list_id}/entries',
+                json={'datasheet_id': army_with_unit['datasheet_id'],
+                      'model_count': 20})
+
+    res = client.post(f'/api/lists/{list_id}/wishlist', json={})
+
+    assert res.status_code == 200
+    assert res.json['added'] == 10, 'owns 10 of the 20'
+    with db.connect(db_path) as conn:
+        wanted = conn.execute(
+            'SELECT COUNT(*) FROM models m JOIN stages s ON s.id = m.stage_id '
+            'WHERE s.is_owned = 0').fetchone()[0]
+    assert wanted == 10
+
+
+def test_raising_the_wishlist_twice_does_not_stack(client, army_with_unit):
+    list_id = _a_list(client)
+    client.post(f'/api/lists/{list_id}/entries',
+                json={'datasheet_id': army_with_unit['datasheet_id'],
+                      'model_count': 20})
+    client.post(f'/api/lists/{list_id}/wishlist', json={})
+
+    second = client.post(f'/api/lists/{list_id}/wishlist', json={})
+
+    assert second.json['added'] == 0
+
+
+def test_removing_an_entry_closes_its_gap(client, army_with_unit):
+    list_id = _a_list(client)
+    entry = client.post(f'/api/lists/{list_id}/entries',
+                        json={'datasheet_id': army_with_unit['datasheet_id'],
+                              'model_count': 20}).json['id']
+
+    assert client.delete(f'/api/lists/entries/{entry}').status_code == 200
+
+    body = client.get(f'/lists/{list_id}').get_data(as_text=True)
+    assert 'Nothing in this list yet' in body
+
+
+def test_a_missing_list_is_a_404(client):
+    assert client.get('/lists/999').status_code == 404
+    assert client.delete('/api/lists/999').status_code == 404
+    assert client.post('/api/lists/999/wishlist', json={}).status_code == 404

@@ -433,6 +433,11 @@ def import_all(conn, dry_run=False):
             report['datasheets_variant'][variant] += 1
         faction_id = faction_ids.get(e['faction_slug'])
         effort = seed_effort(e['keywords'])
+        # Stored rather than discarded: the effort heuristic already depends on
+        # them, and nothing could ask "is this a Vehicle" after the import.
+        # Note they are NOT a basing signal — a Rhino and a Dreadnought carry
+        # the same ones and only one has a base. See migration 004.
+        keywords_json = json.dumps(sorted(e['keywords']))
 
         existing = conn.execute(
             'SELECT id, effort_is_override FROM datasheets WHERE bsdata_id = ?',
@@ -443,24 +448,26 @@ def import_all(conn, dry_run=False):
                 report['effort_preserved'] += 1
                 conn.execute(
                     'UPDATE datasheets SET name = ?, faction_id = ?, '
-                    'variant = ?, source_note = ?, updated_at = ? WHERE id = ?',
-                    (name, faction_id, variant, e['catalogue'],
+                    'variant = ?, keywords = ?, source_note = ?, updated_at = ? '
+                    'WHERE id = ?',
+                    (name, faction_id, variant, keywords_json, e['catalogue'],
                      db.now(), existing['id']))
             else:
                 conn.execute(
                     'UPDATE datasheets SET name = ?, faction_id = ?, effort = ?, '
-                    'variant = ?, source_note = ?, updated_at = ? WHERE id = ?',
-                    (name, faction_id, effort, variant, e['catalogue'],
-                     db.now(), existing['id']))
+                    'variant = ?, keywords = ?, source_note = ?, updated_at = ? '
+                    'WHERE id = ?',
+                    (name, faction_id, effort, variant, keywords_json,
+                     e['catalogue'], db.now(), existing['id']))
             ds_id = existing['id']
             report['datasheets_updated'] += 1
         else:
             cur = conn.execute(
                 'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
-                'variant, source_note, created_at, updated_at) '
-                'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                (bsid, name, faction_id, effort, variant, e['catalogue'],
-                 db.now(), db.now()))
+                'variant, keywords, source_note, created_at, updated_at) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (bsid, name, faction_id, effort, variant, keywords_json,
+                 e['catalogue'], db.now(), db.now()))
             ds_id = cur.lastrowid
             report['datasheets_inserted'] += 1
         datasheet_rows[bsid] = (ds_id, name, e, variant)
