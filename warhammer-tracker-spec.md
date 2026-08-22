@@ -140,13 +140,17 @@ Measured 2026-08-22, from the code rather than memory.
 
 | Loop step | State |
 |---|---|
-| 2.1 Own-it check | **Nothing.** Scanning always means *add*; there is no lookup mode. |
-| 2.2 Box → collection | **Half.** `instantiate_template` does it in one action; the *catalogue* of box contents does not exist. |
-| 2.3 Inventory | **Nothing.** No collection view. |
-| 2.4 Building | **Storage only.** Stages 1–2 of the ladder; no build mode in the UI. |
-| 2.5 Painting | **Built.** Paint mode, session mode, per-unit pipeline. Basing applicability unsolved. |
-| 2.6 List → gap → wishlist | **Nothing.** `army_lists` and `list_entries` exist in the schema with zero code touching them. |
-| 2.7 List import | **Nothing.** Also blocked by egress. |
+| 2.1 Own-it check | **Built.** Searching the collection walks the whole catalogue, so "you own none" is an answer. |
+| 2.2 Box → collection | **Built, data-blocked.** One scan inserts every model; the *catalogue* of box contents still does not exist, so contents are defined once per box by hand. |
+| 2.3 Inventory | **Built.** One row per datasheet: owned, built, battle ready, sealed boxes, wanted. |
+| 2.4 Building | **Built.** The ladder's first half, moved a whole unit at a time. Not a separate mode — building and painting are one pipeline. |
+| 2.5 Painting | **Built.** Paint mode, session mode, per-unit pipeline, and basing applicability. |
+| 2.6 List → gap → wishlist | **Built.** The gap splits buy from paint; the shortfall raises a wishlist tagged with the list that wanted it. |
+| 2.7 List import | **Not built.** Blocked on a source — every candidate host is refused by egress policy. |
+
+Walked end to end against a fresh database: 10 of the 11 checks in the loop
+pass, the eleventh being 2.7. Buying the shortfall closes the gap, which is the
+loop actually closing rather than each step working alone.
 
 Rules data is in place for all of it: 1,445 Warhammer 40,000 datasheets, 2,544
 points rows, 1,450 Kill Team operatives.
@@ -155,14 +159,19 @@ points rows, 1,450 Kill Team operatives.
 
 The loop's own order, not the old step numbers:
 
-1. **Inventory view** (2.3) — the backbone. 2.1 and 2.6 are both queries
-   against it.
-2. **Own-it check** (2.1) — the same query, phone-shaped.
-3. **Basing applicability** (2.5) — before the collection fills with wrong
-   progress. Needs BSData keywords stored, which the importer currently reads
-   and discards.
-4. **List builder, gap, wishlist** (2.6) — the keystone.
-5. **List import** (2.7) — last, and gated on a source.
+1. ~~**Inventory view** (2.3)~~ — done. The backbone; 2.1 and 2.6 are both
+   queries against it.
+2. ~~**Own-it check** (2.1)~~ — done, and it turned out to be the same screen
+   rather than a second one.
+3. ~~**Basing applicability** (2.5)~~ — done. Keywords are stored now; they are
+   a hint, not a classifier, because they cannot actually decide it.
+4. ~~**List builder, gap, wishlist** (2.6)~~ — done.
+5. **List import** (2.7) — remaining, and gated on a source.
+
+What is left after that is not new machinery but the things the loop makes
+worth having: allocating models between competing lists, a build mode of its
+own if building ever wants one, and the kit catalogue that would make 2.2 cheap
+in bulk.
 
 ## 7 · Known blockers
 
