@@ -27,6 +27,23 @@ async function post(url, body, method = 'POST') {
   return data;
 }
 
+// The whole queue in one tap. A hundred boxes must not cost a hundred taps —
+// the per-row buttons stay for the odd box out.
+document.addEventListener('click', async (e) => {
+  const button = e.target.closest('#sweep');
+  if (!button) return;
+  button.disabled = true;
+  try {
+    const data = await post('/api/scan/sweep', defaults());
+    toast(`${data.confirmed} kit${data.confirmed === 1 ? '' : 's'} added, ` +
+          `${data.shelved} box${data.shelved === 1 ? '' : 'es'} recorded`);
+    setTimeout(() => location.reload(), 700);
+  } catch (err) {
+    button.disabled = false;
+    toast(err.message, 'error');
+  }
+});
+
 document.addEventListener('click', async (e) => {
   const row = e.target.closest('.qrow');
   if (!row) return;
@@ -113,6 +130,22 @@ document.addEventListener('change', async (e) => {
     const label = row.querySelector('.q-confirm .n');
     if (label) label.textContent = quantity;
   } catch (err) { toast(err.message, 'error'); }
+});
+
+// The codes nobody has defined yet, in one block to hand to whoever does the
+// looking up. Contents get researched once per product and seeded.
+document.addEventListener('click', async (e) => {
+  const button = e.target.closest('#copy-codes');
+  if (!button) return;
+  const codes = button.dataset.codes || '';
+  try {
+    await navigator.clipboard.writeText(codes);
+    toast('Copied — paste them wherever the lookup happens');
+  } catch {
+    // Clipboard access needs a secure context and a user gesture, and iOS
+    // withholds it often enough that a silent failure would be baffling.
+    prompt('Copy these codes:', codes.split('\n').join(' '));
+  }
 });
 
 function refreshCounts(summary) {

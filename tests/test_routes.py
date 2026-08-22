@@ -675,3 +675,170 @@ def test_a_missing_list_is_a_404(client):
     assert client.get('/lists/999').status_code == 404
     assert client.delete('/api/lists/999').status_code == 404
     assert client.post('/api/lists/999/wishlist', json={}).status_code == 404
+
+
+def test_the_collection_screen_can_move_a_model_forward(client, db_path,
+                                                        army_with_unit):
+    """The front door has to be actionable. It rendered a stage bar and offered
+    no way to move anything, so from the app's main screen nothing could be
+    advanced at all."""
+    body = client.get('/collection').get_data(as_text=True)
+
+    assert f'data-unit="{army_with_unit["unit_id"]}"' in body
+    assert 'Advance all' in body
+    assert f'/units/{army_with_unit["unit_id"]}' in body, 'and it links through'
+
+
+def test_a_finished_unit_offers_no_advance(client, db_path, army_with_unit):
+    with db.connect(db_path) as conn:
+        terminal = db.terminal_stage(conn)['id']
+        conn.execute('UPDATE models SET stage_id = ? WHERE unit_id = ?',
+                     (terminal, army_with_unit['unit_id']))
+
+    body = client.get('/collection').get_data(as_text=True)
+
+    assert 'Battle ready' in body
+    assert 'Advance all' not in body
+
+
+def test_each_box_advances_on_its_own(client, db_path, army_with_unit):
+    """Two boxes of the same unit are one inventory row but two units, and
+    advancing one must not touch the other."""
+    with db.connect(db_path) as conn:
+        second = col.create_unit(conn, army_with_unit['datasheet_id'], 10)
+
+    body = client.get('/collection').get_data(as_text=True)
+
+    assert f'data-unit="{army_with_unit["unit_id"]}"' in body
+    assert f'data-unit="{second}"' in body
+
+
+def test_a_wishlist_unit_says_bought_it_not_advance(client, db_path,
+                                                    army_with_unit):
+    """Advancing a wishlist model moves it to On sprue — it turns a want into
+    something owned. That is the right action and the wrong word for it."""
+    with db.connect(db_path) as conn:
+        wishlist = db.wishlist_stage(conn)['id']
+        col.create_unit(conn, army_with_unit['datasheet_id'], 5,
+                        stage_id=wishlist)
+
+    body = client.get('/collection').get_data(as_text=True)
+
+    assert 'Bought it' in body
+    assert '· wanted' in body
+
+
+# ── The box page: one barcode, everything known about it ──
+
+def test_an_unknown_code_offers_to_have_its_contents_defined(client):
+    res = client.get('/box/5011921225712')
+
+    assert res.status_code == 200
+    body = res.get_data(as_text=True)
+    assert 'Never seen this code' in body
+    # And straight into the define flow, landing back here afterwards.
+    assert 'templates?code=5011921225712&amp;next=/box/5011921225712' in body
+
+
+def test_a_known_code_shows_what_is_in_the_box(client, army_with_unit, db_path):
+    with db.connect(db_path) as conn:
+        template = scanning.create_template(
+            conn, 'Combat Patrol: Orks',
+            [{'datasheet_id': army_with_unit['datasheet_id'], 'model_count': 20}],
+            year=2024)
+        scanning.link_barcode(conn, '5011921204021', template)
+
+    body = client.get('/box/5011921204021').get_data(as_text=True)
+
+    assert 'Combat Patrol: Orks' in body
+    assert 'Boyz' in body
+
+
+def test_the_box_page_offers_to_fill_in_every_recorded_copy(client,
+                                                            army_with_unit,
+                                                            db_path):
+    with db.connect(db_path) as conn:
+        template = scanning.create_template(
+            conn, 'Combat Patrol: Orks',
+            [{'datasheet_id': army_with_unit['datasheet_id'], 'model_count': 20}])
+        qid = scanning.enqueue_scan(conn, '5011921204021')['queue_id']
+        scanning.set_queue_quantity(conn, qid, 2)
+        scanning.shelve_queue_row(conn, qid)
+        scanning.link_barcode(conn, '5011921204021', template)
+
+    body = client.get('/box/5011921204021').get_data(as_text=True)
+    assert 'Fill in 2 boxes' in body
+
+    res = client.post('/api/box/5011921204021/adopt-all', json={})
+    assert res.status_code == 200
+    assert len(res.get_json()['kits']) == 2
+    with db.connect(db_path) as conn:
+        assert col.kits_awaiting_contents(conn) == []
+
+
+def test_adopt_all_on_an_undefined_code_is_refused(client):
+    res = client.post('/api/box/5011921225712/adopt-all', json={})
+    assert res.status_code == 400
+    assert 'no kit template' in res.get_json()['error']
+
+
+def test_a_typed_code_is_normalised_by_the_box_page(client):
+    """Scanners and humans both add spaces and dashes."""
+    assert client.get('/box/5011921-225712').status_code == 200
+
+
+# ── Sweeping the queue ───────────────────────────────────
+
+def test_sweeping_onboards_the_whole_queue(client, army_with_unit, db_path):
+    with db.connect(db_path) as conn:
+        template = scanning.create_template(
+            conn, 'Combat Patrol: Orks',
+            [{'datasheet_id': army_with_unit['datasheet_id'], 'model_count': 20}])
+        scanning.link_barcode(conn, '5011921204021', template)
+        scanning.enqueue_scan(conn, '5011921204021')
+        scanning.enqueue_scan(conn, '5011921225712')
+
+    res = client.post('/api/scan/sweep', json={})
+
+    assert res.status_code == 200
+    assert res.get_json() == {'confirmed': 1, 'shelved': 1,
+                              'summary': {'open_rows': 0, 'open_boxes': 0,
+                                          'known': 0, 'unknown': 0}}
+
+
+# ── Pasting a shelf in ───────────────────────────────────
+
+def test_the_add_page_renders(client):
+    assert client.get('/add').status_code == 200
+
+
+def test_preview_matches_what_it_can_and_asks_about_the_rest(client,
+                                                             army_with_unit):
+    res = client.post('/add/preview', data={
+        'text': '20 Boyz built\n5 Nothing Real',
+        'game_system': 'wh40k', 'stage_id': ''})
+
+    assert res.status_code == 200
+    body = res.get_data(as_text=True)
+    assert 'Boyz' in body
+    assert 'no datasheet with this name' in body
+
+
+def test_committing_creates_the_units(client, army_with_unit, db_path):
+    res = client.post('/api/add/commit', json={
+        'rows': [{'datasheet_id': army_with_unit['datasheet_id'],
+                  'count': 20, 'stage_word': 'built'}]})
+
+    assert res.status_code == 200
+    assert len(res.get_json()['units']) == 1
+    with db.connect(db_path) as conn:
+        rows = {r['name']: r for r in col.inventory(conn)}
+        assert rows['Boyz']['owned_count'] == 30, 'the fixture 10 plus these 20'
+
+
+def test_committing_an_unresolved_line_is_refused(client, army_with_unit):
+    res = client.post('/api/add/commit', json={
+        'rows': [{'datasheet_id': None, 'count': 5}]})
+
+    assert res.status_code == 400
+    assert 'still need a datasheet' in res.get_json()['error']

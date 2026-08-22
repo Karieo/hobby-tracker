@@ -9,6 +9,9 @@
         What you own, how many, and what state they are in.
       </p>
     </div>
+    {# The door for models with no barcode left to scan. Not in the nav: it is
+       something you do a few times, not somewhere you live. #}
+    <a class="ghost" href="/add">Add models</a>
   </header>
 
   {# Search is the own-it check. With a query the walk starts at the whole
@@ -83,6 +86,31 @@
               {% endif %}
             </p>
             {{ stage_bar(r) }}
+
+            {# The whole point of the front door being here: it has to be
+               actionable. One tap per unit moves the lot forward — per §3 that
+               is the primary interaction, not a per-model selection. #}
+            {% for u in r.units %}
+              <div class="unit-line">
+                <a href="/units/{{ u.id }}">
+                  {{ u.model_count }} model{{ '' if u.model_count == 1 else 's' }}
+                  {% if u.owned_count == 0 %}<span class="muted">· wanted</span>
+                  {% elif u.kit_name %}<span class="muted">· {{ u.kit_name }}</span>
+                  {% elif u.army_name %}<span class="muted">· {{ u.army_name }}</span>{% endif %}
+                </a>
+                {% if u.owned_count == 0 %}
+                  {# A wishlist unit. Advancing it means "I went and bought
+                     these", which is the loop closing from §2.6 back to the
+                     collection — but calling that "advance all" would turn a
+                     want into an owned model without saying so. #}
+                  <button class="advance" data-unit="{{ u.id }}">Bought it →</button>
+                {% elif u.done_count < u.model_count %}
+                  <button class="advance" data-unit="{{ u.id }}">Advance all →</button>
+                {% else %}
+                  <span class="ok-badge">Battle ready</span>
+                {% endif %}
+              </div>
+            {% endfor %}
 
             {% if r.basing == 'unbased' %}
               <p class="hint basing">

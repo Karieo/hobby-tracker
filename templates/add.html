@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Add models · Collection Tracker{% endblock %}
+{% block body %}
+{# The door for everything with no barcode left to scan: models already built,
+   painted, or split out of a box years ago. Recorded one form at a time they
+   never get recorded at all. #}
+  <header class="page">
+    <div>
+      <p class="crumb"><a href="/collection">← Back to the collection</a></p>
+      <h1>Add models</h1>
+      <p class="hint">One line per unit. Counts and stages optional.</p>
+    </div>
+  </header>
+
+  <form class="panel stack" method="post" action="/add/preview">
+    <label>What you have
+      <textarea name="text" rows="10" autofocus
+                placeholder="20 Boyz built&#10;Trukk primed&#10;5 Nobz&#10;Ghazghkull Thraka painted"></textarea>
+    </label>
+    <p class="hint">
+      Any of these work: <span class="code">20 Boyz built</span>,
+      <span class="code">Boyz x20</span>, <span class="code">Trukk primed</span>,
+      or just <span class="code">Nobz</span>. Names are matched against the
+      imported datasheets — anything that doesn't match comes back for you to
+      pick, never guessed and never dropped.
+    </p>
+
+    <h2>Applies to every line</h2>
+    <div class="row">
+      <label>Game system
+        <select name="game_system">
+          <option value="">All</option>
+          <option value="wh40k" selected>Warhammer 40,000</option>
+          <option value="killteam">Kill Team</option>
+        </select>
+      </label>
+      <label>Army
+        <select name="army_id">
+          <option value="">Unassigned</option>
+          {% for a in armies %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Stage
+        <select name="stage_id">
+          {% for s in stages %}
+            <option value="{{ s.id }}" {% if s.name == 'Assembled' %}selected{% endif %}>
+              {{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <p class="hint">
+      The stage is the fallback for lines that don't name one themselves. Be
+      honest rather than optimistic — every progress figure is effort-weighted,
+      and stages get corrected later anyway.
+    </p>
+
+    <button type="submit">Check these →</button>
+  </form>
+{% endblock %}

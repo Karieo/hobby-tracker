@@ -115,9 +115,27 @@ async function submit(code) {
   }
 }
 
+/* Identifying rather than adding: the scan is a way of saying "this box",
+ * not "one more of these". Navigating away tears the camera down anyway;
+ * stopping first is the clean path. */
+function identifying() {
+  const picked = document.querySelector('#mode input[name=mode]:checked');
+  return !!picked && picked.value === 'identify';
+}
+
+function handle(code) {
+  if (identifying()) {
+    beep(true);
+    stop();
+    location.href = `/box/${encodeURIComponent(code)}`;
+    return Promise.resolve();
+  }
+  return submit(code);
+}
+
 function onDecode(code) {
   if (!code || recentlySeen(code)) return;
-  submit(code);
+  handle(code);
 }
 
 async function start() {
@@ -239,7 +257,7 @@ manual.addEventListener('submit', async (e) => {
   const input = manual.querySelector('input[name=code]');
   const code = input.value.trim();
   if (!code) return;
-  await submit(code);
+  await handle(code);
   input.value = '';
   manualNote.textContent = '';
   input.focus();

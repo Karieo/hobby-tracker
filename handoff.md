@@ -1,135 +1,117 @@
-# Handoff — Session 6
+# Handoff
 
-## 1 · Goal
+## Goal
 
-Deploy to bastion, then make it usable with real boxes. Everything here came
-out of doing that on the real box rather than reading about it.
+Get Clay's collection into the app as easily and seamlessly as possible. He is
+starting from zero, and the collection is **mostly still boxed**. Mid-session he
+added that he may share the app with other people and wants them to be able to
+add models easily — form undecided, so nothing here builds toward accounts, and
+nothing here makes that harder later.
 
-## 2 · Current State
+## Current state
 
-**Live on bastion, with both rules sources loaded and a verified backup.**
-Eight PRs merged (#8–#15).
+Working, browser-verified end to end at phone width, 408 tests green.
 
-| | |
+The onboarding day now runs: **scan the shelf without stopping → one tap
+onboards the whole queue → pick a box up and scan it to say what's in it → that
+answer fills in every copy already recorded.** Models with no barcode left to
+scan get pasted in as a list.
+
+| Piece | State |
 |---|---|
-| Image | healthy on port 3100 |
-| 40,000 datasheets | 1,445 (+330 Legends, +62 Crucible, kept and flagged) |
-| Kill Team operatives | 1,450 across 104 teams, editions 2018 / 2021 / 2024 |
-| Points rows | 2,544, of which 399 inherited Chapter listings |
-| Unresolved | 31, all expected classes |
-| Collection | Clay's to fill now that both catalogues exist |
-| Backup | verified restorable; `BACKUP_DEST` still unset |
+| Queue sweep (`/api/scan/sweep`) | Known boxes confirmed, unknown ones recorded, one tap |
+| Box page (`/box/<code>`) | Everything known about one EAN; the define-contents entry point |
+| Identify mode (`/scan`) | A decode navigates to the box page instead of queuing |
+| Adopt-all (`adopt_all_for_code`) | Contents defined once fill every recorded copy |
+| Derived catalogue (`seed/derived_kits.py`) | Researched contents with enforced provenance |
+| Paste-import (`/add`) | One line per unit, matched or sent back for a decision |
 
-**Not tested on real hardware:** the camera. The Cloudflare Tunnel is still not
-pointed at 3100, so scanning has only ever been manual entry over plain HTTP.
-The secure-context guard was seen working — it refuses the camera, names the
-reason, and offers the keypad — but `getUserMedia` itself has never run.
+Spec §2.7 (list import) is the only loop step still unbuilt, still gated on a
+source.
 
-## 3 · Active Files
+## Active files
 
-- `migrations/003_game_system.sql` — `datasheets.game_system`
-- `scripts/fetch_killteam.py`, `scripts/import_killteam.py`
-- `collection.py` — `search_datasheets`, `kits_awaiting_contents`,
-  `adopt_template`, `list_templates_with_contents`
-- `scanning.py` — `shelve_queue_row`
-- `static/js/app.js` (picker labels), `static/js/review.js`
-- `templates/scan_review.html`
-- `deploy.sh`, `restore.sh`, `Dockerfile`, `.gitignore`, `.github/workflows/ci.yml`
+- `scanning.py` — `sweep_queue`
+- `collection.py` — `adopt_all_for_code`; `kits_awaiting_contents` now joins
+  `barcodes` to suggest a template
+- `bulk_add.py` *(new)* — paste parsing, matching, commit
+- `names.py` *(new)* — `norm`/`slugify`, extracted from `scripts/import_bsdata.py`
+  and re-exported there so the seeds' imports keep working
+- `seed/derived_kits.py` + `seed/data/derived_kits.yaml` + `README-derived.md` *(new)*
+- `app.py` — `/box/<code>`, `/api/box/<code>/adopt-all`, `/api/scan/sweep`,
+  `/add`, `/add/preview`, `/api/add/commit`
+- `templates/` — `box.html`, `add.html`, `add_preview.html` *(new)*;
+  `scan.html`, `scan_review.html`, `templates.html`, `collection.html` edited
+- `static/js/` — `box.js`, `add.js` *(new)*; `scan.js`, `review.js`,
+  `template-form.js` edited
+- `tests/` — `test_derived_kits.py`, `test_bulk_add.py` *(new)*;
+  `test_shelving.py`, `test_routes.py` extended
 
-## 4 · Changes Made
+## Changes made
 
-**#8–#12, the deploy.** A compose schema bastion's docker-compose rejected;
-`git` missing from the image so the rules fetch died after a healthy boot;
-`.gitignore` covering `.env` but none of nano's copies of it; the import gated
-on a *directory* rather than on the database; a fetch refusal that told Clay to
-delete a complete checkout; and `restore.sh --check` failing a perfectly good
-first snapshot because a fresh install has no collection. Full detail in each
-PR; all five were found by running the thing, and CI was green throughout.
+**Three onboarding frictions, measured against the real ~100-box journey:**
 
-**#14, recording a box without contents.** `shelve_queue_row` creates a kit at
-"On sprue" with no units; `kits_awaiting_contents` is the visible backlog;
-`adopt_template` fills one in later without duplicating it. Sound work, wrong
-problem — see section 5.
+1. A tap per box → `sweep_queue` does the lot, mirroring the per-row `ready`
+   rule so an empty template shelves rather than failing.
+2. No way to tell recorded boxes apart → the box *is* the index. Identify mode
+   plus `/box/<code>`.
+3. Defining contents paid for one box → now pays for every copy carrying that
+   code, skipping any already filled in.
 
-**#15, Kill Team.** BSData keeps Kill Team in a separate repository
-(`wh40k-killteam`, XML `.cat`), so operatives had never been imported and those
-boxes could not be recorded at all. 1,450 operatives, all three editions kept
-in `variant` for the same reason Combat Patrol needs its year. One new column,
-defaulted, so existing rows are untouched.
+**The catalogue Clay asked for.** There is no dataset to import — BSData
+publishes the rules, nobody publishes the plastic, and direct fetches are
+egress-blocked. But *search answers*, so contents get researched one product at
+a time and banked in a seed file with their sources. The importer refuses
+unsourced entries, matches unit names against BSData or records them unresolved,
+and **holds barcodes to a higher bar than contents**: two independent sources or
+the entry ships without one.
 
-259 tests pass; shellcheck clean.
+**Paste-import** for everything already built or painted. Forgiving about shape
+(`20 Boyz built`, `Boyz x20`, `Trukk primed`, bare `Nobz`), unforgiving about
+names.
 
-## 5 · Failed Attempts
+## Failed attempts
 
-**I built the wrong fix, at length, and shipped it.** Clay scanned a real box,
-got "Unknown box", and said he would not enter ~100 boxes by hand. I diagnosed
-*form friction* and made contents optional — which records barcodes and tracks
-no models, in an app whose entire purpose is tracking models sprue to battle
-ready. He said "this is not really doing what I need it to do", and he was
-right.
+- **`WebFetch` is still blocked per-domain.** jb-spielwaren, warhammer.com —
+  same `403 to CONNECT` as before. `WebSearch` *does* work and returns enough
+  content in its answers to source box contents. That difference is the only
+  reason the catalogue got unblocked; do not assume fetch will start working.
+- **Researching the Necron Combat Patrol EAN returned two conflicting
+  barcodes**, with sources disagreeing about whether they meant the 2021 or
+  2023 box. This is what drove the two-source barcode rule. That entry ships
+  with contents and no barcode.
+- **`contents_source='derived_web'` failed a CHECK constraint.** Rather than
+  rebuild the constraint in a migration, the seed uses the existing `seed`
+  value — accurate, and the per-template source URLs carry the real provenance.
+- **`search_datasheets` is a raw SQL LIKE, so it finds nothing for a typo.**
+  "Boyzz" returned zero candidates, which would have left an empty picker on
+  exactly the line needing one. `bulk_add._near_misses` falls back to folded
+  substring, prefix, then word overlap.
+- **Two of my own browser assertions were wrong rather than the code** — the
+  review heading is uppercased by CSS, so the literal string never matched
+  (the same trap as last session), and I asserted `&amp;` where Jinja emits a
+  literal `&` from template text. The template now emits `&amp;` properly.
+- **Ran the app against the real database by mistake.** `db.DB_PATH` is a
+  module constant with no env override, so `DB_PATH=... python3 app.py` was
+  silently ignored. Browser checks now go through a launcher that sets
+  `db.DB_PATH` before importing `app`.
+- **Toast grammar bug shipped to the browser and back**: "1 line still need a
+  datasheet". Caught by reading the screenshot, not by a test.
 
-Two things would have caught it before I wrote any code. **Measuring the form:**
-it has a searchable datasheet picker and pre-fills the count from `min_models`
-— four keystrokes, a few seconds, not the two minutes I assumed. **Asking what
-was actually missing:** "the kill team are missing from the database as well"
-arrived unprompted and explained everything. The data was missing, not the
-patience.
+## Next steps
 
-The pattern from earlier in the session repeated: I optimised against the
-constraint Clay stated ("no manual entry") instead of the goal he had
-("track my models"), and did not check the premise.
-
-**Three guesses about a box I cannot see**, each answerable with one command:
-telling Clay to `mv` a complete 46-catalogue checkout aside (it survived only
-because he ran the `ls` first); `git pull && ./deploy.sh` twice while the fix
-sat in an unmerged PR, with `Using cache` and an identical image ID visible in
-the screenshot I already had; and quoting "~1,900 datasheets" as his health
-checkpoint when the real figure, in a docstring I had read, is 1,445.
-
-**A green suite that was lying.** An interrupted edit appended the same route
-tests twice; both copies passed because Python shadows the earlier definition,
-so half of them never ran. Found by noticing the diff was larger than what I
-wrote.
-
-**Kill Team nearly shipped broken twice**, both silent, both caught only by
-running it against the real 127 catalogues: BSData reuses entry ids across
-catalogues, so keying on the bare id let one team overwrite another's
-operatives; and `search_datasheets` hides `variant IS NOT NULL`, which would
-have imported 1,450 operatives and displayed none of them. A third was my own
-regression — ordering put Kill Team above 40,000 and buried Intercessor Squad.
-
-## 6 · Next Steps
-
-**Point the tunnel at 3100 and scan a real box.** The last untested thing, and
-the one that has to work in a shop rather than at a desk. iOS will prompt for
-camera access once; a dismissed prompt is remembered and `Start camera` then
-does nothing forever (Settings → Safari → Camera to undo).
-
-**Then the collection view** — the other half of step 5, and the last thing
-before v1 is done. No blockers.
-
-**Done since:** the Kits table was read-only — a kit could show "0 units, 0
-models" with nowhere to go and find out why, and nothing anywhere could correct
-a name or remove a mis-scan. `/kits/<id>` now shows a box's contents, edits its
-details, fills an empty one in from a template, and deletes one recorded in
-error. Deleting is kept explicitly distinct from disposal: it names the units
-and models it will destroy, and points at the status control for anything Clay
-actually owned.
-
-**Open questions for Clay:**
-
-- **Other game systems.** If he owns Age of Sigmar, Necromunda or Horus Heresy
-  boxes they are missing for exactly the reason Kill Team was. BSData has repos
-  for each and the XML shape is identical, so extending the importer is small.
-- **`BACKUP_DEST`** is still unset. Snapshots land on `/mnt/t7` — a different
-  disk, the same Jetson.
-- **The 90 Combat Patrol issues** still need a source. Every candidate host is
-  refused by egress policy (`403 to CONNECT`), including `lexicanum.com`, which
-  would not have carried box contents anyway. No open dataset of GW kit
-  contents or EANs exists on GitHub — searched, and the search works.
-- **Two premium-kit decisions**: which Daemon Prince variant, and whether GSC
-  Broodcoven splits into Magus / Primus / Patriarch.
-- **Wolf Guard Headtakers** needs a pick between two same-named datasheets.
-- Dependencies unpinned (`>=`), so CI resolves the latest release each run.
-
-**Do not build past step 5.**
+1. **Merge PR #17 and deploy.** It now carries this whole sprint, not just the
+   collection fix it was opened for.
+2. **Hand over the unknown codes.** Scan the shelf, sweep, tap *Copy N unknown
+   codes* on the review screen, paste them into a session. Each gets researched
+   and added to `derived_kits.yaml`; re-running the importer makes every
+   recorded copy offer to fill itself in.
+3. **`BACKUP_DEST` is still unset** — snapshots live on the same Jetson as the
+   database.
+4. **Spec §2.7, list import** — the last loop step, still gated on a source.
+   Paste-import's parser and picker are most of the machinery it needs.
+5. **Two premium-kit decisions still open** (Daemon Prince variant, GSC
+   Broodcoven split) and the Wolf Guard Headtakers duplicate-name pick.
+6. **Sharing.** If it means "others self-host", this sprint is the feature. If
+   it means accounts on Clay's box, that is a schema-and-auth project to plan
+   on its own — worth asking which before building anything for it.

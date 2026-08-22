@@ -79,6 +79,26 @@ footer { max-width: 60rem; margin: 3rem auto 0; color: var(--muted);
 .panel.empty p:first-child { color: var(--ink); margin-top: 0; }
 .panel.warn { border-color: var(--warn); }
 
+/* Confirming a pasted list. A row needing a decision is marked, and stops
+   being marked the moment it gets one. */
+.addrow { margin-bottom: .6rem; }
+.addrow .what { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; }
+.addrow .row { align-items: end; }
+.skipbox { display: flex; align-items: center; gap: .4rem; min-height: 44px;
+           font-size: .9rem; color: var(--muted); }
+.skipbox input { width: 1.15rem; height: 1.15rem; }
+
+/* What the camera does with a decode. Tap targets stay finger-sized: this is
+   chosen one-handed, at a shelf. */
+.modes { display: grid; gap: .5rem; border: 1px solid var(--line);
+         margin: 0 0 1rem; }
+.modes label { display: grid; grid-template-columns: auto 1fr; gap: .1rem .6rem;
+               align-items: center; padding: .5rem; border-radius: 8px;
+               min-height: 44px; cursor: pointer; }
+.modes label:has(input:checked) { background: var(--panel-2, rgba(127,127,127,.12)); }
+.modes input { grid-row: span 2; width: 1.15rem; height: 1.15rem; }
+.modes .muted { grid-column: 2; font-size: .85rem; }
+
 .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: .6rem;
          margin-bottom: 1.5rem; }
 @media (min-width: 40rem) { .stats { grid-template-columns: repeat(4, 1fr); } }
@@ -336,3 +356,9 @@ button.link { background: none; border: none; color: var(--accent); padding: 0;
               cursor: pointer; }
 .ok-badge { color: var(--accent); font-weight: 600; }
 .short { color: var(--warn); }
+/* A unit inside a collection row: what it is on the left, the one control
+   that matters on the right. */
+.unit-line { display: flex; gap: .6rem; align-items: center;
+             justify-content: space-between; padding: .35rem 0;
+             border-top: 1px solid var(--line); font-size: .9rem; }
+.unit-line button { min-height: 38px; padding: .35rem .7rem; font-size: .85rem; }

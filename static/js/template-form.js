@@ -81,9 +81,12 @@ if (create) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
-      // Straight back to the queue: the codes this just resolved are waiting.
-      location.href = create.querySelector('[name=code]').value
-        ? '/scan/review' : `/templates/${data.id}`;
+      // Back where the definition was asked for: the box page Clay scanned
+      // from if there is one, otherwise the queue whose codes this resolved.
+      const next = create.querySelector('[name=next]');
+      location.href = (next && next.value)
+        || (create.querySelector('[name=code]').value
+            ? '/scan/review' : `/templates/${data.id}`);
     } catch (err) { toast(err.message, 'error'); }
   });
 }

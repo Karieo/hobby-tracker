@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Check these · Collection Tracker{% endblock %}
+{% block body %}
+{# Every pasted line, matched or not. Nothing commits until Clay has looked at
+   it, and a line he pasted never vanishes without him saying so. #}
+  <header class="page">
+    <div>
+      <p class="crumb"><a href="/add">← Back to the paste</a></p>
+      <h1>Check these</h1>
+      <p class="hint">
+        {{ rows|length }} line{{ '' if rows|length == 1 else 's' }},
+        {{ rows|length - unresolved }} matched{% if unresolved %},
+        <b>{{ unresolved }} need{{ 's' if unresolved == 1 }} a decision</b>{% endif %}.
+      </p>
+    </div>
+  </header>
+
+  {% if not rows %}
+    <div class="panel empty">
+      <p>Nothing to read in that.</p>
+      <p class="muted"><a href="/add">Try again</a> — one line per unit.</p>
+    </div>
+  {% else %}
+    {% if unresolved %}
+      <p class="hint warnline">
+        Unmatched lines are never guessed at. Pick the right datasheet, or mark
+        the line skipped — either way it's your call, not the app's.
+      </p>
+    {% endif %}
+
+    <form id="lines">
+      {% for row in rows %}
+        <div class="panel addrow {% if not row.datasheet_id %}warn{% endif %}"
+             data-count="{{ row.count }}" data-stage-word="{{ row.stage_word or '' }}">
+          <div class="what">
+            <b>{{ row.count }}×</b>
+            {% if row.datasheet_id %}
+              {{ row.datasheet_name }}
+              {% if row.faction_name %}<span class="muted">{{ row.faction_name }}</span>{% endif %}
+              {% if row.stage_word %}<span class="pill">{{ row.stage_word }}</span>{% endif %}
+              <input type="hidden" class="ds" value="{{ row.datasheet_id }}">
+            {% else %}
+              <span class="muted">{{ row.name }}</span>
+            {% endif %}
+          </div>
+
+          {% if not row.datasheet_id %}
+            <p class="hint">
+              <span class="code">{{ row.raw }}</span> — {{ row.why }}
+            </p>
+            <div class="row">
+              <label>Which is it?
+                <input class="picker" autocomplete="off"
+                       placeholder="Start typing a datasheet name…"
+                       data-target="#ds-{{ loop.index }}">
+                <input type="hidden" class="ds" id="ds-{{ loop.index }}">
+              </label>
+              <label class="skipbox">
+                <input type="checkbox" class="skip"> Skip this line
+              </label>
+            </div>
+            {% if row.candidates %}
+              <p class="hint">
+                Did you mean:
+                {% for c in row.candidates[:5] %}
+                  <button type="button" class="link pick" data-id="{{ c.id }}"
+                          data-name="{{ c.name }}">{{ c.name }}</button>{% if not loop.last %} · {% endif %}
+                {% endfor %}
+              </p>
+            {% endif %}
+          {% endif %}
+        </div>
+      {% endfor %}
+    </form>
+
+    <div class="panel">
+      <div class="actions">
+        <button class="go" id="commit"
+                data-army="{{ army_id or '' }}" data-stage="{{ stage_id or '' }}">
+          Add {{ rows|length }} unit{{ '' if rows|length == 1 else 's' }} →
+        </button>
+        <a class="ghost" href="/add">Start over</a>
+      </div>
+      <p class="hint">
+        Lines without a stage word land at
+        <b>{% for s in stages %}{% if s.id == stage_id %}{{ s.name }}{% endif %}{% endfor %}</b>{% if army_id %},
+        in {% for a in armies %}{% if a.id == army_id %}{{ a.name }}{% endif %}{% endfor %}{% endif %}.
+      </p>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}<script src="/static/js/add.js?v={{ asset_version }}"></script>{% endblock %}

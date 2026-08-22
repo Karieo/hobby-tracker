@@ -682,18 +682,62 @@ def kits_awaiting_contents(conn):
     This is the backlog that bargain creates, and it has to stay visible or it
     becomes silent debt.
     """
-    # source_ref carries the scanned code, set when the box was shelved. Read
-    # it straight rather than joining back through barcodes: same answer when
-    # the row exists, and still the right answer for a box added by hand.
+    # source_ref carries the scanned code, set when the box was shelved. The
+    # join back through barcodes is what makes a box defined later pay for
+    # every copy already on the shelf: define Combat Patrol once and all three
+    # recorded copies know what they are. A box added by hand has no code and
+    # simply gets no suggestion.
     return [dict(r) for r in conn.execute("""
-        SELECT k.*, k.source_ref AS code, f.name AS faction_name
+        SELECT k.*, k.source_ref AS code, f.name AS faction_name,
+               t.id AS suggested_template_id, t.name AS suggested_template_name,
+               t.year AS suggested_template_year
           FROM kits k
-          LEFT JOIN factions f ON f.id = k.faction_id
+          LEFT JOIN factions f      ON f.id = k.faction_id
+          LEFT JOIN barcodes b      ON b.code = k.source_ref
+          LEFT JOIN kit_templates t ON t.id = b.kit_template_id
+           AND EXISTS (SELECT 1 FROM kit_template_units ktu
+                        WHERE ktu.kit_template_id = t.id)
          WHERE k.kit_template_id IS NULL
            AND k.status = 'owned'
            AND NOT EXISTS (SELECT 1 FROM units u WHERE u.kit_id = k.id)
          ORDER BY k.created_at DESC, k.id DESC
     """)]
+
+
+def adopt_all_for_code(conn, code, kit_template_id=None, army_id=None,
+                       stage_id=None):
+    """Fill in every recorded box carrying this barcode, in one action.
+
+    The payoff for defining contents once. Three copies of the same Combat
+    Patrol were three taps before this, and the third tap is where a hundred-box
+    onboarding stops being finished.
+
+    Kits that already hold units are skipped rather than refused: a partly
+    filled-in shelf is the normal state halfway through, and failing the whole
+    action because one box is already done would be its own dead end.
+    """
+    if kit_template_id is None:
+        row = conn.execute(
+            'SELECT kit_template_id FROM barcodes WHERE code = ?', (code,)
+        ).fetchone()
+        kit_template_id = row['kit_template_id'] if row else None
+    if not kit_template_id:
+        raise ValueError('no kit template linked to that barcode yet')
+
+    kits = conn.execute("""
+        SELECT k.id FROM kits k
+         WHERE k.source_ref = ? AND k.kit_template_id IS NULL
+           AND k.status = 'owned'
+           AND NOT EXISTS (SELECT 1 FROM units u WHERE u.kit_id = k.id)
+         ORDER BY k.id
+    """, (code,)).fetchall()
+
+    filled = []
+    for kit in kits:
+        adopt_template(conn, kit['id'], kit_template_id, army_id=army_id,
+                       stage_id=stage_id)
+        filled.append(kit['id'])
+    return filled
 
 
 def adopt_template(conn, kit_id, kit_template_id, army_id=None, stage_id=None):
@@ -882,9 +926,17 @@ def inventory(conn, query=None, faction_id=None, game_system=None,
     """, ids):
         spread.setdefault(r['datasheet_id'], {})[r['stage_id']] = r['n']
 
+    # The units behind each row, so the collection can be acted on rather than
+    # only read. Without these it renders a stage bar and offers no way to move
+    # anything — the app's front door became a dead end.
+    units_by_sheet = {}
+    for unit in list_units(conn):
+        units_by_sheet.setdefault(unit['datasheet_id'], []).append(unit)
+
     ladder = stage_ladder(conn)
     for row in rows:
         counts = spread.get(row['datasheet_id'], {})
+        row['units'] = units_by_sheet.get(row['datasheet_id'], [])
         row['stage_counts'] = counts
         row['segments'] = _segments(ladder, counts,
                                     row['owned_count'] + row['wanted_count'])

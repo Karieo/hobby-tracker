@@ -276,6 +276,30 @@ def set_queue_quantity(conn, queue_id, quantity):
                  'AND resolved_at IS NULL', (max(1, quantity), queue_id))
 
 
+def sweep_queue(conn, army_id=None, stage_id=None, **kit_fields):
+    """Every open row in one action: template-backed rows are confirmed into
+    kits and models, unknown ones are shelved as owned boxes awaiting contents.
+
+    The per-row buttons survive for the odd box out, but on onboarding day the
+    queue holds a hundred rows and a tap per row is a hundred taps — exactly
+    the per-box cost that splitting capture from enrichment exists to remove.
+    The review screen's defaults apply to everything, same as confirming rows
+    one at a time.
+
+    A template with no contents defined counts as unknown here, mirroring
+    ``queue_rows``: resolving it would fail, and shelving the box keeps it
+    honestly recorded until the contents exist.
+    """
+    confirmed, shelved = [], []
+    for row in queue_rows(conn):
+        if row['ready']:
+            confirmed += resolve_queue_row(conn, row['id'], army_id=army_id,
+                                           stage_id=stage_id, **kit_fields)
+        else:
+            shelved += shelve_queue_row(conn, row['id'], **kit_fields)
+    return {'confirmed': confirmed, 'shelved': shelved}
+
+
 # ── Kit templates ────────────────────────────────────────
 #
 # Built manually first, deliberately. Onboarding must never depend on automation

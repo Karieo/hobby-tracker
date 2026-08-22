@@ -189,3 +189,151 @@ def test_only_adoptable_templates_are_offered(conn, template):
     offered = col.list_templates_with_contents(conn)
     assert [t['id'] for t in offered] == [template]
     assert offered[0]['model_count'] == 20
+
+
+# ── Sweeping the whole queue ─────────────────────────────
+
+def test_sweep_confirms_known_and_shelves_unknown(conn, template):
+    """One tap on onboarding day: template-backed rows become kits with
+    models, unknown codes become recorded boxes awaiting contents."""
+    known = _queue(conn, '5011921204021')      # linked to the template below
+    scan.link_barcode(conn, '5011921204021', template)
+    unknown = _queue(conn, '5011921225712')
+
+    result = scan.sweep_queue(conn)
+
+    assert len(result['confirmed']) == 1
+    assert len(result['shelved']) == 1
+    assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 20
+    assert len(col.kits_awaiting_contents(conn)) == 1
+    for qid in (known, unknown):
+        assert conn.execute('SELECT resolved_at FROM scan_queue WHERE id = ?',
+                            (qid,)).fetchone()['resolved_at']
+
+
+def test_sweep_honours_quantity(conn):
+    _queue(conn, '5011921225712', quantity=3)
+    result = scan.sweep_queue(conn)
+    assert len(result['shelved']) == 3
+
+
+def test_sweep_shelves_a_template_with_no_contents(conn):
+    """Mirrors the per-row 'ready' rule: resolving an empty template would
+    fail, and the box still deserves to be recorded."""
+    empty = _empty_template(conn)
+    qid = _queue(conn, '5011921111111')
+    scan.link_barcode(conn, '5011921111111', empty)
+
+    result = scan.sweep_queue(conn)
+
+    assert result['confirmed'] == []
+    assert len(result['shelved']) == 1
+    assert conn.execute('SELECT COUNT(*) FROM units').fetchone()[0] == 0
+
+
+def test_sweeping_an_empty_queue_is_a_no_op(conn):
+    assert scan.sweep_queue(conn) == {'confirmed': [], 'shelved': []}
+
+
+def test_sweep_applies_the_stage_default_to_confirmed_models(conn, template):
+    stages = {s['name']: s['id'] for s in col.stage_ladder(conn)}
+    scan.link_barcode(conn, '5011921204021', template)
+    _queue(conn, '5011921204021')
+
+    scan.sweep_queue(conn, stage_id=stages['Assembled'])
+
+    at = {r['stage_id'] for r in conn.execute('SELECT stage_id FROM models')}
+    assert at == {stages['Assembled']}
+
+
+# ── Its own barcode says what it is ──────────────────────
+
+def test_a_shelved_box_suggests_the_template_its_code_now_links_to(conn, template):
+    """Defining Combat Patrol's contents once pays for every copy already on
+    the shelf — the boxes were recorded before anyone knew what they were."""
+    scan.shelve_queue_row(conn, _queue(conn, '5011921204021'))
+    assert col.kits_awaiting_contents(conn)[0]['suggested_template_id'] is None
+
+    scan.link_barcode(conn, '5011921204021', template)
+
+    row = col.kits_awaiting_contents(conn)[0]
+    assert row['suggested_template_id'] == template
+    assert row['suggested_template_name'] == 'Combat Patrol: Orks'
+
+
+def test_a_template_with_no_contents_is_never_suggested(conn):
+    """Adopting it would fail, so offering it is a dead end."""
+    empty = _empty_template(conn)
+    scan.shelve_queue_row(conn, _queue(conn, '5011921111111'))
+    scan.link_barcode(conn, '5011921111111', empty)
+
+    assert col.kits_awaiting_contents(conn)[0]['suggested_template_id'] is None
+
+
+def test_a_hand_added_box_has_no_code_and_no_suggestion(conn):
+    col.create_kit(conn, 'Something from a bring-and-buy')
+    row = col.kits_awaiting_contents(conn)[0]
+    assert row['code'] is None
+    assert row['suggested_template_id'] is None
+
+
+# ── Filling in every copy at once ────────────────────────
+
+def test_adopt_all_fills_every_recorded_copy_of_the_code(conn, template):
+    scan.shelve_queue_row(conn, _queue(conn, '5011921204021', quantity=3))
+    scan.link_barcode(conn, '5011921204021', template)
+
+    filled = col.adopt_all_for_code(conn, '5011921204021')
+
+    assert len(filled) == 3
+    assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 60
+    assert col.kits_awaiting_contents(conn) == []
+
+
+def test_adopt_all_finds_the_template_from_the_barcode(conn, template):
+    """Clay scanned a box; the code is the only thing he had to supply."""
+    scan.shelve_queue_row(conn, _queue(conn, '5011921204021'))
+    scan.link_barcode(conn, '5011921204021', template)
+
+    assert len(col.adopt_all_for_code(conn, '5011921204021')) == 1
+
+
+def test_adopt_all_skips_boxes_already_filled_in(conn, template):
+    """A part-filled shelf is the normal state halfway through, and failing
+    the whole action over one finished box is its own dead end."""
+    kits = scan.shelve_queue_row(conn, _queue(conn, '5011921204021', quantity=2))
+    scan.link_barcode(conn, '5011921204021', template)
+    col.adopt_template(conn, kits[0], template)
+
+    filled = col.adopt_all_for_code(conn, '5011921204021')
+
+    assert filled == [kits[1]]
+    assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 40
+
+
+def test_adopt_all_refuses_an_unlinked_code(conn):
+    scan.shelve_queue_row(conn, _queue(conn, '5011921204021'))
+    with pytest.raises(ValueError, match='no kit template'):
+        col.adopt_all_for_code(conn, '5011921204021')
+
+
+def test_adopt_all_leaves_other_codes_alone(conn, template):
+    scan.shelve_queue_row(conn, _queue(conn, '5011921204021'))
+    scan.shelve_queue_row(conn, _queue(conn, '5011921225712'))
+    scan.link_barcode(conn, '5011921204021', template)
+
+    col.adopt_all_for_code(conn, '5011921204021')
+
+    left = col.kits_awaiting_contents(conn)
+    assert [k['code'] for k in left] == ['5011921225712']
+
+
+def test_adopt_all_honours_the_stage_default(conn, template):
+    stages = {s['name']: s['id'] for s in col.stage_ladder(conn)}
+    scan.shelve_queue_row(conn, _queue(conn, '5011921204021'))
+    scan.link_barcode(conn, '5011921204021', template)
+
+    col.adopt_all_for_code(conn, '5011921204021', stage_id=stages['Assembled'])
+
+    at = {r['stage_id'] for r in conn.execute('SELECT stage_id FROM models')}
+    assert at == {stages['Assembled']}
