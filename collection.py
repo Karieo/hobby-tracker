@@ -14,6 +14,8 @@ is effort-weighted (``datasheets.effort`` per model); raw counts travel
 alongside rather than instead.
 """
 
+import json
+
 import database as db
 
 # A box recorded before anyone said what is in it. Prefixed rather than left
@@ -39,6 +41,58 @@ _ACTIVE_UNIT = """
 def stage_ladder(conn):
     """Stages in pipeline order, as plain dicts."""
     return [dict(r) for r in db.get_stages(conn)]
+
+
+# Keywords that suggest a model has no base. Vehicle without Walker: measured
+# against the imported data, Rhino / Land Raider / Trukk / Predator /
+# Battlewagon are Vehicle alone and have none, while Redemptor Dreadnought /
+# Killa Kans / Deff Dread are Vehicle + Walker and do.
+#
+# A hint, never a decision — nine models checked by hand is a correlation, not
+# a rule GW publishes, and one wrong classification is silent and flatters the
+# numbers. It pre-fills a control Clay confirms, exactly as box contents do.
+def basing_hint(keywords):
+    """'unbased' if the keywords suggest no base, else None. Suggestion only."""
+    if not keywords:
+        return None
+    if isinstance(keywords, str):
+        try:
+            keywords = json.loads(keywords)
+        except (TypeError, ValueError):
+            return None
+    keywords = set(keywords or ())
+    if 'Vehicle' in keywords and 'Walker' not in keywords:
+        return 'unbased'
+    return None
+
+
+def set_basing(conn, datasheet_id, basing):
+    """Record whether this datasheet's models sit on a base.
+
+    Clay's to set, never inferred. `None` clears it back to "nobody has said",
+    which behaves as based.
+    """
+    if basing not in (None, 'based', 'unbased'):
+        raise ValueError(f'unknown basing {basing!r}')
+    if not conn.execute('SELECT 1 FROM datasheets WHERE id = ?',
+                        (datasheet_id,)).fetchone():
+        raise ValueError(f'no datasheet {datasheet_id}')
+    conn.execute('UPDATE datasheets SET basing = ?, updated_at = ? WHERE id = ?',
+                 (basing, db.now(), datasheet_id))
+
+
+def stages_for(conn, basing=None, ladder=None):
+    """The ladder a model with this basing actually walks.
+
+    `basing` is the datasheet's: 'unbased' drops the basing stages, 'based' and
+    None keep them. None means nobody has said yet, and it behaves exactly as
+    before — nothing is reclassified behind Clay's back, because the rules data
+    cannot tell us and guessing would overstate progress. See migration 004.
+    """
+    ladder = ladder if ladder is not None else stage_ladder(conn)
+    if basing != 'unbased':
+        return ladder
+    return [s for s in ladder if not s['is_basing']]
 
 
 def next_stage(conn, stage_id):
@@ -367,7 +421,13 @@ def advance_unit(conn, unit_id, count=None, from_stage_id=None):
     six is the failure this app is built to avoid. ``from_stage_id`` narrows it
     to one stage, for the per-stage increment control.
     """
-    ladder = stage_ladder(conn)
+    # The unit's own ladder, not the universal one: a model with no base steps
+    # straight from Primed to Painted, and never lands on a stage that does not
+    # apply to it.
+    basing = conn.execute(
+        'SELECT d.basing FROM units u JOIN datasheets d ON d.id = u.datasheet_id '
+        'WHERE u.id = ?', (unit_id,)).fetchone()
+    ladder = stages_for(conn, basing['basing'] if basing else None)
     following = {}
     for earlier, later in zip(ladder, ladder[1:]):
         following[earlier['id']] = later['id']
@@ -793,6 +853,7 @@ def inventory(conn, query=None, faction_id=None, game_system=None,
                                                             AS sealed_boxes,
                COUNT(DISTINCT u.id)                         AS unit_count,
                COUNT(DISTINCT k.id)                         AS kit_count,
+               d.basing, d.keywords,
                MAX(m.stage_changed_at)                      AS last_activity
           FROM datasheets d
           LEFT JOIN factions f ON f.id = d.faction_id
@@ -831,6 +892,11 @@ def inventory(conn, query=None, faction_id=None, game_system=None,
         row['effort_done'] = row['done_count'] * row['effort']
         row['completion'] = _pct(row['effort_done'], row['effort_total'])
         row['owns_any'] = row['owned_count'] > 0
+        # Only worth asking about a model Clay actually has, and only while
+        # nobody has answered.
+        row['basing_hint'] = (basing_hint(row['keywords'])
+                              if row['basing'] is None and row['owns_any']
+                              else None)
     return rows
 
 

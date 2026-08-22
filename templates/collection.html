@@ -83,6 +83,25 @@
               {% endif %}
             </p>
             {{ stage_bar(r) }}
+
+            {% if r.basing == 'unbased' %}
+              <p class="hint basing">
+                No base — skips the two basing stages.
+                <button class="link basing-set" data-datasheet="{{ r.datasheet_id }}"
+                        data-basing="">Undo</button>
+              </p>
+            {% elif r.basing_hint == 'unbased' %}
+              {# Asked, never assumed. Vehicle-without-Walker is a signal
+                 checked against nine datasheets, not a rule GW publishes, and
+                 a wrong answer here silently flatters progress. #}
+              <p class="hint basing">
+                Does this have a base? Its keywords suggest not.
+                <button class="link basing-set" data-datasheet="{{ r.datasheet_id }}"
+                        data-basing="unbased">No base</button>
+                <button class="link basing-set" data-datasheet="{{ r.datasheet_id }}"
+                        data-basing="based">It does</button>
+              </p>
+            {% endif %}
           {% else %}
             <p class="counts muted">
               You own none.

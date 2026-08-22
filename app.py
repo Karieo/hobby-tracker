@@ -288,6 +288,19 @@ def collection_page():
             })
 
 
+@app.route('/api/datasheets/<int:datasheet_id>/basing', methods=['POST'])
+def api_set_basing(datasheet_id):
+    """Whether this datasheet's models have a base. Clay's call, never ours —
+    the rules data cannot tell them apart. See migration 004."""
+    basing = (_payload().get('basing') or '').strip() or None
+    try:
+        with _write() as conn:
+            col.set_basing(conn, datasheet_id, basing)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'success': True, 'basing': basing})
+
+
 @app.route('/api/collection/<int:datasheet_id>')
 def api_owned_summary(datasheet_id):
     """One datasheet's ownership, for a scan that asks before it adds."""

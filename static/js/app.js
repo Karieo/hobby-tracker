@@ -250,6 +250,25 @@ $$('select.kit-status').forEach((select) => {
   });
 });
 
+/* ── Basing applicability ────────────────────────────────
+ * Whether a model has a base is a fact about the plastic, and the rules data
+ * cannot tell us — a Rhino and a Dreadnought are both effort-8 vehicles and
+ * only one has a base. So the app asks, once, next to the model it is asking
+ * about, and stops asking as soon as it has an answer. */
+$$('.basing-set').forEach((button) => {
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      await post(`/api/datasheets/${button.dataset.datasheet}/basing`,
+                 {basing: button.dataset.basing || null});
+      location.reload();
+    } catch (err) {
+      button.disabled = false;
+      toast(err.message, 'error');
+    }
+  });
+});
+
 /* ── One kit ─────────────────────────────────────────────
  * The kit page was the missing half of the Kits table: it could show "0 units,
  * 0 models" and offer nowhere to go and find out why, and nothing anywhere
