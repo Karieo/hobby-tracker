@@ -134,16 +134,31 @@ def template_for_code(conn, code):
     return dict(row) if row else None
 
 
-def link_barcode(conn, code, kit_template_id):
+def link_barcode(conn, code, kit_template_id, link_source='manual'):
     """Teach the local table what a code is. This is the whole trick.
 
     Once a code points at a template, every future scan of that box — including
     the three other copies still on the shelf — resolves with no typing at all.
+
+    ``link_source`` records what kind of evidence made the link. It matters
+    because the two halves of a catalogue entry come from different places and
+    only one of them can be researched: retailers publish the Games Workshop
+    product code everywhere and the EAN almost nowhere, so the *contents* of a
+    box can be looked up and its *barcode* generally cannot. A scan is a person
+    holding the plastic, which beats any web page — so a 'scanned' link is
+    allowed to overrule a 'seed' one, and never the other way round.
     """
     code = normalise_code(code)
     _ensure_barcode(conn, code)
-    conn.execute('UPDATE barcodes SET kit_template_id = ? WHERE code = ?',
-                 (kit_template_id, code))
+    existing = conn.execute(
+        'SELECT kit_template_id, link_source FROM barcodes WHERE code = ?',
+        (code,)).fetchone()
+    if (existing and existing['kit_template_id']
+            and existing['link_source'] == 'scanned' and link_source == 'seed'):
+        return False
+    conn.execute('UPDATE barcodes SET kit_template_id = ?, link_source = ? '
+                 'WHERE code = ?', (kit_template_id, link_source, code))
+    return True
 
 
 def _ensure_barcode(conn, code):
