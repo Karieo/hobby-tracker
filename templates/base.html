@@ -10,6 +10,7 @@
 <nav class="nav">
   <a href="/" class="brand">Hobby</a>
   <a href="/collection" {% if request.path.startswith('/collection') %}class="on"{% endif %}>Collection</a>
+  <a href="/lists" {% if request.path.startswith('/lists') %}class="on"{% endif %}>Lists</a>
   <a href="/paint" {% if request.path.startswith('/paint') %}class="on"{% endif %}>Paint</a>
   <a href="/kits" {% if request.path.startswith('/kits') %}class="on"{% endif %}>Kits</a>
   <a href="/scan" {% if request.path.startswith('/scan') %}class="on"{% endif %}>Scan</a>

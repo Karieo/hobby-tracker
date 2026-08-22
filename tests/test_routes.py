@@ -601,3 +601,77 @@ def test_the_nav_leads_with_the_collection_not_the_scanner(client):
     """Spec §1: scanning is onboarding, not the point."""
     body = client.get('/collection').get_data(as_text=True)
     assert body.index('/collection') < body.index('/scan')
+
+
+# ── Lists, the gap and the wishlist (spec §2.6) ──────────
+
+def _a_list(client, name='Saturday'):
+    res = client.post('/api/lists', json={'name': name})
+    assert res.status_code == 201
+    return res.json['id']
+
+
+def test_a_list_shows_its_gap(client, db_path, army_with_unit):
+    """Owns 10 Boyz, none finished; the list asks for 20."""
+    list_id = _a_list(client)
+    client.post(f'/api/lists/{list_id}/entries',
+                json={'datasheet_id': army_with_unit['datasheet_id'],
+                      'model_count': 20})
+
+    body = client.get(f'/lists/{list_id}').get_data(as_text=True)
+
+    assert 'to buy' in body and 'to paint' in body
+    assert '10' in body
+
+
+def test_a_list_needs_a_name_over_http(client):
+    res = client.post('/api/lists', json={'name': '  '})
+    assert res.status_code == 400
+
+
+def test_raising_the_wishlist_creates_wants_not_owns(client, db_path,
+                                                     army_with_unit):
+    list_id = _a_list(client)
+    client.post(f'/api/lists/{list_id}/entries',
+                json={'datasheet_id': army_with_unit['datasheet_id'],
+                      'model_count': 20})
+
+    res = client.post(f'/api/lists/{list_id}/wishlist', json={})
+
+    assert res.status_code == 200
+    assert res.json['added'] == 10, 'owns 10 of the 20'
+    with db.connect(db_path) as conn:
+        wanted = conn.execute(
+            'SELECT COUNT(*) FROM models m JOIN stages s ON s.id = m.stage_id '
+            'WHERE s.is_owned = 0').fetchone()[0]
+    assert wanted == 10
+
+
+def test_raising_the_wishlist_twice_does_not_stack(client, army_with_unit):
+    list_id = _a_list(client)
+    client.post(f'/api/lists/{list_id}/entries',
+                json={'datasheet_id': army_with_unit['datasheet_id'],
+                      'model_count': 20})
+    client.post(f'/api/lists/{list_id}/wishlist', json={})
+
+    second = client.post(f'/api/lists/{list_id}/wishlist', json={})
+
+    assert second.json['added'] == 0
+
+
+def test_removing_an_entry_closes_its_gap(client, army_with_unit):
+    list_id = _a_list(client)
+    entry = client.post(f'/api/lists/{list_id}/entries',
+                        json={'datasheet_id': army_with_unit['datasheet_id'],
+                              'model_count': 20}).json['id']
+
+    assert client.delete(f'/api/lists/entries/{entry}').status_code == 200
+
+    body = client.get(f'/lists/{list_id}').get_data(as_text=True)
+    assert 'Nothing in this list yet' in body
+
+
+def test_a_missing_list_is_a_404(client):
+    assert client.get('/lists/999').status_code == 404
+    assert client.delete('/api/lists/999').status_code == 404
+    assert client.post('/api/lists/999/wishlist', json={}).status_code == 404

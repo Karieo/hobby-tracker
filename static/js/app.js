@@ -250,6 +250,62 @@ $$('select.kit-status').forEach((select) => {
   });
 });
 
+/* ── Lists ───────────────────────────────────────────────
+ * The keystone: the only screen that says what to do next, and why. */
+
+const newList = $('#new-list');
+if (newList) {
+  newList.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {};
+    new FormData(newList).forEach((v, k) => { if (v !== '') body[k] = v; });
+    try {
+      const data = await post('/api/lists', body);
+      location.href = `/lists/${data.id}`;
+    } catch (err) { toast(err.message, 'error'); }
+  });
+}
+
+const addEntry = $('#add-entry');
+if (addEntry) {
+  addEntry.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {};
+    new FormData(addEntry).forEach((v, k) => { if (v !== '') body[k] = v; });
+    if (!body.datasheet_id) { toast('Pick a unit from the list first'); return; }
+    try {
+      await post(`/api/lists/${addEntry.dataset.list}/entries`, body);
+      location.reload();
+    } catch (err) { toast(err.message, 'error'); }
+  });
+}
+
+document.addEventListener('click', async (e) => {
+  const remove = e.target.closest('.entry-remove');
+  if (remove) {
+    try {
+      await post(`/api/lists/entries/${remove.dataset.entry}`, null, 'DELETE');
+      location.reload();
+    } catch (err) { toast(err.message, 'error'); }
+    return;
+  }
+
+  const raise = e.target.closest('#raise-wishlist');
+  if (raise) {
+    raise.disabled = true;
+    try {
+      const data = await post(`/api/lists/${raise.dataset.list}/wishlist`, {});
+      toast(data.added
+        ? `${data.added} added to the wishlist`
+        : 'Already on the wishlist');
+      location.reload();
+    } catch (err) {
+      raise.disabled = false;
+      toast(err.message, 'error');
+    }
+  }
+});
+
 /* ── Basing applicability ────────────────────────────────
  * Whether a model has a base is a fact about the plastic, and the rules data
  * cannot tell us — a Rhino and a Dreadnought are both effort-8 vehicles and

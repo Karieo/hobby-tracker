@@ -49,7 +49,8 @@ from flask import (Flask, abort, jsonify, redirect,  # noqa: E402
                    render_template, request, session)
 from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 
-import collection as col  # noqa: E402
+import collection as col
+import lists as army_lists  # noqa: E402
 import database as db  # noqa: E402
 import scanning as scan  # noqa: E402
 
@@ -286,6 +287,86 @@ def collection_page():
                 'done': sum(r['done_count'] for r in rows),
                 'wanted': sum(r['wanted_count'] for r in rows),
             })
+
+
+# ── Lists (spec §2.6) ────────────────────────────────────
+#
+# The only part of the app that pulls. Everything else waits for Clay to feel
+# like moving a model; a list names a target and says what stands in the way.
+
+@app.route('/lists')
+def lists_page():
+    with _read() as conn:
+        return render_template('lists.html', lists=army_lists.list_lists(conn),
+                               factions=col.list_factions(conn),
+                               wants=army_lists.wishlist(conn))
+
+
+@app.route('/lists/<int:list_id>')
+def list_page(list_id):
+    with _read() as conn:
+        army_list = army_lists.get_list(conn, list_id)
+        if not army_list:
+            abort(404)
+        return render_template('list.html', list=army_list,
+                               gap=army_lists.list_gap(conn, list_id))
+
+
+@app.route('/api/lists', methods=['POST'])
+def api_create_list():
+    data = _payload()
+    try:
+        with _write() as conn:
+            list_id = army_lists.create_list(
+                conn, data.get('name') or '',
+                faction_id=_int(data.get('faction_id')),
+                detachment=(data.get('detachment') or '').strip() or None,
+                points_limit=_int(data.get('points_limit')))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'id': list_id}), 201
+
+
+@app.route('/api/lists/<int:list_id>', methods=['DELETE'])
+def api_delete_list(list_id):
+    with _write() as conn:
+        if not army_lists.get_list(conn, list_id):
+            abort(404)
+        army_lists.delete_list(conn, list_id)
+    return jsonify({'success': True})
+
+
+@app.route('/api/lists/<int:list_id>/entries', methods=['POST'])
+def api_add_entry(list_id):
+    data = _payload()
+    try:
+        with _write() as conn:
+            entry_id = army_lists.add_entry(
+                conn, list_id, _int(data.get('datasheet_id')),
+                _int(data.get('model_count'), 1))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'id': entry_id}), 201
+
+
+@app.route('/api/lists/entries/<int:entry_id>', methods=['DELETE'])
+def api_remove_entry(entry_id):
+    with _write() as conn:
+        army_lists.remove_entry(conn, entry_id)
+    return jsonify({'success': True})
+
+
+@app.route('/api/lists/<int:list_id>/wishlist', methods=['POST'])
+def api_raise_wishlist(list_id):
+    """Turn the buy half of the gap into wants. The handoff to the shop."""
+    try:
+        with _write() as conn:
+            if not army_lists.get_list(conn, list_id):
+                abort(404)
+            added = army_lists.raise_wishlist(conn, list_id)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'added': added})
 
 
 @app.route('/api/datasheets/<int:datasheet_id>/basing', methods=['POST'])

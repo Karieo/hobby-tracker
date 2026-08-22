@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Lists · Collection Tracker{% endblock %}
+{% block body %}
+  <header class="page">
+    <div>
+      <h1>Lists</h1>
+      <p class="muted">
+        What you want to field, and what stands between it and the table.
+      </p>
+    </div>
+  </header>
+
+  <form id="new-list" class="stack">
+    <label>Name<input name="name" required placeholder="Saturday at the club"></label>
+    <label>Faction
+      <select name="faction_id">
+        <option value="">—</option>
+        {% for f in factions %}<option value="{{ f.id }}">{{ f.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Points limit<input name="points_limit" type="number" min="0" placeholder="2000"></label>
+    <div class="actions"><button class="go" type="submit">Add list</button></div>
+  </form>
+
+  {% if lists %}
+    <ul class="units">
+      {% for l in lists %}
+        <li>
+          <a href="/lists/{{ l.id }}">
+            <b>{{ l.name }}</b>
+            <span class="muted">
+              {{ l.faction_name or 'no faction' }} ·
+              {{ l.points_total }}{% if l.points_limit %} / {{ l.points_limit }}{% endif %} pts ·
+              {{ l.entry_count }} unit{{ '' if l.entry_count == 1 else 's' }}
+            </span>
+          </a>
+          <p class="counts">
+            {% if l.ready %}
+              <span class="ok-badge">Ready to field</span>
+            {% else %}
+              {% if l.to_buy %}<b>{{ l.to_buy }}</b> to buy{% endif %}
+              {% if l.to_buy and l.to_paint %} · {% endif %}
+              {% if l.to_paint %}<b>{{ l.to_paint }}</b> to paint{% endif %}
+              {% if l.fieldable %}<span class="muted"> · fieldable unpainted</span>{% endif %}
+            {% endif %}
+          </p>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="panel">
+      <p><b>No lists yet.</b></p>
+      <p class="hint">
+        A list is the only thing in here that pulls. Without one, models move
+        forward when you feel like it and nothing says what to do next.
+      </p>
+    </div>
+  {% endif %}
+
+  {% if wants %}
+    <h2>Wishlist <span class="muted">{{ wants|length }}</span></h2>
+    <p class="hint">What to buy. Raised from a list, or wanted on its own.</p>
+    <ul class="units">
+      {% for w in wants %}
+        <li>
+          <div class="what">
+            <b>{{ w.name }}</b>
+            <span class="muted">{{ w.faction_name or 'no faction' }}</span>
+          </div>
+          <p class="counts">
+            <b>{{ w.wanted }}</b> wanted
+            {% if w.list_names %}<span class="muted"> · for {{ w.list_names }}</span>{% endif %}
+          </p>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+{% endblock %}
