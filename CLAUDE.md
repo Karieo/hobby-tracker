@@ -4,23 +4,34 @@ Guidance for Claude Code working in this repository.
 
 ## What this is
 
-A single-user Warhammer 40,000 collection tracker: every model tracked
-individually from sprue to battle ready, across multiple armies, with barcode
-scanning for onboarding ~100 boxes. Flask + SQLite, Docker on `bastion` behind
-the Cloudflare Tunnel. `OWNER_NAME` is `"Clay"`.
+A single-user tracker for **one hobby with four activities — buying, building,
+painting, playing** — and the handoffs between them. Every model is tracked
+individually from sprue to battle ready, across multiple armies and game
+systems. Barcode scanning is *onboarding*, not the point: you scan a box once
+and never again.
+
+Flask + SQLite, Docker on `bastion` behind the Cloudflare Tunnel. `OWNER_NAME`
+is `"Clay"`.
 
 **`warhammer-tracker-spec.md` is the source of truth.** This file is
 conventions and hard-won context.
 
 ## Status
 
-Build steps 1–4 of the spec's 13-step order are done: schema, migration runner,
-stages/factions seed, the BSData + Munitorum importer, the collection (armies,
-kits, units, models, stage pipeline, painting session mode), and the scanner
-with its sprint queue and review screen. v1 ends at step 5 (the collection
-search view). **Do not build past step 5** — the dashboard, list builder, gap report, shopping list, sale
-candidates and export are specced so the schema doesn't paint us into a corner,
-not because they're wanted yet.
+**The spec was re-scoped on 2026-08-22 around Clay's own description of the
+loop.** The old 13-step order described how to *construct* the app and was
+mistaken for what it is *about* — which is how barcode scanning ended up first
+in the navigation. "Do not build past step 5" is retired with it. Read
+`warhammer-tracker-spec.md` §2 for the loop and §6 for the order.
+
+Done: schema and migrations, the BSData + Munitorum importer, Kill Team
+operatives, the collection (armies, kits, units, models, stage pipeline,
+painting and session mode), the scanner with its queue and review screen, and
+kit view/edit/delete.
+
+Missing, in build order: the inventory view, the own-it check, basing
+applicability, the list builder with its gap report and wishlist, and list
+import. §5 of the spec has the measured state of each.
 
 ## Commands
 
