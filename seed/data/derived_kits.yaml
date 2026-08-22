@@ -127,3 +127,31 @@ kits:
         the sources describe the box as "eight Wrecka Krew miniatures" without
         breaking them down by operative type — which is fine for a single
         eight-model line, and would not be if this were split into sub-units.
+
+  - name: "Boarding Patrol: Orks"
+    faction: orks
+    contents:
+      - unit: Boss Snikrot
+        models: 1
+      - unit: Kommandos
+        models: 10
+      - unit: Bomb Squig
+        models: 1
+      - unit: Beast Snagga Boyz
+        models: 10
+      - unit: Flash Gitz
+        models: 5
+    sources:
+      urls:
+        - https://www.fauxhammer.com/price-savings-breakdown/boarding-patrol-orks-price-value-and-savings-breakdown/
+        - https://www.adeptusars.com/miniatures/boarding-patrol-orks
+      retrieved_on: 2026-08-22
+      confidence: medium
+      corroborated_by: 2
+      note: >-
+        28 miniatures. The sources also list a Distraction Grot alongside the
+        Kommandos; it is left out because it is part of the Kommandos kit
+        rather than a datasheet of its own, and inventing a line for it would
+        be exactly the kind of plausible-but-wrong entry this file exists to
+        prevent. Confidence medium: no corroborated barcode, and the Kommandos
+        count is the one figure the sources state least consistently.
