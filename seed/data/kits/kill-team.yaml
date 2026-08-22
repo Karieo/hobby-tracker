@@ -37,3 +37,23 @@ kits:
       in 40k. Confidence is medium rather than high because the sources describe the box as
       "eight Wrecka Krew miniatures" without breaking them down by operative type — which
       is fine for a single eight-model line, and would not be if this were split into sub-units.
+- name: 'Kill Team: Hivestorm'
+  year: 2024
+  contents:
+  - unit: Tempestus Aquilons
+    models: 11
+  - unit: Vespid Stingwings
+    models: 11
+  sources:
+    urls:
+    - https://www.warhammer-community.com/en-gb/articles/kTL8dWgw/sunday-preview-kill-team-hivestorm-drops-in/
+    - https://taleofpainters.com/2024/09/review-kill-team-hivestorm-pt-1-the-models/
+    - https://shop.littlewars.com/products/40k-kill-team-hivestorm-box-set-contains-tempestus-aquilons-vespid-stingwings
+    retrieved_on: '2026-08-22'
+    confidence: high
+    corroborated_by: 3
+    note: 22 miniatures, 11 per team, agreed across the publisher, a review that photographed
+      the sprues, and retailer listings. The box also holds a core book, terrain, board and
+      tokens; only the plastic is catalogued, since the rest is not a model Clay paints. GW
+      product code 103-48; no EAN published anywhere found, so the box will teach its own
+      code when scanned.

@@ -318,3 +318,44 @@ def test_the_shipped_catalogue_is_split_by_faction():
     unattended weekly writer."""
     assert os.path.isdir(seeder.DATA_DIR), 'seed/data/kits/ is the catalogue now'
     assert seeder._data_files(), 'no catalogue files found'
+
+
+# ── Running weekly, unattended ───────────────────────────
+
+def test_unresolved_lines_do_not_pile_up_across_runs(conn, orks):
+    """The sweep runs every week. A new release reaches the catalogue before
+    BSData has its datasheet, so failing to match once is expected — leaving a
+    duplicate row every week for it is not."""
+    data = {'kits': [_entry('Ork Command Wave', unit='Warboss Nazdreg')]}
+
+    for _ in range(3):
+        seeder.seed(conn, data)
+
+    rows = db.open_unresolved(conn, importer=seeder.IMPORTER)
+    assert len(rows) == 1, 'three runs, one outstanding question'
+
+
+def test_a_line_that_starts_matching_stops_being_unresolved(conn, orks):
+    """BSData catches up days after a release. The next run should clear the
+    backlog entry rather than leaving it there looking unanswered."""
+    data = {'kits': [_entry('Ork Command Wave', unit='Warboss Nazdreg')]}
+    seeder.seed(conn, data)
+    assert db.open_unresolved(conn, importer=seeder.IMPORTER)
+
+    faction_id = db.get_faction_by_slug(conn, 'orks')['id']
+    conn.execute('INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+                 'created_at, updated_at) VALUES (?,?,?,1,?,?)',
+                 ('nazdreg', 'Warboss Nazdreg', faction_id, db.now(), db.now()))
+    seeder.seed(conn, data)
+
+    assert db.open_unresolved(conn, importer=seeder.IMPORTER) == []
+
+
+def test_a_dry_run_leaves_the_existing_backlog_alone(conn, orks):
+    seeder.seed(conn, {'kits': [_entry('Ork Command Wave', unit='Warboss Nazdreg')]})
+    before = len(db.open_unresolved(conn, importer=seeder.IMPORTER))
+
+    seeder.seed(conn, {'kits': [_entry('Something Else', unit='Also Missing')]},
+                dry_run=True)
+
+    assert len(db.open_unresolved(conn, importer=seeder.IMPORTER)) == before

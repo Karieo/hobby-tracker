@@ -173,9 +173,22 @@ def check_barcode(entry, label):
 # ── Import ───────────────────────────────────────────────
 
 def seed(conn, data, dry_run=False):
-    """Create or update a kit template per entry. Idempotent on name+year."""
+    """Create or update a kit template per entry. Idempotent on name+year.
+
+    Unresolved lines are cleared and re-recorded each run, the same as every
+    other importer here, and for a sharper reason: this one runs weekly and
+    unattended. A brand-new release reaches the catalogue *before* BSData has
+    its datasheet — Warboss Nazdreg went on pre-order the day this was written
+    and no rules data mentions him yet — so its contents legitimately fail to
+    match on the first run and resolve on a later one once BSData catches up.
+    Without clearing, that expected sequence would leave a duplicate row every
+    week forever, and the backlog that is supposed to mean "these need a human"
+    would become noise nobody reads.
+    """
     report = {'created': 0, 'updated': 0, 'barcodes_linked': 0,
               'unresolved': [], 'skipped': [], 'kits': []}
+    if not dry_run:
+        db.clear_unresolved(conn, IMPORTER)
 
     for entry in data.get('kits') or []:
         name = entry['name'].strip()

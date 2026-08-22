@@ -68,3 +68,53 @@ kits:
       own, and inventing a line for it would be exactly the kind of plausible-but-wrong entry
       this file exists to prevent. Confidence medium: no corroborated barcode, and the Kommandos
       count is the one figure the sources state least consistently.'
+- name: 'Orks: Boyz'
+  year: 2026
+  faction: orks
+  contents:
+  - unit: Boyz
+    models: 11
+  sources:
+    urls:
+    - https://www.warhammer-community.com/en-gb/articles/yld1t2w1/mix-and-match-your-ork-bits-in-the-new-boyz-kit/
+    - https://www.cardhaus.com/orks-boyz-11-miniatures/
+    - https://www.rnrhobbies.com.au/blogs/games-workshop-new-releases/monday-17th-release-news-ork-codex-models
+    retrieved_on: '2026-08-22'
+    confidence: high
+    corroborated_by: 3
+    note: 'The 2026 kit builds 11. Do not confuse with the 2018 kit (50-10), which listings
+      still describe as 10 or 20 models — same name, different plastic, which is exactly the
+      Combat Patrol: Orks 2021-vs-2024 trap.'
+- name: 'Orks: Warbikers'
+  year: 2026
+  faction: orks
+  contents:
+  - unit: Warbikers
+    models: 3
+  sources:
+    urls:
+    - https://www.rnrhobbies.com.au/blogs/games-workshop-new-releases/monday-17th-release-news-ork-codex-models
+    - https://ixbt.games/en/news/2026/08/11/427481-dlia-warhammer-40000-predstavili-nabory-s-miniatiurami-nobov-i-orocix-motociklistov.html
+    retrieved_on: '2026-08-22'
+    confidence: medium
+    corroborated_by: 2
+    note: Three bikes, consistent with the long-standing Warbiker Mob box. Medium rather than
+      high because the 2026 re-release was announced days ago and most listings still describe
+      the previous kit.
+- name: 'Orks: Trukk Boyz'
+  year: 2026
+  faction: orks
+  contents:
+  - unit: Boyz
+    models: 11
+  - unit: Trukk
+    models: 1
+  sources:
+    urls:
+    - https://www.rnrhobbies.com.au/blogs/games-workshop-new-releases/monday-17th-release-news-ork-codex-models
+    - https://miniset.net/sets/gw-99120103047
+    retrieved_on: '2026-08-22'
+    confidence: medium
+    corroborated_by: 2
+    note: 'A bundle of the 11-model Boyz kit and a Trukk. Medium: the bundle is described
+      consistently but its model count is inherited from the Boyz kit rather than stated directly.'
