@@ -882,9 +882,17 @@ def inventory(conn, query=None, faction_id=None, game_system=None,
     """, ids):
         spread.setdefault(r['datasheet_id'], {})[r['stage_id']] = r['n']
 
+    # The units behind each row, so the collection can be acted on rather than
+    # only read. Without these it renders a stage bar and offers no way to move
+    # anything — the app's front door became a dead end.
+    units_by_sheet = {}
+    for unit in list_units(conn):
+        units_by_sheet.setdefault(unit['datasheet_id'], []).append(unit)
+
     ladder = stage_ladder(conn)
     for row in rows:
         counts = spread.get(row['datasheet_id'], {})
+        row['units'] = units_by_sheet.get(row['datasheet_id'], [])
         row['stage_counts'] = counts
         row['segments'] = _segments(ladder, counts,
                                     row['owned_count'] + row['wanted_count'])

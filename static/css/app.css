@@ -336,3 +336,9 @@ button.link { background: none; border: none; color: var(--accent); padding: 0;
               cursor: pointer; }
 .ok-badge { color: var(--accent); font-weight: 600; }
 .short { color: var(--warn); }
+/* A unit inside a collection row: what it is on the left, the one control
+   that matters on the right. */
+.unit-line { display: flex; gap: .6rem; align-items: center;
+             justify-content: space-between; padding: .35rem 0;
+             border-top: 1px solid var(--line); font-size: .9rem; }
+.unit-line button { min-height: 38px; padding: .35rem .7rem; font-size: .85rem; }

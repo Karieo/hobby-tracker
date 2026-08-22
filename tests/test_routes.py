@@ -675,3 +675,54 @@ def test_a_missing_list_is_a_404(client):
     assert client.get('/lists/999').status_code == 404
     assert client.delete('/api/lists/999').status_code == 404
     assert client.post('/api/lists/999/wishlist', json={}).status_code == 404
+
+
+def test_the_collection_screen_can_move_a_model_forward(client, db_path,
+                                                        army_with_unit):
+    """The front door has to be actionable. It rendered a stage bar and offered
+    no way to move anything, so from the app's main screen nothing could be
+    advanced at all."""
+    body = client.get('/collection').get_data(as_text=True)
+
+    assert f'data-unit="{army_with_unit["unit_id"]}"' in body
+    assert 'Advance all' in body
+    assert f'/units/{army_with_unit["unit_id"]}' in body, 'and it links through'
+
+
+def test_a_finished_unit_offers_no_advance(client, db_path, army_with_unit):
+    with db.connect(db_path) as conn:
+        terminal = db.terminal_stage(conn)['id']
+        conn.execute('UPDATE models SET stage_id = ? WHERE unit_id = ?',
+                     (terminal, army_with_unit['unit_id']))
+
+    body = client.get('/collection').get_data(as_text=True)
+
+    assert 'Battle ready' in body
+    assert 'Advance all' not in body
+
+
+def test_each_box_advances_on_its_own(client, db_path, army_with_unit):
+    """Two boxes of the same unit are one inventory row but two units, and
+    advancing one must not touch the other."""
+    with db.connect(db_path) as conn:
+        second = col.create_unit(conn, army_with_unit['datasheet_id'], 10)
+
+    body = client.get('/collection').get_data(as_text=True)
+
+    assert f'data-unit="{army_with_unit["unit_id"]}"' in body
+    assert f'data-unit="{second}"' in body
+
+
+def test_a_wishlist_unit_says_bought_it_not_advance(client, db_path,
+                                                    army_with_unit):
+    """Advancing a wishlist model moves it to On sprue — it turns a want into
+    something owned. That is the right action and the wrong word for it."""
+    with db.connect(db_path) as conn:
+        wishlist = db.wishlist_stage(conn)['id']
+        col.create_unit(conn, army_with_unit['datasheet_id'], 5,
+                        stage_id=wishlist)
+
+    body = client.get('/collection').get_data(as_text=True)
+
+    assert 'Bought it' in body
+    assert '· wanted' in body
