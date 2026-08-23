@@ -331,10 +331,23 @@ def unit_breakdown(conn, unit_id):
         'SELECT stage_id, COUNT(*) AS n FROM models WHERE unit_id = ? '
         'GROUP BY stage_id', (unit_id,))}
     total = sum(counts.values())
+
+    # Which stages this unit's models actually walk. A Rhino has no base, so
+    # the basing stages are shown struck through rather than hidden or left
+    # tappable: hiding them makes the ladder a different length per unit and
+    # unreadable at a glance, and leaving them live invites a tap that would
+    # inflate progress on a stage that never happened.
+    basing = conn.execute(
+        'SELECT d.basing FROM units u JOIN datasheets d ON d.id = u.datasheet_id '
+        'WHERE u.id = ?', (unit_id,)).fetchone()
+    walked = {s['id'] for s in stages_for(conn, basing['basing'] if basing else None)}
+
     out = []
     for stage in stage_ladder(conn):
         n = counts.get(stage['id'], 0)
+        applies = stage['id'] in walked
         out.append({**stage, 'count': n, 'percent': _pct(n, total),
+                    'applies': applies,
                     'can_advance': n > 0 and not stage['is_terminal']})
     return out
 

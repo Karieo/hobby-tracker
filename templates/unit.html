@@ -18,19 +18,60 @@
     <a class="ghost" href="/paint/{{ unit.id }}">Paint mode</a>
   </header>
 
-  {# The pipeline, whole. Empty stages stay visible and muted so it reads as a
-     pipeline rather than a list of whatever happens to be occupied. #}
+  {# The ramp, from Tracker Wireframes §2c — the same control the paint session
+     uses, because the two screens answer the same question and having two
+     different pipelines for it was the split this design closed.
+
+     The whole pipeline is present with empty rungs muted: a gap you can see is
+     information, a row that vanishes is not. Stages this unit never walks — a
+     Rhino has no base — are struck through and inert rather than hidden, so
+     the ladder stays the same length on every screen and there is nothing to
+     tap that would record work that never happened.
+
+     Typing straight into a count replaces the old "Set a count" form: it is
+     the same reconcile, at the stage it refers to, without a second form to
+     find and a stage to re-select. #}
+  {# Two columns on a wide screen, one on a phone. The pipeline is the working
+     half and gets the narrow column, because a rung is a name and three small
+     controls — stretched across a desk monitor it puts a foot of empty paper
+     between what you are reading and what you are tapping. Everything you
+     touch occasionally rides alongside instead of below, which is what the
+     extra width is actually good for. #}
+  <div class="detail-cols">
+  <section class="col-work">
   <h2>Pipeline</h2>
-  <ul class="pipe" data-unit="{{ unit.id }}">
+  <ul class="ramp" data-unit="{{ unit.id }}">
     {% for s in breakdown %}
-      <li class="{% if not s.count %}zero{% endif %} {% if s.is_terminal %}terminal{% endif %}">
-        <span class="dot s{{ s.position }}"></span>
-        <span class="pipe-name">{{ s.name }}</span>
-        <span class="pipe-count"><b>{{ s.count }}</b> <span class="muted">{{ s.percent }}%</span></span>
-        <button class="tick" data-unit="{{ unit.id }}" data-from="{{ s.id }}"
-                {% if not s.can_advance %}disabled{% endif %}
-                aria-label="advance one model from {{ s.name }}">+1 →</button>
-      </li>
+      {% if s.is_owned %}
+        <li class="rung {% if not s.count %}empty{% endif %}
+                   {% if not s.applies %}na{% endif %}
+                   {% if s.is_terminal %}terminal{% endif %}"
+            data-stage="{{ s.id }}">
+          <span class="swatch s{{ s.position }}"></span>
+          <span class="rname">{{ s.name }}</span>
+          <span class="nudge">
+            <button class="untick" data-unit="{{ unit.id }}" data-from="{{ s.id }}"
+                    {% if not s.count or not s.applies %}disabled{% endif %}
+                    aria-label="step one model back from {{ s.name }}">−1</button>
+            {# autocomplete=off matters here. Browsers restore typed form values
+               across location.reload(), so without it a count that the server
+               refused — asking for six when the unit holds five — would keep
+               showing six while the database held five. A number that disagrees
+               with the data is worse than no number. #}
+            <input class="count-at" type="number" min="0" max="{{ models|length }}"
+                   value="{{ s.count }}" data-unit="{{ unit.id }}" autocomplete="off"
+                   data-stage="{{ s.id }}" {% if not s.applies %}disabled{% endif %}
+                   aria-label="how many models are at {{ s.name }}">
+            {% if s.is_terminal %}
+              <button disabled aria-hidden="true">—</button>
+            {% else %}
+              <button class="tick" data-unit="{{ unit.id }}" data-from="{{ s.id }}"
+                      {% if not s.can_advance or not s.applies %}disabled{% endif %}
+                      aria-label="advance one model from {{ s.name }}">+1</button>
+            {% endif %}
+          </span>
+        </li>
+      {% endif %}
     {% endfor %}
   </ul>
 
@@ -42,34 +83,15 @@
       <button class="advance-n" data-unit="{{ unit.id }}">Advance</button>
     </div>
   </div>
-
-  {# "Six of these ten are primed" without touching a single checkbox. This is
-     the reconcile shortcut, and for most updates it replaces selection entirely. #}
-  {# Defaults to the stage most of the unit is already at, so landing on this
-     form and hitting Set changes nothing. A form whose default answer is
-     destructive is a form that eventually destroys something. #}
-  {% set common = breakdown | sort(attribute='count') | last %}
-  <h2>Set a count</h2>
-  <form class="panel row" id="count-form" data-unit="{{ unit.id }}">
-    <label>How many<input name="count" type="number" min="0"
-                          max="{{ models|length }}" value="{{ common.count }}"></label>
-    <label>are at
-      <select name="stage_id">
-        {% for s in stages %}
-          <option value="{{ s.id }}" {% if s.id == common.id %}selected{% endif %}>
-            {{ s.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button type="submit">Set</button>
-  </form>
   <p class="hint">
-    Fills from behind first — the models furthest back catch up. It only pulls a
-    model back from a later stage when there is nothing behind it left to move,
-    and takes the closest one when it does, so anything finished is disturbed
-    last.
+    Type into a count to reconcile it — "six of these ten are primed". It fills
+    from behind first, so the models furthest back catch up and anything
+    finished is disturbed last.
   </p>
 
+  </section>
+
+  <section class="col-admin">
   <h2>Individual models <span class="muted">{{ models|length }}</span></h2>
   <p class="hint">Available, never required. Most updates never come down here.</p>
   <form id="bulk" data-unit="{{ unit.id }}">
@@ -115,4 +137,6 @@
     </label>
     <button type="submit">Move</button>
   </form>
+  </section>
+  </div>
 {% endblock %}
