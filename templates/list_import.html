@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Import a list · Collection Tracker{% endblock %}
+{% block body %}
+{# Spec §2.7, the last step of the loop.
+
+   A list arrives as text far more often than as a file — out of a chat
+   message, a forum post, someone's app export, a printed sheet retyped. So
+   paste is the door, and it is the one that always works: it needs nothing
+   fetched, no format supported, and no site reachable. #}
+
+  <header class="page">
+    <div>
+      <p class="crumb"><a href="/lists">← Lists</a></p>
+      <h1>Import a list</h1>
+      <p class="hint">
+        Paste it from wherever it came from. One unit per line — counts,
+        points and section headings are all fine, and none of it is saved
+        until you have looked at every line.
+      </p>
+    </div>
+  </header>
+
+  <form class="panel stack" method="post" action="/lists/import/preview">
+    <label>List name
+      <input name="name" required autofocus placeholder="Saturday at the club">
+    </label>
+
+    <div class="row">
+      <label>Faction
+        <select name="faction_id">
+          <option value="">— none —</option>
+          {% for f in factions %}
+            <option value="{{ f.id }}">{{ f.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Points limit
+        <input name="points_limit" type="number" min="0" step="5"
+               placeholder="2000">
+      </label>
+      <label>Game
+        <select name="game_system">
+          <option value="">Any</option>
+          <option value="wh40k" selected>Warhammer 40,000</option>
+          <option value="killteam">Kill Team</option>
+        </select>
+      </label>
+    </div>
+
+    <label>The list
+      <textarea name="text" rows="12" required
+                placeholder="1x Captain (95)&#10;10x Intercessor Squad (200)&#10;5x Assault Terminators (185)"></textarea>
+    </label>
+
+    <div class="actions">
+      <button class="go" type="submit">Read the list →</button>
+    </div>
+  </form>
+
+  <p class="hint">
+    Points in the paste are ignored — this app prices a list from the Munitorum
+    manual it imported, so a number copied out of another app can't quietly
+    outrank the official one. Everything else about the shape is forgiving;
+    the names are not. A name either matches a datasheet or comes back for you
+    to decide, and nothing is guessed.
+  </p>
+{% endblock %}

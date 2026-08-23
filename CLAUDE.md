@@ -28,12 +28,14 @@ Done: schema and migrations, the BSData + Munitorum importer, Kill Team
 operatives, the collection (armies, kits, units, models, stage pipeline,
 painting and session mode), the scanner with its queue and review screen, kit
 view/edit/delete, the inventory view, the own-it check, basing applicability,
-the list builder with its gap report and wishlist, and shelf-scale onboarding
+the list builder with its gap report and wishlist, shelf-scale onboarding
 (queue sweep, per-barcode box page, identify-mode scanning, adopt-all, the
-derived kit catalogue, and paste-import).
+derived kit catalogue, and paste-import), and list import by paste.
 
-Missing: list import (§2.7), still gated on a source. §5 of the spec has the
-measured state of each step.
+All eleven checks of the loop pass end to end. What is unbuilt is the *other*
+doors onto §2.7 — importing a list from a file or a URL — and those stay gated
+on a source: every candidate host is refused by egress policy. Pasting never
+was. §5 of the spec has the measured state of each step.
 
 ## Commands
 

@@ -1166,3 +1166,42 @@ def test_recording_a_set_by_name_invents_no_models(client):
     kit_id = res.get_json()['id']
     body = client.get(f'/kits/{kit_id}').get_data(as_text=True)
     assert 'Nobz Mob 2019' in body
+
+
+# ── List import (spec §2.7) ──────────────────────────────
+
+def test_the_import_screen_exists(client):
+    body = client.get('/lists/import').get_data(as_text=True)
+    assert 'textarea' in body and 'name="name"' in body
+
+
+def test_lists_links_to_the_importer(client):
+    assert '/lists/import' in client.get('/lists').get_data(as_text=True)
+
+
+def test_the_preview_shows_every_line_before_writing(client, army_with_unit):
+    res = client.post('/lists/import/preview', data={
+        'name': 'Saturday', 'text': '+ HQ +\n20x Boyz (200)\nTotal: 200pts'})
+
+    body = res.get_data(as_text=True)
+    assert 'Boyz' in body
+    assert '+ HQ +' not in body, 'section headings are skipped, not reported'
+
+
+def test_importing_a_list_writes_nothing_until_confirmed(client, db_path,
+                                                        army_with_unit):
+    """Asserted against the data, not the page: "Saturday" is also the
+    placeholder in the new-list form, so counting it on screen measures the
+    template rather than the database."""
+    client.post('/lists/import/preview', data={'name': 'Saturday',
+                                               'text': '20x Boyz'})
+
+    with db.connect(db_path) as conn:
+        assert conn.execute(
+            'SELECT COUNT(*) FROM army_lists').fetchone()[0] == 0
+
+
+def test_a_list_without_a_name_is_refused(client):
+    res = client.post('/api/lists/import', json={'rows': [], 'name': '  '})
+    assert res.status_code == 400
+    assert 'name' in res.get_json()['error'].lower()

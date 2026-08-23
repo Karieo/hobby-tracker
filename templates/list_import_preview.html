@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Check the list · Collection Tracker{% endblock %}
+{% block body %}
+{# Every pasted line, matched or not. The same confirmation the collection
+   paste asks for, and for a sharper reason here: a line silently dropped from
+   a list is a unit Clay turns up to a game without. #}
+  <header class="page">
+    <div>
+      <p class="crumb"><a href="/lists/import">← Back to the paste</a></p>
+      <h1>Check the list</h1>
+      <p class="hint">
+        {{ rows|length }} line{{ '' if rows|length == 1 else 's' }},
+        {{ rows|length - unresolved }} matched{% if unresolved %},
+        <b>{{ unresolved }} need{{ 's' if unresolved == 1 }} a decision</b>{% endif %}.
+      </p>
+    </div>
+  </header>
+
+  {% if not rows %}
+    <div class="panel empty">
+      <p>Nothing to read in that.</p>
+      <p class="muted">
+        <a href="/lists/import">Try again</a> — one unit per line.
+      </p>
+    </div>
+  {% else %}
+    {% if unresolved %}
+      <p class="hint warnline">
+        Unmatched lines are never guessed at. Pick the right datasheet, or mark
+        the line skipped — either way it's your call, not the app's.
+      </p>
+    {% endif %}
+
+    <form id="lines">
+      {% for row in rows %}
+        <div class="panel addrow {% if not row.datasheet_id %}warn{% endif %}"
+             data-count="{{ row.count }}">
+          <div class="what">
+            <b>{{ row.count }}×</b>
+            {% if row.datasheet_id %}
+              {{ row.datasheet_name }}
+              {% if row.faction_name %}<span class="muted">{{ row.faction_name }}</span>{% endif %}
+              {# Shown struck through: it was in the paste, and saying so is
+                 how Clay knows it was read and deliberately not used, rather
+                 than silently lost. #}
+              {% if row.points_hint %}
+                <span class="muted"><s>{{ row.points_hint }} pts</s></span>
+              {% endif %}
+              <input type="hidden" class="ds" value="{{ row.datasheet_id }}">
+            {% else %}
+              <span class="muted">{{ row.name }}</span>
+            {% endif %}
+          </div>
+
+          {% if not row.datasheet_id %}
+            <p class="hint">
+              <span class="code">{{ row.raw }}</span> — {{ row.why }}
+            </p>
+            <div class="row">
+              <label>Which is it?
+                <input class="picker" autocomplete="off"
+                       placeholder="Start typing a datasheet name…"
+                       data-target="#ds-{{ loop.index }}">
+                <input type="hidden" class="ds" id="ds-{{ loop.index }}">
+              </label>
+              <label class="skipbox">
+                <input type="checkbox" class="skip"> Skip this line
+              </label>
+            </div>
+            {% if row.candidates %}
+              <p class="hint">
+                Did you mean:
+                {% for c in row.candidates[:5] %}
+                  <button type="button" class="link pick" data-id="{{ c.id }}"
+                          data-name="{{ c.name }}">{{ c.name }}</button>{% if not loop.last %} · {% endif %}
+                {% endfor %}
+              </p>
+            {% endif %}
+          {% endif %}
+        </div>
+      {% endfor %}
+    </form>
+
+    <div class="panel">
+      <div class="actions">
+        <button class="go" id="commit-list"
+                data-name="{{ name }}"
+                data-faction="{{ faction_id or '' }}"
+                data-points="{{ points_limit or '' }}">
+          Create “{{ name }}” →
+        </button>
+        <a class="ghost" href="/lists/import">Start over</a>
+      </div>
+      <p class="hint">
+        Priced from the Munitorum manual once it exists, not from the paste.
+        Next stop is the gap report: what you own, what you'd need to buy, and
+        what you'd need to paint.
+      </p>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  <script src="/static/js/add.js?v={{ asset_version }}"></script>
+  <script src="/static/js/list-import.js?v={{ asset_version }}"></script>
+{% endblock %}

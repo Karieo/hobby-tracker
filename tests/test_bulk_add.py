@@ -239,3 +239,133 @@ def test_committed_units_can_be_assigned_to_an_army(conn, sheets):
 
 def test_committing_nothing_is_not_an_error(conn, sheets):
     assert bulk_add.commit(conn, []) == []
+
+
+# ── List shapes ──────────────────────────────────────────
+#
+# Spec §2.7. A list arrives as text far more often than as a file, and every
+# app writes its points differently.
+
+def test_points_in_parentheses_are_read_and_set_aside(conn, sheets):
+    row = bulk_add.parse_lines('10x Intercessor Squad (200)')[0]
+    assert row['name'] == 'Intercessor Squad'
+    assert row['count'] == 10
+    assert row['points_hint'] == 200
+
+
+def test_every_shape_of_points_annotation(conn):
+    for text, name in (
+        ('1x Captain (95)', 'Captain'),
+        ('10x Intercessor Squad [200pts]', 'Intercessor Squad'),
+        ('5x Assault Terminators - 185 pts', 'Assault Terminators'),
+        ('Deffkoptas: 105', 'Deffkoptas'),
+        ('Warboss on Warbike 90pts', 'Warboss on Warbike'),
+    ):
+        assert bulk_add.parse_lines(text)[0]['name'] == name, text
+
+
+def test_a_bare_trailing_number_is_a_count_not_points(conn):
+    """"Boyz x20" ends in a count. Reading it as points loses the count and
+    leaves a unit called "Boyz x"."""
+    row = bulk_add.parse_lines('Boyz x20')[0]
+    assert (row['name'], row['count']) == ('Boyz', 20)
+    assert row['points_hint'] is None
+
+
+def test_section_headings_are_skipped_not_reported(conn):
+    """A screen full of "no datasheet named + HQ +" buries the lines that
+    genuinely need a decision."""
+    rows = bulk_add.parse_lines(
+        '+ HQ +\n1x Warboss\n++ Battleline ++\n20x Boyz\nTotal: 645pts')
+
+    assert [r['name'] for r in rows] == ['Warboss', 'Boyz']
+
+
+def test_the_collection_paste_still_parses_as_before(conn):
+    """The list shapes must not cost the shapes /add was built for."""
+    rows = bulk_add.parse_lines('20 Boyz built\nTrukk primed\nBoyz x20\n5 Nobz')
+
+    assert [(r['name'], r['count'], r['stage_word']) for r in rows] == [
+        ('Boyz', 20, 'built'), ('Trukk', 1, 'primed'),
+        ('Boyz', 20, None), ('Nobz', 5, None)]
+
+
+# ── A pasted list becomes a list ─────────────────────────
+
+def test_a_pasted_list_becomes_entries_not_owned_models(conn, sheets):
+    """A list says what Clay wants to field; the collection says what he has.
+    The gap between them is what the app is for."""
+    import lists
+    rows = bulk_add.match_lines(
+        conn, bulk_add.parse_lines('20x Boyz (200)\n5x Nobz [125pts]'),
+        game_system='wh40k')
+
+    result = bulk_add.commit_as_list(conn, rows, 'Saturday')
+
+    assert len(result['entries']) == 2
+    assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 0, \
+        'importing a list owns nothing'
+    assert lists.get_list(conn, result['list_id'])['name'] == 'Saturday'
+
+
+def test_the_pasted_points_are_not_stored(conn, sheets):
+    """This app prices a list from the Munitorum manual it imported. A number
+    copied out of another app is at best a duplicate and at worst stale from a
+    previous edition, and it would outrank the official one in every total."""
+    rows = bulk_add.match_lines(conn, bulk_add.parse_lines('20x Boyz (9999)'),
+                                game_system='wh40k')
+
+    result = bulk_add.commit_as_list(conn, rows, 'Saturday')
+
+    snapshot = conn.execute(
+        'SELECT points_snapshot FROM list_entries WHERE list_id = ?',
+        (result['list_id'],)).fetchone()['points_snapshot']
+    assert snapshot != 9999
+
+
+def test_a_skipped_line_is_left_out(conn, sheets):
+    rows = bulk_add.match_lines(conn, bulk_add.parse_lines('20x Boyz\n5x Nobz'),
+                                game_system='wh40k')
+    rows[1]['skip'] = True
+
+    result = bulk_add.commit_as_list(conn, rows, 'Saturday')
+
+    assert len(result['entries']) == 1
+
+
+def test_importing_nothing_is_refused(conn, sheets):
+    """Rather than creating an empty list that looks like it worked."""
+    with pytest.raises(ValueError, match='nothing to import'):
+        bulk_add.commit_as_list(conn, [], 'Saturday')
+
+
+def test_the_imported_list_reaches_the_gap_report(conn, sheets):
+    """The loop closing: a pasted list immediately says what to buy."""
+    import lists
+    rows = bulk_add.match_lines(conn, bulk_add.parse_lines('20x Boyz'),
+                                game_system='wh40k')
+    result = bulk_add.commit_as_list(conn, rows, 'Saturday')
+
+    gap = lists.list_gap(conn, result['list_id'])
+
+    assert gap['to_buy'] == 20, 'owns none of them yet'
+
+
+# ── Suggestions put the likeliest first ──────────────────
+
+def test_a_one_letter_typo_suggests_the_right_unit_first(conn, sheets):
+    """This used to bucket by a shared four-letter prefix and sort the bucket
+    alphabetically, so "Killa Kanz" suggested Kill Krusha, Kill Rig and Kill
+    Tank — and not Killa Kans. Someone tapping the first suggestion in a hurry
+    got the wrong datasheet."""
+    faction_id = db.get_faction_by_slug(conn, 'orks')['id']
+    for name in ('Killa Kans', 'Kill Rig', 'Kill Tank', 'Kill Krusha'):
+        conn.execute(
+            'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+            'created_at, updated_at) VALUES (?,?,?,1,?,?)',
+            (name.lower(), name, faction_id, db.now(), db.now()))
+
+    rows = bulk_add.match_lines(conn, bulk_add.parse_lines('3x Killa Kanz'))
+
+    assert rows[0]['datasheet_id'] is None, 'a typo is not a match'
+    assert rows[0]['candidates'][0]['name'] == 'Killa Kans'
