@@ -54,6 +54,9 @@ from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 
 import bulk_add  # noqa: E402
 import collection as col
+import list_allocate
+import list_parse
+import list_resolve
 import lists as army_lists
 import rules_data  # noqa: E402
 import database as db  # noqa: E402
@@ -411,12 +414,22 @@ def lists_page():
 
 @app.route('/lists/<int:list_id>')
 def list_page(list_id):
+    """The gap report, re-run against the collection on every load.
+
+    Deliberately not stored. "Paint three Meganobz, reload the list, the
+    numbers move. That feedback loop is the feature" — and a cached report
+    would quietly stop being true the moment Clay picked up a brush.
+    """
+    include_unassigned = _flag(request.args.get('include_unassigned'), True)
     with _read() as conn:
         army_list = army_lists.get_list(conn, list_id)
         if not army_list:
             abort(404)
-        return render_template('list.html', list=army_list,
-                               gap=army_lists.list_gap(conn, list_id))
+        gap = list_allocate.allocate(conn, list_id,
+                                     include_unassigned=include_unassigned)
+        return render_template('list.html', list=army_list, gap=gap,
+                               include_unassigned=include_unassigned,
+                               assigned=_assigned_models(conn, gap))
 
 
 @app.route('/api/lists', methods=['POST'])
@@ -460,6 +473,72 @@ def api_add_entry(list_id):
 def api_remove_entry(entry_id):
     with _write() as conn:
         army_lists.remove_entry(conn, entry_id)
+    return jsonify({'success': True})
+
+
+@app.route('/api/lists/<int:list_id>/entries/<int:entry_id>', methods=['PATCH'])
+def api_resolve_entry(list_id, entry_id):
+    """Say which datasheet an unresolved line meant, and never be asked again.
+
+    The alias write-back lives inside `list_resolve.resolve_entry` rather than
+    here, so no route can forget it. The re-run report comes back in the same
+    response because the numbers move the moment the row resolves — the whole
+    list may go from "3 units short" to fieldable on one tap.
+    """
+    data = _payload()
+    datasheet_id = _int(data.get('datasheet_id'))
+    if not datasheet_id:
+        return jsonify({'error': 'Pick a datasheet'}), 400
+    try:
+        with _write() as conn:
+            if not army_lists.get_list(conn, list_id):
+                abort(404)
+            list_resolve.resolve_entry(conn, entry_id, datasheet_id)
+            gap = list_allocate.allocate(conn, list_id)
+        return jsonify({'gap': _summary_only(gap)})
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.route('/api/lists/<int:list_id>/reparse', methods=['POST'])
+def api_reparse_list(list_id):
+    """Read the stored paste again with today's parser.
+
+    Safe to lose the entries: resolving a line by hand wrote an alias, and the
+    alias is the first thing resolution consults. The knowledge lives in the
+    alias table rather than in the rows.
+    """
+    try:
+        with _write() as conn:
+            result = army_lists.reparse(conn, list_id)
+        return jsonify(result)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.route('/api/units/<int:unit_id>/built-as', methods=['POST'])
+def api_built_as(unit_id):
+    """What a multi-option kit actually got built as, and whether it swaps.
+
+    Section 7 asks for this as a prompt when a model advances to assembled.
+    Here there is nothing to interrupt for: `add_models` stamps every model
+    with its unit's datasheet at creation, so a model is never uncommitted and
+    the auto-fill the spec describes has already happened. What is left is the
+    case auto-fill cannot answer — a box that builds several things, where the
+    unit's datasheet is a default rather than a decision — so it is a control
+    on the unit rather than a modal in the way of a tap.
+    """
+    data = _payload()
+    datasheet_id = _int(data.get('datasheet_id'))
+    flexible = bool(data.get('is_flexible'))
+    with _write() as conn:
+        unit = col.get_unit(conn, unit_id)
+        if not unit:
+            abort(404)
+        try:
+            col.set_built_as(conn, unit_id, datasheet_id, flexible=flexible)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
     return jsonify({'success': True})
 
 
@@ -554,11 +633,17 @@ def unit_detail(unit_id):
         unit = col.get_unit(conn, unit_id)
         if not unit:
             abort(404)
+        options = col.buildable_options(conn, unit_id)
         return render_template(
             'unit.html', unit=unit,
             breakdown=col.unit_breakdown(conn, unit_id),
             models=col.unit_models(conn, unit_id),
             stages=col.stage_ladder(conn),
+            # Only asked where the box genuinely builds more than one thing.
+            # For every other kit the answer is already recorded and there is
+            # nothing to prompt for.
+            options=options if len(options) > 1 else [],
+            built_as=col.unit_built_as(conn, unit_id),
             armies=[a for a in col.list_armies(conn) if a['id']])
 
 
@@ -995,16 +1080,23 @@ def import_list_preview():
     reason: a silently dropped line is a unit Clay turns up to a game without.
     """
     text = request.form.get('text') or ''
-    system = request.form.get('game_system') or None
+    system = request.form.get('game_system') or 'wh40k'
+    faction_id = _int(request.form.get('faction_id'))
     with _read() as conn:
-        rows = bulk_add.match_lines(conn, bulk_add.parse_lines(text),
-                                    game_system=system)
+        # `list_parse`, not `bulk_add.parse_lines`. The collection paste reads a
+        # shelf typed from memory and may skip a line; this reads an app's
+        # export, carries points and position, and may never skip anything.
+        # Pointing this door at the weaker parser is why pasting a real export
+        # here used to report its preamble as four unknown units.
+        parsed = list_parse.parse(text)
+        rows = [r._asdict() for r in list_resolve.resolve_entries(
+            conn, parsed.entries, faction_id=faction_id, game_system=system)]
         return render_template(
             'list_import_preview.html', rows=rows, text=text,
-            game_system=system,
+            game_system=system, parsed=parsed,
             name=(request.form.get('name') or '').strip(),
             points_limit=_int(request.form.get('points_limit')),
-            faction_id=_int(request.form.get('faction_id')),
+            faction_id=faction_id,
             factions=col.list_factions(conn),
             unresolved=sum(1 for r in rows if not r['datasheet_id']))
 
@@ -1017,8 +1109,11 @@ def api_import_list():
         return jsonify({'error': 'The list needs a name'}), 400
     try:
         with _write() as conn:
-            result = bulk_add.commit_as_list(
+            result = army_lists.import_list(
                 conn, data.get('rows') or [], name,
+                raw_text=data.get('raw_text') or None,
+                source_format=data.get('source_format') or None,
+                points_total=_int(data.get('points_total')),
                 faction_id=_int(data.get('faction_id')),
                 points_limit=_int(data.get('points_limit')),
                 detachment=(data.get('detachment') or '').strip() or None)
@@ -1310,6 +1405,40 @@ def api_export_inventory():
         return Response(_export_csv(data), mimetype='text/csv', headers={
             'Content-Disposition': 'attachment; filename="inventory.csv"'})
     return jsonify(data)
+
+
+def _summary_only(gap):
+    """The report without the per-model assignment detail.
+
+    The rows carry every model they were handed so the swappable ones can be
+    expanded on screen; a JSON response after a picker only needs the numbers,
+    and shipping a few hundred model ids to move one badge is waste.
+    """
+    return {k: v for k, v in gap.items() if k != 'entries'}
+
+
+def _assigned_models(conn, gap):
+    """For each entry, which models covered it and what they are right now.
+
+    "Swappable rows expand to show which models and what they're built as."
+    One query for the whole report rather than one per row.
+    """
+    ids = [m['id'] for e in gap['entries'] for m in e['assigned']]
+    if not ids:
+        return {}
+    marks = ','.join('?' * len(ids))
+    rows = {r['id']: dict(r) for r in conn.execute(f"""
+        SELECT m.id, m.is_flexible, d.name AS built_as, s.name AS stage,
+               u.id AS unit_id, k.name AS kit_name
+          FROM models m
+          JOIN units u ON u.id = m.unit_id
+          JOIN stages s ON s.id = m.stage_id
+          LEFT JOIN datasheets d ON d.id = m.datasheet_id
+          LEFT JOIN kits k ON k.id = u.kit_id
+         WHERE m.id IN ({marks})
+    """, ids)}
+    return {e['id']: [rows[m['id']] for m in e['assigned'] if m['id'] in rows]
+            for e in gap['entries']}
 
 
 def _flag(value, default):

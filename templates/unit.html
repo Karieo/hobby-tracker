@@ -92,6 +92,42 @@
   </section>
 
   <section class="col-admin">
+  {% if options %}
+    {# Spec §8's assembly prompt, as a control rather than an interrupt.
+       Every model is stamped with its unit's datasheet the moment it is
+       created, so the silent auto-fill the spec describes for single-option
+       kits has already happened and there is nothing to stop Clay for. What
+       auto-fill cannot answer is this: a box that builds several things, where
+       the unit's datasheet is a default rather than a decision. #}
+    <h2>What did this get built as?</h2>
+    <p class="hint">
+      This box builds more than one thing, so what the app recorded is a
+      default rather than something you said. Getting it right is what lets the
+      gap report offer these models for the datasheet they actually are — and
+      magnetised means it counts as ready for any of them, because a swap costs
+      no hobby time.
+    </p>
+    <div class="panel builtas" data-unit="{{ unit.id }}">
+      <div class="row">
+        <label>Built as
+          <select id="built-as">
+            {% for o in options %}
+              <option value="{{ o.id }}"
+                {% if built_as and built_as.datasheet_id == o.id %}selected{% endif %}>
+                {{ o.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="magnet">
+          <input type="checkbox" id="built-flexible"
+                 {% if built_as and built_as.is_flexible %}checked{% endif %}>
+          Magnetised
+        </label>
+        <button class="go" id="save-built-as" data-unit="{{ unit.id }}">Save</button>
+      </div>
+    </div>
+  {% endif %}
+
   <h2>Individual models <span class="muted">{{ models|length }}</span></h2>
   <p class="hint">Available, never required. Most updates never come down here.</p>
   <form id="bulk" data-unit="{{ unit.id }}">
@@ -139,4 +175,8 @@
   </form>
   </section>
   </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="/static/js/list-report.js?v={{ asset_version }}"></script>
 {% endblock %}

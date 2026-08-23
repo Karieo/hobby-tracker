@@ -16,7 +16,14 @@ document.addEventListener('click', async (e) => {
 
   const rows = [...document.querySelectorAll('.addrow')].map((row) => ({
     datasheet_id: Number(row.querySelector('.ds').value) || null,
-    count: Number(row.dataset.count) || 1,
+    model_count: Number(row.dataset.count) || 1,
+    // The line it came from travels with it, so a datasheet Clay picked here
+    // teaches the alias table and the same spelling is never asked about
+    // twice. A row that arrived already resolved has nothing to teach.
+    raw_name: row.dataset.raw || null,
+    points: Number(row.dataset.points) || null,
+    resolved_by: row.querySelector('.ds').value && !row.dataset.resolved
+      ? 'manual' : (row.dataset.resolved || null),
     skip: !!(row.querySelector('.skip') || {}).checked,
   }));
 
@@ -32,11 +39,16 @@ document.addEventListener('click', async (e) => {
 
   button.disabled = true;
   try {
+    const raw = document.querySelector('#raw-text');
     const data = await post('/api/lists/import', {
       rows,
       name: button.dataset.name,
       faction_id: button.dataset.faction || null,
       points_limit: button.dataset.points || null,
+      // Kept so the parser getting better does not mean pasting it again.
+      raw_text: raw ? raw.value : null,
+      source_format: button.dataset.format || null,
+      points_total: button.dataset.declared || null,
     });
     const n = data.entries.length;
     toast(`List created — ${n} unit${n === 1 ? '' : 's'}`);
