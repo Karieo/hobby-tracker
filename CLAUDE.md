@@ -84,6 +84,7 @@ python3 seed/derived_kits.py --status            # researched box contents
 python3 scripts/report_kit_datasheets.py         # what migration 008 could not map
 python3 scripts/api_token.py --create "name"     # mint an export token (shown once)
 python3 scripts/api_token.py --list|--revoke ID  # ...and manage them
+python3 scripts/check_rules_pins.py              # has BSData or the MFM moved?
 python3 -m pytest                    # tests
 shellcheck backup.sh restore.sh      # the shell half, linted in CI too
 ```
@@ -178,6 +179,16 @@ the Munitorum Field Manual (flat per-size tables, official, licensed). They join
 on normalised name **scoped by faction** — 35 names carry different points per
 faction, so a global join would silently write wrong values. See the module
 docstring in `scripts/import_bsdata.py` for the full reasoning and measurements.
+
+**Neither source is ever re-imported on its own.** Both are pinned —
+`rules_data.py` holds all three SHAs, and the fetch scripts import them from
+there — and `deploy.sh` only imports when the datasheets table is empty. So the
+app stays on whatever revision it was first built with until someone bumps a
+pin deliberately. `/reference` shows which manual priced the database and warns
+when `data/mfm/` is newer than the import; `scripts/check_rules_pins.py` asks
+GitHub whether the pins have aged, and the weekly sweep runs it. Nothing bumps
+a pin automatically: points moving under a list is something to accept
+deliberately, not to wake up to.
 
 Two columns exist to survive re-sync: `datasheet_points.manual_override` and
 `datasheets.effort_is_override`. The importer reports them and leaves them

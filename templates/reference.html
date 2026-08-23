@@ -16,6 +16,74 @@
     </div>
   </div>
 
+  {# Which revision this is running on. The question it answers is "am I
+     quoting current points?", and until this existed the only way to find out
+     was a shell — while a list priced from a superseded manual is wrong in the
+     one way that does not look wrong. #}
+  <h2>Where this came from</h2>
+
+  {% if rules.import_pending %}
+    <div class="panel warn">
+      <p><b>The points on disk are newer than the points in the database.</b></p>
+      <p class="hint">
+        <code>data/mfm/</code> holds {{ rules.mfm_on_disk }}, and everything
+        priced here came from {{ rules.points_effective_from }}. The files were
+        updated and the importer was never re-run, so every points figure in
+        the app is the older manual's. Fix it with
+        <span class="code">python3 scripts/import_bsdata.py</span>.
+      </p>
+    </div>
+  {% endif %}
+
+  <ul class="units">
+    <li>
+      <div class="what">
+        <b>Munitorum points</b>
+        <span class="muted">{{ rules.points_source or 'no source recorded' }}</span>
+      </div>
+      <p class="counts">
+        <b>{{ rules.points }}</b> rows · priced from
+        <b>{{ rules.points_effective_from or 'unknown' }}</b>
+        {% if rules.overrides %}
+          · <span class="sealed">{{ rules.overrides }} hand override{{ '' if rules.overrides == 1 else 's' }}</span>
+        {% endif %}
+      </p>
+      <p class="hint">
+        Vendored in <span class="code">data/mfm/</span>, so nothing fetches it.
+        Games Workshop reprices with every balance dataslate — the weekly sweep
+        checks whether this pin has aged and says so rather than moving it.
+      </p>
+    </li>
+    <li>
+      <div class="what">
+        <b>Datasheets</b>
+        <span class="muted">BSData wh40k-11e</span>
+      </div>
+      <p class="counts">
+        <b>{{ rules.datasheets }}</b> for Warhammer 40,000 ·
+        <b>{{ rules.killteam }}</b> Kill Team operatives · last written
+        <b>{{ rules.datasheets_updated_at[:10] if rules.datasheets_updated_at else 'never' }}</b>
+      </p>
+    </li>
+  </ul>
+
+  <p class="hint">
+    Pinned revisions — a fetch and an import are both reproducible from these,
+    and neither happens on its own:
+  </p>
+  <ul class="pipeline">
+    {% for source in rules.sources %}
+      <li>{{ source.label }} · <span class="code">{{ source.sha[:12] }}</span>
+        {% if source.vendored %}<span class="muted">vendored</span>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+  <p class="hint">
+    <span class="code">python3 scripts/check_rules_pins.py</span> compares each
+    against its upstream. It never bumps one: points moving under a list is
+    something to accept deliberately, not to wake up to.
+  </p>
+
   <h2>Stage pipeline</h2>
   <ul class="pipeline">
     {% for s in stages %}

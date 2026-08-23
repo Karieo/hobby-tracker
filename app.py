@@ -54,7 +54,8 @@ from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 
 import bulk_add  # noqa: E402
 import collection as col
-import lists as army_lists  # noqa: E402
+import lists as army_lists
+import rules_data  # noqa: E402
 import database as db  # noqa: E402
 import scanning as scan  # noqa: E402
 
@@ -244,8 +245,13 @@ def reference():
     with _read() as conn:
         unresolved = [dict(r) for r in db.open_unresolved(conn)]
         stages = col.stage_ladder(conn)
+        # Local only. "Has upstream moved past the pin?" needs the network and
+        # belongs to the weekly sweep; a page that could not render because
+        # GitHub was down would be a worse page.
+        provenance = rules_data.provenance(conn)
     return render_template('reference.html', summary=db.import_summary(),
-                           stages=stages, unresolved=unresolved)
+                           stages=stages, unresolved=unresolved,
+                           rules=provenance)
 
 
 # ── Connections ──────────────────────────────────────────

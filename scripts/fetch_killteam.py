@@ -19,10 +19,13 @@ import subprocess
 import sys
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, BASE_DIR)
 DEST = os.path.join(BASE_DIR, 'data', 'killteam')
 
-KILLTEAM_REPO = 'https://github.com/BSData/wh40k-killteam'
-KILLTEAM_SHA = 'bdca455a43faf5795563549d24ede776eddfda8c'
+# The pin lives in `rules_data`, which `/reference` and the weekly sweep
+# both read too. Declared in one place because a pin recorded twice is a
+# pin that will eventually disagree with itself.
+from rules_data import KILLTEAM_REPO, KILLTEAM_SHA  # noqa: E402
 
 
 def git(*args):

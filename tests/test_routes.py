@@ -1366,3 +1366,48 @@ def test_the_csv_form_flattens(client, army_with_unit):
     header = body.splitlines()[0]
     assert 'bsdata_id' in header and 'owned' in header
     assert 'by_stage' not in header and 'points' not in header
+
+
+# ── The reference screen says which rules revision this is ───────────────────
+
+def test_reference_names_the_manual_the_points_came_from(client):
+    """"Am I quoting current points?" had no answer short of a shell, and a
+    list priced from a superseded manual is wrong in the one way that does not
+    look wrong."""
+    body = client.get('/reference').get_data(as_text=True)
+    assert 'Where this came from' in body
+    assert 'Munitorum points' in body
+    import rules_data
+    assert rules_data.MFM_SHA[:12] in body, 'the pin, so a fetch is reproducible'
+
+
+def test_reference_warns_when_the_files_are_newer_than_the_database(
+        client, db_path, monkeypatch):
+    """The files were updated and the importer never re-run. Every points
+    figure in the app is the older manual's."""
+    import app as appmod
+    with db.connect(db_path) as conn:
+        sheet = conn.execute(
+            'INSERT INTO datasheets (bsdata_id, name, effort, created_at, '
+            'updated_at) VALUES (?, ?, 1, ?, ?)',
+            ('boyz', 'Boyz', db.now(), db.now())).lastrowid
+        conn.execute('INSERT INTO datasheet_points (datasheet_id, model_count, '
+                     'points, tier_min, effective_from) '
+                     "VALUES (?, 10, 90, 1, '2026-08-05')", (sheet,))
+    monkeypatch.setattr(appmod.rules_data, 'mfm_meta',
+                        lambda: {'version': '1.3', 'lastUpdated': '2026-09-02'})
+    body = client.get('/reference').get_data(as_text=True)
+    assert 'newer than the points in the database' in body
+    assert 'scripts/import_bsdata.py' in body
+
+
+def test_reference_does_not_reach_the_network_to_render(client, monkeypatch):
+    """A page that could not render because GitHub was down would be a worse
+    page. "Has upstream moved?" belongs to the weekly sweep."""
+    import rules_data
+
+    def forbidden(*a, **kw):
+        raise AssertionError('/reference asked the network for something')
+
+    monkeypatch.setattr(rules_data.subprocess, 'run', forbidden)
+    assert client.get('/reference').status_code == 200
