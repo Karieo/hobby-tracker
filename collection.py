@@ -1144,9 +1144,40 @@ def owned_summary(conn, datasheet_id):
     return summary
 
 
+# Kill Team factions are slug-prefixed by their importer so they cannot merge
+# with a 40,000 faction of the same name. That is deliberate and correct — a
+# Kill Team of Sisters is a ten-operative team, not the Adepta Sororitas army —
+# but it means several names appear twice, and a picker that prints the name
+# alone gives Clay two identical options and no way to choose.
+KILL_TEAM_SLUG_PREFIX = 'kt-'
+
+
 def list_factions(conn):
-    return [dict(r) for r in conn.execute(
+    """Every faction, tagged with the game system it belongs to.
+
+    The system comes from the slug rather than from the datasheets that
+    reference it, because the slug is the contract the importer actually
+    establishes — a faction with nothing imported against it yet still knows
+    which game it is from.
+    """
+    rows = [dict(r) for r in conn.execute(
         'SELECT * FROM factions ORDER BY name')]
+    for row in rows:
+        kill_team = (row['slug'] or '').startswith(KILL_TEAM_SLUG_PREFIX)
+        row['game_system'] = 'killteam' if kill_team else 'wh40k'
+        row['system_label'] = 'Kill Team' if kill_team else 'Warhammer 40,000'
+        # What a picker should print. The bare name is ambiguous exactly when
+        # both games have it, so qualify only then — labelling every Kill Team
+        # entry would add noise to the ones that were never ambiguous.
+        row['label'] = row['name']
+    seen = {}
+    for row in rows:
+        seen.setdefault(row['name'], []).append(row)
+    for name, group in seen.items():
+        if len(group) > 1:
+            for row in group:
+                row['label'] = f"{name} ({row['system_label']})"
+    return rows
 
 
 def search_datasheets(conn, query, limit=25):

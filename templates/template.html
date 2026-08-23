@@ -9,7 +9,7 @@
         {% if template.year %}{{ template.year }} · {% endif %}
         {{ template.faction_name or 'no faction' }}
         {% if template.rrp_cents %}
-          · RRP £{{ '%.2f'|format(template.rrp_cents / 100) }}
+          · RRP {{ template.rrp_cents | money }}
           <span class="muted">as of {{ template.price_updated_on }}</span>
         {% endif %}
       </p>
@@ -38,7 +38,7 @@
           <option value="">— none —</option>
           {% for f in factions %}
             <option value="{{ f.id }}" {% if f.id == template.faction_id %}selected{% endif %}>
-              {{ f.name }}</option>
+              {{ f.label }}</option>
           {% endfor %}
         </select>
       </label>

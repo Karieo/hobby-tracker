@@ -413,3 +413,51 @@ def test_an_unbased_model_steps_back_over_the_basing_stages(conn, stages):
 
     assert conn.execute('SELECT stage_id FROM models WHERE unit_id = ?',
                         (unit,)).fetchone()['stage_id'] == stages['Primed']['id']
+
+
+# ── Two games, one name ──────────────────────────────────
+#
+# Kill Team factions are slug-prefixed by their importer so they cannot merge
+# with a 40,000 faction of the same name — a Kill Team of Sisters is a
+# ten-operative team, not the Adepta Sororitas army. That is right, and it
+# means a picker printing the bare name offers two identical options.
+
+def test_a_name_in_both_games_is_qualified(conn):
+    db.upsert_faction(conn, 'Adepta Sororitas', 'adepta-sororitas')
+    db.upsert_faction(conn, 'Adepta Sororitas', 'kt-adepta-sororitas')
+
+    labels = {f['slug']: f['label'] for f in col.list_factions(conn)}
+
+    assert labels['adepta-sororitas'] == 'Adepta Sororitas (Warhammer 40,000)'
+    assert labels['kt-adepta-sororitas'] == 'Adepta Sororitas (Kill Team)'
+
+
+def test_a_name_in_only_one_game_stays_plain(conn):
+    """Qualifying every Kill Team entry would add noise to the ones that were
+    never ambiguous."""
+    db.upsert_faction(conn, 'Orks', 'orks')
+    db.upsert_faction(conn, 'Battleclade', 'kt-battleclade')
+
+    labels = {f['slug']: f['label'] for f in col.list_factions(conn)}
+
+    assert labels['orks'] == 'Orks'
+    assert labels['kt-battleclade'] == 'Battleclade'
+
+
+def test_every_faction_knows_its_game(conn):
+    db.upsert_faction(conn, 'Orks', 'orks')
+    db.upsert_faction(conn, 'Wrecka Krew', 'kt-wrecka-krew')
+
+    systems = {f['slug']: f['game_system'] for f in col.list_factions(conn)}
+
+    assert systems['orks'] == 'wh40k'
+    assert systems['kt-wrecka-krew'] == 'killteam'
+
+
+def test_the_two_rows_stay_separate(conn):
+    """Merging them would put Kill Team operatives in a 40,000 army."""
+    a = db.upsert_faction(conn, 'Orks', 'orks')
+    b = db.upsert_faction(conn, 'Orks', 'kt-orks')
+
+    assert a != b
+    assert len(col.list_factions(conn)) == 2

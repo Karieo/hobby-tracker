@@ -17,7 +17,7 @@
       <label>Faction
         <select name="faction_id">
           <option value="">— none —</option>
-          {% for f in factions %}<option value="{{ f.id }}">{{ f.name }}</option>{% endfor %}
+          {% for f in factions %}<option value="{{ f.id }}">{{ f.label }}</option>{% endfor %}
         </select>
       </label>
       <label>Box state
@@ -80,7 +80,7 @@
           <td>{{ k.unit_count }} unit{{ '' if k.unit_count == 1 else 's' }},
               {{ k.model_count }} model{{ '' if k.model_count == 1 else 's' }}</td>
           <td>{{ k.acquired_on or '—' }}</td>
-          <td>{{ '£%.2f'|format(k.cost_cents / 100) if k.cost_cents else '—' }}</td>
+          <td>{{ k.cost_cents | money }}</td>
           <td>
             <select class="kit-status" data-kit="{{ k.id }}" aria-label="kit status">
               {% for s in ('owned', 'listed', 'sold', 'traded', 'gifted') %}

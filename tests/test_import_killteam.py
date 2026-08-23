@@ -90,15 +90,53 @@ def test_edition_comes_from_the_filename(conn, catalogues):
     assert editions == {'2018', '2021', '2024'}
 
 
-def test_kill_team_factions_cannot_collide_with_40k_ones(conn, catalogues):
-    """"Orks" exists in both games and they are not the same list."""
-    db.upsert_faction(conn, 'Orks', 'orks')
+def test_a_team_reuses_the_40k_faction_of_the_same_name(conn, catalogues):
+    """This used to assert the opposite, and the reversal is deliberate.
+
+    "Orks" exists in both games and they are genuinely not the same list — but
+    what keeps those lists apart is `datasheets.game_system`, not the faction
+    row. A faction is the label Clay picks when tagging an army, a kit or a
+    list, and there he only ever meant one Orks. Two rows meant a picker
+    offering the same name twice with no way to choose, on seven screens.
+    """
+    orks = db.upsert_faction(conn, 'Orks', 'orks')
     catalogues.write('2024 - Orks.cat', 'Orks')
 
     kt.import_all(conn, directory=catalogues.path)
 
     slugs = {r[0] for r in conn.execute('SELECT slug FROM factions')}
-    assert slugs == {'orks', 'kt-orks'}
+    assert slugs == {'orks'}, 'no second row for a name that already exists'
+    operative_factions = {r[0] for r in conn.execute(
+        "SELECT DISTINCT faction_id FROM datasheets WHERE game_system = 'killteam'")}
+    assert operative_factions == {orks}
+
+
+def test_the_two_unit_lists_stay_apart_after_sharing_a_faction(conn, catalogues):
+    """The thing the slug prefix was protecting. Sharing a faction row must not
+    let a Kill Team operative and a 40,000 datasheet become one list."""
+    orks = db.upsert_faction(conn, 'Orks', 'orks')
+    conn.execute(
+        'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+        "game_system, created_at, updated_at) VALUES ('boyz', 'Boyz', ?, 1, "
+        "'wh40k', ?, ?)", (orks, db.now(), db.now()))
+    catalogues.write('2024 - Orks.cat', 'Orks')
+
+    kt.import_all(conn, directory=catalogues.path)
+
+    systems = {r[0]: r[1] for r in conn.execute(
+        'SELECT game_system, COUNT(*) FROM datasheets GROUP BY game_system')}
+    assert systems['wh40k'] == 1
+    assert systems['killteam'] >= 1, 'both present, told apart by system'
+
+
+def test_a_team_with_no_40k_namesake_still_gets_its_own_row(conn, catalogues):
+    """Wrecka Krew is not a duplicate of anything."""
+    catalogues.write('2024 - Wrecka Krew.cat', 'Wrecka Krew')
+
+    kt.import_all(conn, directory=catalogues.path)
+
+    slugs = {r[0] for r in conn.execute('SELECT slug FROM factions')}
+    assert slugs == {'kt-wrecka-krew'}
 
 
 # ── The first silent failure: collapsed operatives ───────

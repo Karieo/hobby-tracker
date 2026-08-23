@@ -22,7 +22,7 @@
         <option value="">All</option>
         {% for f in factions %}
           <option value="{{ f.id }}" {% if faction_id == f.id %}selected{% endif %}>
-            {{ f.name }}</option>
+            {{ f.label }}</option>
         {% endfor %}
       </select>
     </label>

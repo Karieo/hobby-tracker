@@ -1001,3 +1001,66 @@ def test_every_pipeline_row_carries_its_stage_id(client, army_with_unit):
             assert 'data-stage=' in row, (
                 f'{url}: a pipeline row has no data-stage, so repainting it '
                 f'after an advance would silently do nothing — {row[:80]}')
+
+
+# ── Money and time ───────────────────────────────────────
+#
+# Money is stored in cents everywhere and only becomes a symbol at the edge.
+# The symbol was hardcoded in three templates with two different format
+# strings, which is how a fourth ends up in a third format.
+
+def test_money_renders_in_the_configured_currency():
+    import app as appmod
+    assert appmod.money(9000) == '$90.00'
+    assert appmod.money(6550) == '$65.50'
+
+
+def test_a_thousand_dollar_kit_is_readable():
+    import app as appmod
+    assert appmod.money(123456) == '$1,234.56'
+
+
+def test_no_recorded_price_is_a_dash_not_zero():
+    """A kit nobody priced and a kit that cost nothing are the same fact on
+    screen. "$0.00" reads like a claim that it was free."""
+    import app as appmod
+    assert appmod.money(None) == '—'
+    assert appmod.money(0) == '—'
+
+
+def test_an_unknown_currency_code_still_says_which_one():
+    """Better a visible "SEK 90.00" than a dollar sign on kronor."""
+    import app as appmod
+    assert appmod.CURRENCY_SYMBOLS.get('SEK') is None
+    assert 'USD' not in appmod.CURRENCY_SYMBOLS.get('GBP', '')
+
+
+def test_no_template_hardcodes_a_currency_symbol():
+    """Every price goes through the filter, so changing CURRENCY changes all
+    of them and not most of them."""
+    import glob
+    import re
+    for path in glob.glob('templates/*.html'):
+        body = open(path, encoding='utf-8').read()
+        assert '£' not in body, f'{path} hardcodes a pound sign'
+        # A bare $ is fine in prose; a $ glued to a formatted number is not.
+        assert not re.search(r'\$\{\{|\$%\.2f', body), \
+            f'{path} formats money without the filter'
+
+
+def test_prices_on_screen_use_the_filter(client, a_template):
+    body = client.get('/templates').get_data(as_text=True)
+    assert '£' not in body
+
+
+def test_faction_pickers_never_print_a_bare_ambiguous_name(client):
+    """Two options reading "Adepta Sororitas" is two options you cannot choose
+    between. Every picker prints the disambiguated label."""
+    import glob
+    import re
+    for path in glob.glob('templates/*.html'):
+        body = open(path, encoding='utf-8').read()
+        for block in re.findall(r'\{%\s*for f in factions\s*%\}.*?\{%\s*endfor\s*%\}',
+                                body, re.S):
+            assert '{{ f.name }}' not in block, (
+                f'{path} prints a bare faction name in a picker')

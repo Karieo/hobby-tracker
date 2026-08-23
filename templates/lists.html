@@ -15,7 +15,7 @@
     <label>Faction
       <select name="faction_id">
         <option value="">—</option>
-        {% for f in factions %}<option value="{{ f.id }}">{{ f.name }}</option>{% endfor %}
+        {% for f in factions %}<option value="{{ f.id }}">{{ f.label }}</option>{% endfor %}
       </select>
     </label>
     <label>Points limit<input name="points_limit" type="number" min="0" placeholder="2000"></label>

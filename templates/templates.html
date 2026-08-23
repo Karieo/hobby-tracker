@@ -27,7 +27,7 @@
       <label>Faction
         <select name="faction_id">
           <option value="">— none —</option>
-          {% for f in factions %}<option value="{{ f.id }}">{{ f.name }}</option>{% endfor %}
+          {% for f in factions %}<option value="{{ f.id }}">{{ f.label }}</option>{% endfor %}
         </select>
       </label>
       <label>Year<input name="year" type="number" min="1987" max="2100"
@@ -96,7 +96,7 @@
           <td>{{ t.unit_count }} unit{{ '' if t.unit_count == 1 else 's' }},
               {{ t.model_count }} model{{ '' if t.model_count == 1 else 's' }}</td>
           <td>{{ t.barcode_count or '—' }}</td>
-          <td>{{ '£%.2f'|format(t.rrp_cents / 100) if t.rrp_cents else '—' }}</td>
+          <td>{{ t.rrp_cents | money }}</td>
         </tr>
       {% endfor %}
     </table>
