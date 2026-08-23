@@ -67,6 +67,9 @@ function repaintPipe(breakdown) {
     if (!li) return;
     const count = $('.pipe-count b', li) || $('.count b', li);
     if (count) count.textContent = stage.count;
+    // The editable count on unit detail is the same number; keep it honest.
+    const field = $('.count-at', li);
+    if (field) field.value = stage.count;
     const pct = $('.pipe-count .muted', li);
     if (pct) pct.textContent = `${stage.percent}%`;
     li.classList.toggle('zero', stage.count === 0);
@@ -197,22 +200,40 @@ if (bulkForm) {
 
 /* ── "N of them are at X" ────────────────────────────────
  * For most real updates this replaces selection entirely — you know six are
- * primed, you don't know or care which six. */
-const countForm = $('#count-form');
-if (countForm) {
-  countForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    try {
-      const data = await post(`/api/units/${countForm.dataset.unit}/stage`, {
-        stage_id: Number($('select[name="stage_id"]', countForm).value),
-        count: Number($('input[name="count"]', countForm).value) || 0,
-      });
-      if (!data.moved) { toast('Nothing to move', 'warn'); return; }
-      toast(`${data.moved} model${data.moved === 1 ? '' : 's'} updated`);
-      setTimeout(() => location.reload(), 600);
-    } catch (err) { toast(err.message, 'error'); }
-  });
-}
+ * primed, you don't know or care which six.
+ *
+ * Typed straight into the rung it refers to, rather than into a separate form
+ * with its own stage picker: the stage is the row you are typing in, so there
+ * is nothing to re-select and nothing to get out of step with the pipeline
+ * above it. Commits on change (blur or Enter), not on every keystroke — a
+ * partially-typed "1" on the way to "12" would otherwise reconcile to one. */
+document.addEventListener('change', async (e) => {
+  const field = e.target.closest('.count-at');
+  if (!field) return;
+  const wanted = Math.max(0, Number(field.value) || 0);
+  field.value = wanted;
+  try {
+    const data = await post(`/api/units/${field.dataset.unit}/stage`, {
+      stage_id: Number(field.dataset.stage),
+      count: wanted,
+    });
+    // Repaint from the server's answer either way. Asking for six when the
+    // unit holds five legitimately moves nothing, and the field must not keep
+    // showing the six — a count that disagrees with the data is worse than no
+    // count, and this is the number the whole screen is about.
+    repaintPipe(data.breakdown);
+    if (!data.moved) {
+      toast(`Still ${field.value} there`, 'warn');
+      return;
+    }
+    toast(`${data.moved} model${data.moved === 1 ? '' : 's'} updated`);
+    // The bars and percentages elsewhere on the page are server-rendered.
+    setTimeout(() => location.reload(), 700);
+  } catch (err) {
+    toast(err.message, 'error');
+    setTimeout(() => location.reload(), 600);
+  }
+});
 
 const moveForm = $('#move-form');
 if (moveForm) {

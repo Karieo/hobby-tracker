@@ -199,3 +199,49 @@ def test_no_hint_for_something_not_owned(conn):
     rows = col.inventory(conn, query='Rhino', include_unowned=True)
 
     assert rows[0]['basing_hint'] is None
+
+
+# ── The ramp on unit detail ──────────────────────────────
+#
+# §2c: inapplicable basing stages are shown "dashed rather than blocking".
+# Hiding them would make the ladder a different length per unit and unreadable
+# at a glance; leaving them live would invite a tap that records work that
+# never happened.
+
+def test_the_breakdown_marks_stages_this_unit_never_walks(conn, stages):
+    rhino = datasheet(conn, 'rhino', 'Rhino', basing='unbased')
+    unit = col.create_unit(conn, rhino, 1, stage_id=stages['On sprue'])
+
+    by_name = {s['name']: s for s in col.unit_breakdown(conn, unit)}
+
+    assert by_name['Base prepared']['applies'] is False
+    assert by_name['Based']['applies'] is False
+    assert by_name['Primed']['applies'] is True
+    assert by_name['Battle ready']['applies'] is True
+
+
+def test_a_based_model_walks_every_stage(conn, stages):
+    dread = datasheet(conn, 'dread', 'Redemptor Dreadnought', basing='based')
+    unit = col.create_unit(conn, dread, 1, stage_id=stages['On sprue'])
+
+    assert all(s['applies'] for s in col.unit_breakdown(conn, unit))
+
+
+def test_unsaid_basing_still_walks_every_stage(conn, stages):
+    """NULL means nobody has said. Nothing is struck through behind Clay's
+    back on the strength of a guess."""
+    plain = datasheet(conn, 'boyz', 'Boyz')
+    unit = col.create_unit(conn, plain, 1, stage_id=stages['On sprue'])
+
+    assert all(s['applies'] for s in col.unit_breakdown(conn, unit))
+
+
+def test_the_full_ladder_is_still_returned_for_an_unbased_model(conn, stages):
+    """Marked, not removed — the pipeline stays the same length on every
+    screen so its shape is readable at a glance."""
+    rhino = datasheet(conn, 'rhino', 'Rhino', basing='unbased')
+    unit = col.create_unit(conn, rhino, 1, stage_id=stages['On sprue'])
+
+    breakdown = col.unit_breakdown(conn, unit)
+
+    assert len(breakdown) == len(col.stage_ladder(conn))

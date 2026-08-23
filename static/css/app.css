@@ -609,3 +609,13 @@ a.go {
 
 /* Header actions never wrap mid-phrase. */
 .page > .ghost, .page > a.ghost { white-space: nowrap; }
+
+/* An editable count inside a rung. Same box as the read-only one on the paint
+   session, so the two screens read as the same control. */
+.rung .count-at {
+  width: 3.2rem; min-height: 40px; margin: 0; text-align: center;
+  font-variant-numeric: tabular-nums; background: var(--panel-2);
+  border: 1px solid var(--rule); color: var(--ink); padding: 0 .2rem;
+}
+.rung.na .count-at { opacity: .4; }
+.rung .count-at:disabled { cursor: not-allowed; }
