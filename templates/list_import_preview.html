@@ -31,30 +31,43 @@
       </p>
     {% endif %}
 
+    <textarea id="raw-text" hidden>{{ text }}</textarea>
     <form id="lines">
       {% for row in rows %}
         <div class="panel addrow {% if not row.datasheet_id %}warn{% endif %}"
-             data-count="{{ row.count }}">
+             data-count="{{ row.model_count }}"
+             data-raw="{{ row.raw_name }}"
+             data-points="{{ row.points or '' }}"
+             data-resolved="{{ row.resolved_by or '' }}">
           <div class="what">
-            <b>{{ row.count }}×</b>
+            <b>{{ row.model_count }}×</b>
             {% if row.datasheet_id %}
               {{ row.datasheet_name }}
               {% if row.faction_name %}<span class="muted">{{ row.faction_name }}</span>{% endif %}
+              {% if row.resolved_by == 'fuzzy' %}
+                <span class="muted">near match, {{ row.score }}</span>
+              {% elif row.resolved_by == 'alias' %}
+                <span class="muted">you named this before</span>
+              {% endif %}
               {# Shown struck through: it was in the paste, and saying so is
                  how Clay knows it was read and deliberately not used, rather
                  than silently lost. #}
-              {% if row.points_hint %}
-                <span class="muted"><s>{{ row.points_hint }} pts</s></span>
+              {% if row.points %}
+                <span class="muted"><s>{{ row.points }} pts</s></span>
+              {% endif %}
+              {% if row.model_count != row.parsed_count %}
+                <span class="muted">read {{ row.parsed_count }}, minimum unit
+                  size is {{ row.model_count }}</span>
               {% endif %}
               <input type="hidden" class="ds" value="{{ row.datasheet_id }}">
             {% else %}
-              <span class="muted">{{ row.name }}</span>
+              <span class="muted">{{ row.raw_name }}</span>
             {% endif %}
           </div>
 
           {% if not row.datasheet_id %}
             <p class="hint">
-              <span class="code">{{ row.raw }}</span> — {{ row.why }}
+              <span class="code">{{ row.raw_name }}</span> — {{ row.why }}
             </p>
             <div class="row">
               <label>Which is it?
@@ -86,7 +99,9 @@
         <button class="go" id="commit-list"
                 data-name="{{ name }}"
                 data-faction="{{ faction_id or '' }}"
-                data-points="{{ points_limit or '' }}">
+                data-points="{{ points_limit or '' }}"
+                data-format="{{ parsed.source_format }}"
+                data-declared="{{ parsed.points_total or '' }}">
           Create “{{ name }}” →
         </button>
         <a class="ghost" href="/lists/import">Start over</a>

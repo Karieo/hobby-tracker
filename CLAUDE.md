@@ -37,12 +37,13 @@ doors onto §2.7 — importing a list from a file or a URL — and those stay ga
 on a source: every candidate host is refused by egress policy. Pasting never
 was. §5 of the spec has the measured state of each step.
 
-**In progress: the gap checker** (spec §8, written as "Section 7"). Four
-commits of five: migration 008 (`models.datasheet_id`, `is_flexible`,
-`kit_datasheets`, `datasheet_aliases`, `list_entries` rebuilt), `list_parse.py`,
-`list_resolve.py` and `list_allocate.py`. Still to come: the routes and views —
-until then `/lists/<id>` still renders `lists.list_gap`, which is the code with
-the double-count bug in it.
+**The gap checker is built** (spec §8, written as "Section 7"): migration 008,
+`list_parse.py`, `list_resolve.py`, `list_allocate.py`, and the report at
+`/lists/<id>` — re-run live on every load, never stored. `lists.list_gap` is now
+a name over `list_allocate.allocate`, so the wishlist and the list index inherit
+the fix too: `raise_wishlist` was reading the same double-counted numbers and
+under-asking for exactly the models Clay would have found missing at the
+table.
 
 **One name-similarity function, `list_resolve.similarity`**, used by both paste
 doors. It sorts the words before comparing (rapidfuzz calls that
@@ -104,9 +105,9 @@ the rest rather than under a `gap_checker/`.
 `bulk_add.parse_lines` reads a shelf typed from memory: it takes stage words
 ("20 Boyz built") and may skip a line it cannot use. `list_parse.parse` reads
 an app's export: it carries points and position, detects the format, and may
-never skip anything. `/lists/import` still uses the first, which is why it
-reports an export's preamble as four unknown units; pointing it at the second
-is part of the gap checker's commit 5. The scaffolding patterns are shared
+never skip anything. `/lists/import` uses the second now, so a real export's preamble
+is dropped rather than reported as four unknown units; `/add` still uses the
+first, which is right for it. The scaffolding patterns are shared
 (`bulk_add.SECTION_RE`, `TOTAL_RE`, `POINTS_RE`) so the two cannot drift. Stdlib `sqlite3` with `sqlite3.Row`, a fresh connection
 per call, foreign keys ON and WAL. No ORM, no SPA framework, no build step.
 

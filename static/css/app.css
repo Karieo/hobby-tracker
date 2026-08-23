@@ -489,6 +489,39 @@ button.link { background: none; border: none; color: var(--accent); padding: 0;
 .unit-line > a b { text-decoration: underline; }
 .unit-line button { min-height: 38px; padding: .35rem .7rem; font-size: .85rem; }
 
+/* The gap report's six row states, from spec §8. Colour carries the same
+   meaning it does everywhere else in this app and no more: the accent means
+   done, the rust means something wants you, and the rest is a left edge you
+   can scan down without reading a word.
+
+   Swappable reads as green on purpose — "a magnetised Warglaive built as a
+   Helverin is a two-minute arm swap, not a project." */
+.units > li[class*="row-"] { border-left-width: 4px; }
+.row-short      { border-left-color: var(--warn); }
+.row-buildable  { border-left-color: var(--s2); }
+.row-swappable  { border-left-color: var(--accent); }
+.row-owned      { border-left-color: var(--s4); }
+.row-ready      { border-left-color: var(--accent); }
+.row-unresolved { border-left-color: var(--warn); border-left-style: dashed; }
+
+/* "Swappable rows expand to show which models and what they're built as." */
+.whichones { margin: .5rem 0 0; font-size: .9rem; }
+.whichones summary { cursor: pointer; color: var(--accent); min-height: 32px;
+                     display: flex; align-items: center; }
+.whichones ul.plain { list-style: none; margin: .4rem 0 0; padding: 0;
+                      display: grid; gap: .3rem; }
+.whichones ul.plain li { background: var(--panel-2); padding: .35rem .5rem; }
+.paste { background: var(--panel-2); padding: .6rem; overflow-x: auto;
+         font-size: .8rem; white-space: pre-wrap; margin: .5rem 0 0; }
+
+/* What a multi-option box got built as. Only ever rendered for the handful of
+   kits that build more than one thing, so it is a card rather than a field. */
+.builtas { display: grid; gap: .5rem; }
+.builtas .row { align-items: end; }
+.builtas .magnet { display: flex; align-items: center; gap: .4rem;
+                   min-height: 44px; font-size: .9rem; }
+.builtas .magnet input { width: 1.15rem; height: 1.15rem; }
+
 /* Catalogue: what exists, and whether it is on the shelf. Owned rows are
    tinted rather than hidden — "I already have this" is the answer the screen
    most often needs to give. */

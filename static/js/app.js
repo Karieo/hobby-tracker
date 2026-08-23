@@ -461,9 +461,39 @@ if (kitAdopt) {
 /* ── Datasheet picker ────────────────────────────────────
  * Never a free-text field. A unit must point at a real imported datasheet, or
  * points, gaps and purchase advice all quietly go wrong later. */
+
+/* Where a picker's suggestions go.
+ *
+ * This used to be `$('.results', input.closest('form'))`, which assumed two
+ * things that were not true. A picker outside a form made `closest` return
+ * null and the whole handler threw on `null.querySelector` — every keystroke,
+ * silently, in the console. And a form with several pickers and no `.results`
+ * at all — which is what both paste-confirmation screens shipped as — gave
+ * every one of them nothing to render into, so typing a datasheet name did
+ * nothing whatsoever. Only the "did you mean" buttons ever worked there, which
+ * is why it went unnoticed.
+ *
+ * So: look in the nearest thing that could hold one, and build one if there
+ * isn't. A picker that cannot show what it found is a dead end on a screen
+ * whose whole job is resolving a name. */
+function resultsListFor(input) {
+  const scope = input.closest('.addrow') || input.closest('[data-entry]')
+             || input.closest('form') || input.parentElement;
+  const found = scope && $('.results', scope);
+  if (found) return found;
+  const list = document.createElement('ul');
+  list.className = 'results';
+  list.hidden = true;
+  (input.parentElement || scope).appendChild(list);
+  return list;
+}
 $$('input.picker').forEach((input) => {
   const hidden = $(input.dataset.target);
-  const list = $('.results', input.closest('form'));
+  const list = resultsListFor(input);
+  // Looked up once. A picker is not always inside a form — the gap report puts
+  // one in a list row with a button beside it — and every place that assumed
+  // otherwise threw on null, silently, mid-interaction.
+  const form = input.closest('form');
   let timer;
 
   const clear = () => { list.hidden = true; list.innerHTML = ''; };
@@ -507,9 +537,11 @@ $$('input.picker').forEach((input) => {
           input.dataset.name = row.name;
           input.dataset.faction = row.faction_name || '';
           input.dataset.minModels = row.min_models || '';
-          const count = $('input[name="model_count"]', input.closest('form'));
+          // Pre-filling the model count is a convenience on the forms that
+          // have one, not a requirement of picking a datasheet.
+          const count = form && $('input[name="model_count"]', form);
           if (count && row.min_models) count.value = row.min_models;
-          const pickCount = $('#pick-count', input.closest('form'));
+          const pickCount = form && $('#pick-count', form);
           if (pickCount && row.min_models) pickCount.value = row.min_models;
           clear();
         });
@@ -522,7 +554,13 @@ $$('input.picker').forEach((input) => {
   // Only guard forms where the datasheet *is* the payload (the add-unit form).
   // On the kit template form the picker adds a line to a list and is empty by
   // the time the form is submitted, so guarding there would block every save.
-  input.closest('form').addEventListener('submit', (e) => {
+  //
+  // And only where there *is* a form: a picker on the gap report sits in a
+  // list row with a button beside it, and assuming a form here threw on
+  // `null.addEventListener` at page load, which took the rest of this
+  // handler's setup with it.
+  if (!form) return;
+  form.addEventListener('submit', (e) => {
     if (!hidden.name) return;
     if (!hidden.value) {
       e.preventDefault();

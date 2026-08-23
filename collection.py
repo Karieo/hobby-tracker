@@ -488,6 +488,79 @@ def add_models(conn, unit_id, count, stage_id):
     return ids
 
 
+def buildable_options(conn, unit_id):
+    """What the box this unit came out of can be built as.
+
+    Empty for the overwhelming majority: most kits build one thing, `add_models`
+    already stamped it, and there is nothing to ask. It is the Armiger sprue and
+    the big Knight kit this exists for — where the unit's datasheet is a default
+    rather than a decision Clay made.
+    """
+    return [dict(r) for r in conn.execute("""
+        SELECT d.id, d.name, f.name AS faction_name
+          FROM units u
+          JOIN kit_datasheets kd ON kd.kit_id = u.kit_id
+          JOIN datasheets d      ON d.id = kd.datasheet_id
+          LEFT JOIN factions f   ON f.id = d.faction_id
+         WHERE u.id = ?
+         ORDER BY d.name
+    """, (unit_id,))]
+
+
+def unit_built_as(conn, unit_id):
+    """What this unit's models are right now, and whether they are magnetised.
+
+    Returns the common answer rather than a per-model list. Divergence inside
+    one unit is possible in the schema and has no UI, because the interaction
+    this app is built around is the squad — Clay magnetised the unit, not model
+    number three.
+    """
+    row = conn.execute("""
+        SELECT m.datasheet_id, d.name, MAX(m.is_flexible) AS is_flexible,
+               COUNT(*) AS n
+          FROM models m
+          LEFT JOIN datasheets d ON d.id = m.datasheet_id
+         WHERE m.unit_id = ?
+         GROUP BY m.datasheet_id
+         ORDER BY n DESC
+    """, (unit_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def set_built_as(conn, unit_id, datasheet_id, flexible=False):
+    """Record what this unit's models actually are, and whether that reverses.
+
+    Whole-unit, because that is the interaction the app is built around: Clay
+    magnetised the squad, not model number three. Per-model divergence is
+    possible in the schema and deliberately has no UI.
+
+    Refused unless the kit can genuinely build it. Letting a unit be set to a
+    datasheet its box never contained would put models in the gap report that
+    do not exist, which is the failure the whole gap checker is for.
+    """
+    unit = conn.execute('SELECT * FROM units WHERE id = ?',
+                        (unit_id,)).fetchone()
+    if not unit:
+        raise ValueError(f'no unit {unit_id}')
+    if datasheet_id is None:
+        # Back to uncommitted: plastic that is no longer claiming to be
+        # anything, which is what an unbuilt sprue honestly is.
+        conn.execute('UPDATE models SET datasheet_id = NULL, is_flexible = ? '
+                     'WHERE unit_id = ?', (1 if flexible else 0, unit_id))
+        _touch_unit(conn, unit_id)
+        return
+
+    allowed = {row['id'] for row in buildable_options(conn, unit_id)}
+    allowed.add(unit['datasheet_id'])
+    if datasheet_id not in allowed:
+        raise ValueError('that box cannot build that datasheet')
+
+    conn.execute('UPDATE models SET datasheet_id = ?, is_flexible = ? '
+                 'WHERE unit_id = ?',
+                 (datasheet_id, 1 if flexible else 0, unit_id))
+    _touch_unit(conn, unit_id)
+
+
 def move_unit_to_army(conn, unit_id, army_id):
     """Allied units get reshuffled; None parks a unit back in Unassigned."""
     conn.execute('UPDATE units SET army_id = ?, updated_at = ? WHERE id = ?',

@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block title %}{{ list.name }} · Collection Tracker{% endblock %}
 {% block body %}
+{# Spec §8's report view. One table, one row per entry, in the order it was
+   pasted — and re-run against the collection on every load rather than stored.
+   Paint three Meganobz, reload, the numbers move; that feedback loop is the
+   feature, and a cached report would stop being true the moment Clay picked up
+   a brush. #}
+
   <header class="page">
     <div>
       <p class="crumb"><a href="/lists">← Lists</a></p>
@@ -8,55 +14,138 @@
       <p class="muted">
         {{ list.faction_name or 'no faction' }}
         {% if list.detachment %} · {{ list.detachment }}{% endif %}
-        · {{ gap.points_total }}{% if list.points_limit %} / {{ list.points_limit }}{% endif %} pts
+        {% if list.source_format and list.source_format != 'unknown' %}
+          · read as {{ 'New Recruit' if list.source_format == 'newrecruit' else 'the GW app' }}
+        {% endif %}
       </p>
     </div>
   </header>
 
-  {# The two halves are kept apart because they are different evenings: one is
-     a trip to a shop, the other is a night at the desk. #}
+  {# The summary line the spec asks for, as tiles because this is read on a
+     phone. Points are the Munitorum manual's, never the paste's. #}
   <div class="stats">
-    <div class="stat {% if gap.to_buy %}flag{% endif %}">
-      <b>{{ gap.to_buy }}</b><span>to buy</span>
+    <div class="stat {% if gap.short %}flag{% endif %}">
+      <b>{{ gap.short }}</b><span>to buy</span>
     </div>
     <div class="stat {% if gap.to_paint %}flag{% endif %}">
       <b>{{ gap.to_paint }}</b><span>to paint</span>
     </div>
-    <div class="stat"><b>{{ gap.points_total }}</b><span>points</span></div>
-    <div class="stat"><b>{{ gap.entries|length }}</b><span>units</span></div>
+    <div class="stat {% if gap.swaps %}done{% endif %}">
+      <b>{{ gap.swaps }}</b><span>swaps</span>
+    </div>
   </div>
+
+  {# Three tiles, not four. The design puts them in one row on purpose — they
+     are one sentence — and a fourth wraps onto a line of its own, which reads
+     as a separate fact. Points belong in the sentence below anyway: they are a
+     ratio, and a ratio does not fit a tile. #}
+  <p class="hint">
+    <b>{{ gap.points_owned }}</b> / {{ gap.points_total }} pts owned ·
+    <b>{{ gap.points_ready }}</b> pts battle ready ·
+    <b>{{ gap.units_short }}</b> unit{{ '' if gap.units_short == 1 else 's' }} short
+    {% if list.points_limit %} · limit {{ list.points_limit }}{% endif %}
+    {% if gap.unresolved %}
+      {# "Unresolved entries are excluded from all totals and the summary says
+         so explicitly. Never let an unresolved row quietly deflate the
+         numbers." #}
+      · <span class="sealed">{{ gap.unresolved }} unresolved row{{ '' if gap.unresolved == 1 else 's' }},
+        counted in none of this</span>
+    {% endif %}
+  </p>
 
   {% if gap.ready %}
     <div class="panel"><p><b>Ready to field.</b> Everything is owned and battle ready.</p></div>
   {% elif gap.fieldable %}
     <div class="panel warn">
-      <p><b>You can field this today.</b> Everything is owned; {{ gap.to_paint }}
-         model{{ '' if gap.to_paint == 1 else 's' }} would go on the table unpainted.</p>
+      <p><b>You can field this today.</b> Everything is owned;
+         {{ gap.to_paint }} model{{ '' if gap.to_paint == 1 else 's' }} would go
+         on the table unpainted.</p>
     </div>
   {% endif %}
+
+  {# Section 7's toggle. Off would be a lie on a list with no army if it did
+     nothing, so it filters either way — see list_allocate._army_clause. #}
+  <nav class="chips" aria-label="Which models count">
+    <a class="chip {% if include_unassigned %}on{% endif %}"
+       href="/lists/{{ list.id }}">Everything owned</a>
+    <a class="chip {% if not include_unassigned %}on{% endif %}"
+       href="/lists/{{ list.id }}?include_unassigned=0">Only what is in an army</a>
+  </nav>
 
   <h2>Units <span class="muted">{{ gap.entries|length }}</span></h2>
   {% if gap.entries %}
     <ul class="units">
       {% for e in gap.entries %}
-        <li>
+        <li class="row-{{ e.state }}" data-entry="{{ e.id }}">
           <div class="what">
-            <b>{{ e.datasheet_name }}</b>
+            <b>{{ e.datasheet_name or e.raw_name }}</b>
             <span class="muted">
               {{ e.model_count }} model{{ '' if e.model_count == 1 else 's' }}
               {% if e.points_snapshot %} · {{ e.points_snapshot }} pts{% endif %}
+              {% if e.faction_name %} · {{ e.faction_name }}{% endif %}
             </span>
           </div>
-          <p class="counts">
-            {% if e.ready %}
-              <span class="ok-badge">Ready</span>
-            {% else %}
-              {% if e.buy %}<b class="short">{{ e.buy }}</b> to buy{% endif %}
-              {% if e.buy and e.paint %} · {% endif %}
-              {% if e.paint %}<b>{{ e.paint }}</b> to paint{% endif %}
+
+          {% if e.state == 'unresolved' %}
+            {# Never guessed at. The picker writes an alias, so the same
+               spelling is never asked about twice. #}
+            <p class="hint warnline">
+              <span class="code">{{ e.raw_name }}</span> matched no datasheet.
+              Nothing about this row is counted until you say what it is.
+            </p>
+            <div class="row">
+              <label>Which is it?
+                <input class="picker" autocomplete="off"
+                       placeholder="Start typing a datasheet name…"
+                       data-target="#entry-{{ e.id }}">
+                <input type="hidden" class="ds" id="entry-{{ e.id }}">
+              </label>
+              <button class="go entry-resolve" data-resolve="{{ e.id }}"
+                      data-list="{{ list.id }}">Use this</button>
+            </div>
+          {% else %}
+            <p class="counts">
+              {% if e.state == 'ready' %}
+                <span class="ok-badge">Ready</span>
+              {% elif e.state == 'swappable' %}
+                <span class="ok-badge">Swap {{ e.swappable }}</span>
+              {% elif e.state == 'buildable' %}
+                <b>{{ e.buildable }}</b> to build
+              {% elif e.state == 'owned' %}
+                <b>{{ e.model_count - e.battle_ready }}</b> to paint
+              {% else %}
+                <b class="short">{{ e.short }}</b> to buy
+                {% if e.owned %} · own {{ e.owned }}{% endif %}
+              {% endif %}
+              <span class="muted"> ·
+                {{ e.owned }} owned, {{ e.battle_ready }} ready
+                {% if e.buildable %}, {{ e.buildable }} buildable{% endif %}
+                {% if e.swappable %}, {{ e.swappable }} swappable{% endif %}
+              </span>
+            </p>
+
+            {% if e.swappable or e.buildable %}
+              {# "Swappable rows expand to show which models and what they're
+                 currently configured as." A green row still deserves an
+                 answer to "which ones, and what are they right now?" #}
+              <details class="whichones">
+                <summary>Which models</summary>
+                <ul class="plain">
+                  {% for m in assigned.get(e.id, []) %}
+                    <li>
+                      <a href="/units/{{ m.unit_id }}">
+                        {{ m.built_as or 'not built as anything yet' }}</a>
+                      <span class="muted">
+                        · {{ m.stage }}{% if m.kit_name %} · {{ m.kit_name }}{% endif %}
+                        {% if m.is_flexible %} · magnetised{% endif %}
+                      </span>
+                    </li>
+                  {% endfor %}
+                </ul>
+              </details>
             {% endif %}
-            <span class="muted"> · own {{ e.owned_count }}, {{ e.done_count }} ready</span>
-          </p>
+          {% endif %}
+
           <div class="actions">
             <button class="ghost entry-remove" data-entry="{{ e.id }}">Remove</button>
           </div>
@@ -79,17 +168,38 @@
     <div class="actions"><button class="go" type="submit">Add</button></div>
   </form>
 
-  {% if gap.to_buy %}
+  {% if gap.short %}
     <h2>Take it to the shop</h2>
     <p class="hint">
-      Puts the {{ gap.to_buy }} model{{ '' if gap.to_buy == 1 else 's' }} you do
-      not own on the wishlist, tagged with this list. Runs again safely — it
-      tops up to the shortfall rather than adding a second copy.
+      Puts the {{ gap.short }} model{{ '' if gap.short == 1 else 's' }} nothing
+      you own can cover on the wishlist, tagged with this list. Runs again
+      safely — it tops up to the shortfall rather than adding a second copy.
     </p>
     <div class="actions">
       <button class="go" id="raise-wishlist" data-list="{{ list.id }}">
-        Add {{ gap.to_buy }} to the wishlist
+        Add {{ gap.short }} to the wishlist
       </button>
     </div>
   {% endif %}
+
+  {% if list.raw_text %}
+    <h2>The paste this came from</h2>
+    <p class="hint">
+      Kept so the parser getting better does not mean pasting it again. Reading
+      it afresh replaces every row — safe, because a datasheet you picked by
+      hand taught the alias table, and that is the first thing resolution
+      consults.
+    </p>
+    <div class="actions">
+      <button class="ghost" id="reparse" data-list="{{ list.id }}">Read it again</button>
+    </div>
+    <details class="whichones">
+      <summary>Show the text</summary>
+      <pre class="paste">{{ list.raw_text }}</pre>
+    </details>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  <script src="/static/js/list-report.js?v={{ asset_version }}"></script>
 {% endblock %}

@@ -237,6 +237,25 @@ cannot read.
 
 ### 8.0 · Where it disagrees with this database
 
+**Built in five commits, finished 2026-08-23.** Three more deviations came out
+of the last one:
+
+- **The endpoints live under `/api/`.** The spec writes `PATCH
+  /lists/<id>/entries/<eid>`; here that is `/api/lists/...`, because
+  `require_login` answers an unauthenticated `/api/` call with a 401 and
+  everything else with an HTML redirect to the login page. A JSON client
+  getting a login form back is the difference between an error it can report
+  and one it cannot.
+- **The assembly prompt is a control, not an interrupt.** `add_models` stamps
+  every model with its unit's datasheet at creation, so the silent auto-fill
+  the spec describes for single-option kits has already happened and there is
+  nothing to stop Clay for. What auto-fill cannot answer — a box that builds
+  several things, where the unit's datasheet is a default rather than a
+  decision — is a block on the unit page, shown only for those kits.
+- **`points_owned` is a ratio, so it is a sentence rather than a tile.** Three
+  tiles across is the design's rule and a fourth wraps onto a line of its own,
+  which reads as a separate fact.
+
 Recorded once, here, rather than argued again in each commit.
 
 - **"Models currently link to kits ... the gap checker cannot resolve anything

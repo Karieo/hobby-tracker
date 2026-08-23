@@ -227,9 +227,18 @@ def _summarise(entries):
             if entry['battle_ready'] + entry['swappable'] >= entry['model_count']:
                 ready_points += points
 
+    # Two halves, kept apart because they are different evenings: one is a trip
+    # to a shop, the other a night at the desk. Buildable plastic counts as
+    # work — a sprue is an evening — while a swap is neither.
+    to_paint = sum(max(0, e['owned'] - e['battle_ready']) + e['buildable']
+                   for e in entries if e['datasheet_id'])
     return {
         'entries': entries,
         'short': sum(e['short'] for e in entries if e['datasheet_id']),
+        'to_buy': sum(e['short'] for e in entries if e['datasheet_id']),
+        'to_paint': to_paint,
+        'ready': all(e['short'] == 0 for e in entries if e['datasheet_id'])
+                 and to_paint == 0,
         'units_short': sum(1 for e in entries if e['short'] > 0),
         'swaps': sum(e['swappable'] for e in entries),
         'to_build': sum(e['buildable'] for e in entries),

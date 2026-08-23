@@ -22,16 +22,29 @@ becomes an allocation problem, and this is deliberately not that yet.
 
 import collection as col
 import database as db
+import list_allocate
 
 
 def create_list(conn, name, faction_id=None, detachment=None, points_limit=None,
-                notes=None):
+                notes=None, raw_text=None, source_format=None,
+                points_total=None):
+    """A list, and — when it came from a paste — the text it came from.
+
+    `raw_text` is stored deliberately, per spec §8: "When the parser gets
+    better, old lists can be re-parsed without re-pasting." It is nullable
+    because a list built by hand has no pasted text and is not a defective row.
+    `points_total` is what the export declared, kept beside this app's own
+    figure and never instead of it.
+    """
     if not (name or '').strip():
         raise ValueError('a list needs a name')
+    stamp = db.now()
     cur = conn.execute(
         'INSERT INTO army_lists (name, faction_id, detachment, points_limit, '
-        'notes, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-        (name.strip(), faction_id, detachment, points_limit, notes, db.now()))
+        'notes, raw_text, source_format, points_total, created_at, updated_at) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (name.strip(), faction_id, detachment, points_limit, notes, raw_text,
+         source_format, points_total, stamp, stamp))
     return cur.lastrowid
 
 
@@ -60,8 +73,18 @@ def list_lists(conn):
         gap = list_gap(conn, row['id'])
         row['to_buy'] = gap['to_buy']
         row['to_paint'] = gap['to_paint']
-        row['fieldable'] = gap['to_buy'] == 0
-        row['ready'] = gap['to_buy'] == 0 and gap['to_paint'] == 0
+        row['fieldable'] = gap['fieldable']
+        row['ready'] = gap['ready']
+        row['unresolved'] = gap['unresolved']
+        row['swaps'] = gap['swaps']
+        # Staleness, per spec §8's "saved lists with a staleness indicator".
+        # The report is recomputed on every load, so what can go stale is the
+        # *pricing*: a list snapshotted its points when it was built, and the
+        # manual has moved since if the newest points row is newer than it.
+        row['priced_before'] = conn.execute(
+            'SELECT MAX(effective_from) FROM datasheet_points').fetchone()[0]
+        row['stale'] = bool(row['priced_before'] and row['created_at']
+                            and row['priced_before'] > row['created_at'][:10])
     return rows
 
 
@@ -141,51 +164,109 @@ def remove_entry(conn, entry_id):
 
 # ── The gap ──────────────────────────────────────────────
 
-def list_gap(conn, list_id):
+def list_gap(conn, list_id, include_unassigned=True):
     """What stands between this list and the table.
 
-    Per entry: how many Clay needs, how many he owns, how many of those are
-    battle ready — and from that, how many to buy and how many to paint.
+    A thin name over `list_allocate.allocate`, kept because three screens and
+    the wishlist all say "the gap" and none of them should have to know how it
+    is computed.
+
+    **The arithmetic changed under this name and that was the point.** It used
+    to count ownership per entry with nothing consuming a model once assigned,
+    so a list asking for two squads of ten Boyz reported "fieldable" against
+    ten Boyz owned — and `raise_wishlist` read the same numbers, so the
+    shopping list was short by exactly the models Clay would have discovered
+    missing at the table. Allocation answers both correctly.
     """
-    entries = [dict(r) for r in conn.execute("""
-        SELECT e.*, d.name AS datasheet_name, d.effort, d.game_system,
-               d.basing, f.name AS faction_name
-          FROM list_entries e
-          JOIN datasheets d    ON d.id = e.datasheet_id
-          LEFT JOIN factions f ON f.id = d.faction_id
-         WHERE e.list_id = ?
-         ORDER BY d.name
-    """, (list_id,))]
+    return list_allocate.allocate(conn, list_id,
+                                  include_unassigned=include_unassigned)
 
-    owned = {r['datasheet_id']: r for r in col.inventory(conn)}
 
-    to_buy = to_paint = points_total = 0
-    for entry in entries:
-        have = owned.get(entry['datasheet_id'])
-        entry['owned_count'] = have['owned_count'] if have else 0
-        entry['done_count'] = have['done_count'] if have else 0
-        entry['built_count'] = have['built_count'] if have else 0
+# ── Importing a pasted list ──────────────────────────────
 
-        need = entry['model_count']
-        entry['buy'] = max(0, need - entry['owned_count'])
-        # Only the ones he has can be painted; the rest have to be bought
-        # first, and counting them twice would double the work on screen.
-        entry['paint'] = max(0, min(need, entry['owned_count']) - entry['done_count'])
-        entry['ready'] = entry['buy'] == 0 and entry['paint'] == 0
-        entry['fieldable'] = entry['buy'] == 0
+def import_list(conn, rows, name, raw_text=None, source_format=None,
+                points_total=None, **fields):
+    """Turn confirmed rows into a list, and learn from the ones Clay resolved.
 
-        to_buy += entry['buy']
-        to_paint += entry['paint']
-        points_total += entry['points_snapshot'] or 0
+    Every row carries the line it came from, so a datasheet Clay picked by hand
+    teaches `datasheet_aliases` on the way past. That write-back is the whole
+    reason the alias table exists — Section 7: "If you have to re-answer 'which
+    datasheet is *Warboss on Warbike*?' every time you paste a list, you'll
+    stop pasting lists."
 
-    return {
-        'entries': entries,
-        'to_buy': to_buy,
-        'to_paint': to_paint,
-        'points_total': points_total,
-        'ready': to_buy == 0 and to_paint == 0,
-        'fieldable': to_buy == 0,
-    }
+    The pasted points are stored beside each entry and never totalled. §2.7
+    settled that this app prices a list from the Munitorum manual it imported,
+    and Clay confirmed it for the gap report: a number copied out of someone
+    else's app never outranks the official one.
+    """
+    import list_resolve
+
+    confirmed = [r for r in rows if r.get('datasheet_id') and not r.get('skip')]
+    if not confirmed:
+        raise ValueError('nothing to import — every line was skipped or '
+                         'unresolved')
+
+    list_id = create_list(conn, name, raw_text=raw_text,
+                          source_format=source_format,
+                          points_total=points_total, **fields)
+    added = []
+    for row in confirmed:
+        if row.get('resolved_by') == 'manual' and row.get('raw_name'):
+            list_resolve.learn_alias(conn, row['raw_name'], row['datasheet_id'])
+        added.append(add_entry(conn, list_id, row['datasheet_id'],
+                               max(1, int(row.get('model_count') or 1)),
+                               raw_name=row.get('raw_name'),
+                               points=row.get('points')))
+    return {'list_id': list_id, 'entries': added}
+
+
+def reparse(conn, list_id, game_system='wh40k'):
+    """Read the stored text again with today's parser, and replace the entries.
+
+    "`raw_text` is stored deliberately. When the parser gets better, old lists
+    can be re-parsed without re-pasting."
+
+    Manual picks are not lost by this: resolving one wrote an alias, and the
+    alias is the first thing resolution consults. That is what makes throwing
+    the entries away safe — the knowledge lives in the alias table, not in the
+    rows.
+    """
+    import list_parse
+    import list_resolve
+
+    row = get_list(conn, list_id)
+    if not row:
+        raise ValueError(f'no list {list_id}')
+    if not row['raw_text']:
+        raise ValueError('this list was not pasted, so there is no text to '
+                         're-read')
+
+    parsed = list_parse.parse(row['raw_text'])
+    resolved = list_resolve.resolve_entries(
+        conn, parsed.entries, faction_id=list_resolve.list_faction(conn, list_id),
+        game_system=game_system)
+
+    conn.execute('DELETE FROM list_entries WHERE list_id = ?', (list_id,))
+    added = unresolved = 0
+    for entry in resolved:
+        if not entry.datasheet_id:
+            # Kept as a row rather than dropped, exactly as on first import: a
+            # line the parser could not place is a unit Clay would otherwise
+            # turn up to a game without.
+            conn.execute(
+                'INSERT INTO list_entries (list_id, position, raw_name, '
+                'model_count, points) VALUES (?, ?, ?, ?, ?)',
+                (list_id, entry.position, entry.raw_name, entry.model_count,
+                 entry.points))
+            unresolved += 1
+            continue
+        add_entry(conn, list_id, entry.datasheet_id, entry.model_count,
+                  raw_name=entry.raw_name, points=entry.points)
+        added += 1
+    conn.execute('UPDATE army_lists SET source_format = ?, updated_at = ? '
+                 'WHERE id = ?', (parsed.source_format, db.now(), list_id))
+    return {'resolved': added, 'unresolved': unresolved,
+            'source_format': parsed.source_format}
 
 
 # ── The wishlist ─────────────────────────────────────────
@@ -232,7 +313,12 @@ def raise_wishlist(conn, list_id):
 
     added = 0
     for entry in gap['entries']:
-        want = entry['buy'] - raised.get(entry['datasheet_id'], 0)
+        # `short` is what allocation could not cover from anything Clay owns,
+        # including plastic that could still become it — so the wishlist asks
+        # for what is genuinely missing rather than for everything unbuilt.
+        if not entry['datasheet_id']:
+            continue
+        want = entry['short'] - raised.get(entry['datasheet_id'], 0)
         if want <= 0:
             continue
         # Two lists wanting the same unit join one wishlist line rather than

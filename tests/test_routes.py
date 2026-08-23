@@ -6,6 +6,7 @@ import pytest
 
 import collection as col
 import database as db
+import lists as lists_mod
 import scanning
 
 
@@ -1212,7 +1213,13 @@ def test_the_preview_shows_every_line_before_writing(client, army_with_unit):
 
     body = res.get_data(as_text=True)
     assert 'Boyz' in body
-    assert '+ HQ +' not in body, 'section headings are skipped, not reported'
+    # Asserted against the rows rather than the whole page. The paste itself is
+    # now echoed into a hidden field so it can be stored with the list and
+    # re-read later, so "+ HQ +" appearing *somewhere* is correct — what must
+    # not happen is it appearing as a unit Clay is asked to identify.
+    rows = body.split('<form id="lines">', 1)[1]
+    assert '+ HQ +' not in rows, 'section headings are skipped, not reported'
+    assert 'Total: 200pts' not in rows
 
 
 def test_importing_a_list_writes_nothing_until_confirmed(client, db_path,
@@ -1411,3 +1418,237 @@ def test_reference_does_not_reach_the_network_to_render(client, monkeypatch):
 
     monkeypatch.setattr(rules_data.subprocess, 'run', forbidden)
     assert client.get('/reference').status_code == 200
+
+
+# ── The gap report's own screen and controls ─────────────────────────────────
+
+@pytest.fixture
+def gap_list(db_path, army_with_unit):
+    """A list whose report has something to say: one entry covered, one short.
+
+    `army_with_unit` owns ten Boyz, so asking for twenty leaves ten missing —
+    which is the case the whole gap checker exists for.
+    """
+    with db.connect(db_path) as conn:
+        list_id = lists_mod.create_list(conn, 'Saturday',
+                                        raw_text='20x Boyz [180pts]',
+                                        source_format='gw_app')
+        entry = lists_mod.add_entry(conn, list_id,
+                                    army_with_unit['datasheet_id'], 20)
+        unresolved = conn.execute(
+            'INSERT INTO list_entries (list_id, position, raw_name, '
+            'model_count) VALUES (?, 9, ?, 1)',
+            (list_id, 'Warboss on Warbike')).lastrowid
+    return {'list_id': list_id, 'entry': entry, 'unresolved': unresolved,
+            **army_with_unit}
+
+
+def test_the_report_renders_the_row_states(client, gap_list):
+    body = client.get(f'/lists/{gap_list["list_id"]}').get_data(as_text=True)
+    assert 'row-short' in body, 'ten owned against twenty needed'
+    assert 'row-unresolved' in body
+    assert 'to buy' in body and 'swaps' in body
+
+
+def test_the_report_says_unresolved_rows_count_toward_nothing(client, gap_list):
+    """"Never let an unresolved row quietly deflate the numbers." Saying so is
+    part of the requirement, not a nicety."""
+    body = client.get(f'/lists/{gap_list["list_id"]}').get_data(as_text=True)
+    assert 'counted in none of this' in body
+
+
+def test_the_report_is_recomputed_on_every_load(client, gap_list, db_path):
+    """"Paint three Meganobz, reload the list, the numbers move.\""""
+    import collection as col
+    first = client.get(f'/lists/{gap_list["list_id"]}').get_data(as_text=True)
+    assert 'row-short' in first
+    with db.connect(db_path) as conn:
+        col.add_or_extend_unit(conn, gap_list['datasheet_id'], 10)
+    second = client.get(f'/lists/{gap_list["list_id"]}').get_data(as_text=True)
+    assert 'row-short' not in second, 'buying ten more closes the gap'
+
+
+def test_the_unassigned_toggle_changes_the_answer(client, gap_list, db_path):
+    import collection as col
+    with db.connect(db_path) as conn:
+        col.add_or_extend_unit(conn, gap_list['datasheet_id'], 10)
+    everything = client.get(f'/lists/{gap_list["list_id"]}').get_data(as_text=True)
+    committed = client.get(
+        f'/lists/{gap_list["list_id"]}?include_unassigned=0').get_data(as_text=True)
+    assert 'row-short' not in everything
+    assert 'row-short' in committed, 'the extra ten are in no army'
+
+
+def test_resolving_a_row_teaches_the_alias_and_re_runs(client, gap_list, db_path):
+    got = client.patch(
+        f'/api/lists/{gap_list["list_id"]}/entries/{gap_list["unresolved"]}',
+        json={'datasheet_id': gap_list['datasheet_id']})
+    assert got.status_code == 200
+    assert 'gap' in got.get_json(), 'the numbers move on the same request'
+    with db.connect(db_path) as conn:
+        alias = conn.execute('SELECT datasheet_id FROM datasheet_aliases '
+                             "WHERE alias = 'warboss on warbike'").fetchone()
+    assert alias and alias['datasheet_id'] == gap_list['datasheet_id']
+
+
+def test_resolving_without_a_datasheet_is_refused(client, gap_list):
+    got = client.patch(
+        f'/api/lists/{gap_list["list_id"]}/entries/{gap_list["unresolved"]}',
+        json={})
+    assert got.status_code == 400
+
+
+def test_the_report_response_carries_no_model_ids(client, gap_list):
+    """A picker only needs the numbers. Shipping a few hundred assignment rows
+    to move one badge is waste."""
+    got = client.patch(
+        f'/api/lists/{gap_list["list_id"]}/entries/{gap_list["unresolved"]}',
+        json={'datasheet_id': gap_list['datasheet_id']}).get_json()
+    assert 'entries' not in got['gap']
+    assert 'short' in got['gap']
+
+
+def test_a_pasted_list_can_be_read_again(client, gap_list, db_path):
+    """"When the parser gets better, old lists can be re-parsed without
+    re-pasting.\""""
+    got = client.post(f'/api/lists/{gap_list["list_id"]}/reparse')
+    assert got.status_code == 200
+    assert got.get_json()['resolved'] == 1
+    with db.connect(db_path) as conn:
+        rows = conn.execute('SELECT raw_name, model_count FROM list_entries '
+                            'WHERE list_id = ?',
+                            (gap_list['list_id'],)).fetchall()
+    assert len(rows) == 1 and rows[0]['model_count'] == 20
+
+
+def test_re_reading_keeps_what_you_taught_it(client, gap_list, db_path):
+    """The reason throwing the rows away is safe: resolving one wrote an alias,
+    and the alias is the first thing resolution consults."""
+    with db.connect(db_path) as conn:
+        conn.execute('UPDATE army_lists SET raw_text = ? WHERE id = ?',
+                     ('Warboss on Warbike', gap_list['list_id']))
+    client.patch(
+        f'/api/lists/{gap_list["list_id"]}/entries/{gap_list["unresolved"]}',
+        json={'datasheet_id': gap_list['datasheet_id']})
+    got = client.post(f'/api/lists/{gap_list["list_id"]}/reparse').get_json()
+    assert got['resolved'] == 1 and got['unresolved'] == 0
+
+
+def test_a_hand_built_list_has_no_text_to_re_read(client, db_path):
+    with db.connect(db_path) as conn:
+        list_id = lists_mod.create_list(conn, 'By hand')
+    got = client.post(f'/api/lists/{list_id}/reparse')
+    assert got.status_code == 400
+    assert 'not pasted' in got.get_json()['error']
+
+
+# ── What a multi-option box got built as ─────────────────────────────────────
+
+@pytest.fixture
+def armiger(db_path):
+    """A kit that builds two things, which is the only case this asks about."""
+    import collection as col
+    with db.connect(db_path) as conn:
+        faction = db.upsert_faction(conn, 'Imperial Knights', 'imperial-knights')
+        sheets = {}
+        for bsid, name in (('warglaive', 'Armiger Warglaive'),
+                           ('helverin', 'Armiger Helverin')):
+            sheets[name] = conn.execute(
+                'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+                'created_at, updated_at) VALUES (?, ?, ?, 4, ?, ?)',
+                (bsid, name, faction, db.now(), db.now())).lastrowid
+        kit_id = col.create_kit(conn, 'Armiger box')
+        for datasheet_id in sheets.values():
+            conn.execute('INSERT OR IGNORE INTO kit_datasheets (kit_id, '
+                         'datasheet_id) VALUES (?, ?)', (kit_id, datasheet_id))
+        unit = col.add_or_extend_unit(conn, sheets['Armiger Warglaive'], 1,
+                                      kit_id=kit_id)
+    return {'unit_id': unit['unit_id'], **sheets}
+
+
+def test_a_multi_option_kit_asks_what_it_was_built_as(client, armiger):
+    body = client.get(f'/units/{armiger["unit_id"]}').get_data(as_text=True)
+    assert 'What did this get built as' in body
+    assert 'Armiger Helverin' in body and 'Magnetised' in body
+
+
+def test_a_single_option_kit_is_not_asked_about(client, army_with_unit):
+    """Most kits build one thing, `add_models` already stamped it, and there is
+    nothing to ask. A prompt on every unit would be noise."""
+    body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
+    assert 'What did this get built as' not in body
+
+
+def test_saying_what_it_was_built_as_moves_the_models(client, armiger, db_path):
+    got = client.post(f'/api/units/{armiger["unit_id"]}/built-as',
+                      json={'datasheet_id': armiger['Armiger Helverin'],
+                            'is_flexible': True})
+    assert got.status_code == 200
+    with db.connect(db_path) as conn:
+        row = conn.execute('SELECT datasheet_id, is_flexible FROM models '
+                           'WHERE unit_id = ?', (armiger['unit_id'],)).fetchone()
+    assert row['datasheet_id'] == armiger['Armiger Helverin']
+    assert row['is_flexible'] == 1
+
+
+def test_a_box_cannot_be_built_as_something_it_never_contained(client, armiger,
+                                                               army_with_unit):
+    """Letting it would put models in the gap report that do not exist, which
+    is the failure the whole gap checker is for."""
+    got = client.post(f'/api/units/{armiger["unit_id"]}/built-as',
+                      json={'datasheet_id': army_with_unit['datasheet_id']})
+    assert got.status_code == 400
+
+
+def test_the_report_offers_a_magnetised_model_to_the_other_datasheet(
+        client, armiger, db_path):
+    """End to end, through the routes: say it is magnetised, then ask a list
+    for the datasheet it is not currently built as."""
+    client.post(f'/api/units/{armiger["unit_id"]}/built-as',
+                json={'datasheet_id': armiger['Armiger Warglaive'],
+                      'is_flexible': True})
+    import collection as col
+    with db.connect(db_path) as conn:
+        unit = col.get_unit(conn, armiger['unit_id'])
+        while col.advance_unit(conn, armiger['unit_id']):
+            pass
+        list_id = lists_mod.create_list(conn, 'Knights')
+        lists_mod.add_entry(conn, list_id, armiger['Armiger Helverin'], 1)
+    body = client.get(f'/lists/{list_id}').get_data(as_text=True)
+    assert 'row-swappable' in body
+    assert 'Which models' in body, 'and it says which ones, and what they are'
+
+
+def test_every_picker_has_somewhere_to_put_its_results(client, gap_list,
+                                                       army_with_unit):
+    """A picker outside a form used to throw on `null.closest('form')` at page
+    load, and a form with pickers but no `.results` gave them nothing to render
+    into — which is what both paste-confirmation screens shipped as. Only the
+    "did you mean" buttons ever worked there, so it went unnoticed.
+
+    Asserted at the template level because that is where it can be checked
+    without a browser: any screen carrying a picker either supplies a results
+    list or is one the script builds one for. The browser pass is what proved
+    the fix; this is what stops it coming back.
+    """
+    import os
+    import re
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, 'static', 'js', 'app.js'),
+              encoding='utf-8') as fh:
+        script = fh.read()
+    assert 'function resultsListFor' in script, \
+        'the picker must be able to build its own results list'
+    # And nothing may assume a form is there without checking.
+    unguarded = re.findall(r"input\.closest\('form'\)\.\w", script)
+    assert not unguarded, f'unguarded closest(form): {unguarded}'
+
+
+def test_the_resolve_button_does_not_shadow_its_own_row(client, gap_list):
+    """`data-entry` sat on the row *and* the button, so `closest` from the
+    button matched the button — the click read no datasheet and silently did
+    nothing at all."""
+    body = client.get(f'/lists/{gap_list["list_id"]}').get_data(as_text=True)
+    row = body.split('row-unresolved', 1)[1].split('</li>', 1)[0]
+    assert 'data-resolve=' in row
+    assert 'entry-resolve" data-entry=' not in row
