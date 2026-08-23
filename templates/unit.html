@@ -31,6 +31,14 @@
      Typing straight into a count replaces the old "Set a count" form: it is
      the same reconcile, at the stage it refers to, without a second form to
      find and a stage to re-select. #}
+  {# Two columns on a wide screen, one on a phone. The pipeline is the working
+     half and gets the narrow column, because a rung is a name and three small
+     controls — stretched across a desk monitor it puts a foot of empty paper
+     between what you are reading and what you are tapping. Everything you
+     touch occasionally rides alongside instead of below, which is what the
+     extra width is actually good for. #}
+  <div class="detail-cols">
+  <section class="col-work">
   <h2>Pipeline</h2>
   <ul class="ramp" data-unit="{{ unit.id }}">
     {% for s in breakdown %}
@@ -81,6 +89,9 @@
     finished is disturbed last.
   </p>
 
+  </section>
+
+  <section class="col-admin">
   <h2>Individual models <span class="muted">{{ models|length }}</span></h2>
   <p class="hint">Available, never required. Most updates never come down here.</p>
   <form id="bulk" data-unit="{{ unit.id }}">
@@ -126,4 +137,6 @@
     </label>
     <button type="submit">Move</button>
   </form>
+  </section>
+  </div>
 {% endblock %}

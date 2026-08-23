@@ -156,16 +156,27 @@ code { background: var(--bg); padding: .1rem .35rem; border-radius: 0;
        font-size: .85em; }
 
 /* ── Chrome ─────────────────────────────────────────── */
+/* Eight items do not fit across a phone. They wrap rather than scroll: a
+   scrolling nav hides its last entries behind a gesture nobody knows is
+   available, and "Data" being invisible is how a screen stops existing. Two
+   short lines on a phone, one on anything wider. */
 .nav {
-  display: flex; gap: .25rem; align-items: center;
+  display: flex; flex-wrap: wrap; gap: .15rem .25rem; align-items: center;
   max-width: 60rem; margin: 0 auto; padding: .75rem 0 1rem;
   border-bottom: 1px solid var(--line); margin-bottom: 1.25rem;
 }
 .nav a { text-decoration: none; color: var(--muted); padding: .4rem .7rem;
          border-radius: 0; font-size: .9rem; }
 .nav a.on { background: var(--panel); color: var(--ink); }
-.nav .brand { margin-right: auto; font-weight: 700; color: var(--ink);
-              padding-left: 0; }
+.nav .brand { font-weight: 700; color: var(--ink); padding-left: 0; }
+@media (min-width: 46rem) {
+  .nav .brand { margin-right: auto; }
+}
+/* On a phone the ground control ends the first line rather than being pushed
+   to a line of its own. */
+@media (max-width: 46rem) {
+  #ground { margin-left: auto; }
+}
 footer { max-width: 60rem; margin: 3rem auto 0; color: var(--muted);
          font-size: .8rem; }
 
@@ -619,3 +630,39 @@ a.go {
 }
 .rung.na .count-at { opacity: .4; }
 .rung .count-at:disabled { cursor: not-allowed; }
+
+/* ── Desktop: use the width, don't just stretch into it ──
+   The phone layout is the baseline and stays exactly as it is. On a wide
+   screen the failure mode is not "too small", it is a row whose label sits at
+   the far left and whose controls sit at the far right with a foot of empty
+   paper between them — the eye has to travel to connect two things that
+   belong together. So content gets a comfortable measure and the spare width
+   carries a second column instead. */
+
+/* A rung is a name and three small controls. It never wants to be wider than
+   this, on any screen. */
+.ramp { max-width: 30rem; }
+
+.detail-cols { display: grid; gap: 1.5rem 2.5rem; }
+@media (min-width: 58rem) {
+  .detail-cols {
+    grid-template-columns: minmax(0, 30rem) minmax(0, 1fr);
+    align-items: start;
+  }
+  /* The first heading in each column lines up rather than one hanging lower. */
+  .detail-cols > section > h2:first-child { margin-top: 0; }
+}
+
+/* Results in two columns once there is room, per the design's desktop note.
+   Kept to two: three columns at this measure makes each card too narrow for
+   the stage bar to read. */
+@media (min-width: 62rem) {
+  .units, .catalogue { grid-template-columns: repeat(2, 1fr); align-items: start; }
+  .multiples { grid-template-columns: repeat(2, 1fr); gap: .55rem 2rem; }
+}
+
+/* Stat tiles have a lot of air at full width; hold them to the text measure. */
+@media (min-width: 62rem) {
+  .stats { max-width: 42rem; }
+  .search { max-width: 46rem; }
+}
