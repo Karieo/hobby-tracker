@@ -129,10 +129,27 @@ def import_all(conn, directory=KILLTEAM_DIR, dry_run=False):
                 'parsed, but holds no operatives — nothing to import from it')
             continue
 
-        # Kill Team names are slug-prefixed so they cannot collide with a 40,000
-        # faction. "Orks" exists in both and they are not the same list.
-        slug = f'kt-{slugify(team)}'
-        faction_id = db.upsert_faction(conn, team, slug)
+        # Reuse the 40,000 faction when the name matches, rather than making a
+        # second row for it.
+        #
+        # This used to prefix every slug with `kt-` so the two could not
+        # collide. The intent was right — "Orks" exists in both games and they
+        # are not the same list — but it was aimed at the wrong column. What
+        # keeps the unit lists apart is `datasheets.game_system`; a faction row
+        # is the label Clay picks when tagging an army, a kit or a list, and
+        # there he only ever meant one Orks. The prefix bought nothing and cost
+        # a picker that offered the same name twice with no way to choose.
+        #
+        # A team with no 40,000 counterpart — Wrecka Krew, Battleclade — still
+        # gets its own row, prefixed, since it is not a duplicate of anything.
+        existing = conn.execute(
+            "SELECT id, slug FROM factions WHERE name = ? AND slug NOT LIKE 'kt-%'",
+            (team,)).fetchone()
+        if existing:
+            faction_id, slug = existing['id'], existing['slug']
+        else:
+            slug = f'kt-{slugify(team)}'
+            faction_id = db.upsert_faction(conn, team, slug)
         if slug not in seen_factions:
             seen_factions.add(slug)
             report['teams'] += 1
