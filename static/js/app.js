@@ -60,11 +60,22 @@ function paintTimestamps(root = document) {
 function repaintPipe(breakdown) {
   const pipe = $('.pipe') || $('.ramp');
   if (!pipe || !breakdown) return;
-  // Matched by stage id, not by index: the paint ramp renders only the owned
-  // stages, so the wishlist rung is missing and positions no longer line up.
+
+  // Matched by stage id, not by index: a ramp renders only the owned stages,
+  // so the wishlist rung is missing and positions no longer line up.
+  //
+  // If that lookup matches nothing, fall back to reloading. This is not
+  // theoretical — changing this function to match by id while one screen's
+  // markup still had no data-stage made every advance on that screen a silent
+  // no-op: the model moved, the page did not, and it only looked right after a
+  // manual refresh. A repaint that quietly matches nothing is the worst
+  // outcome available, so the failure now costs a page load instead of the
+  // user's trust in the number.
+  let painted = 0;
   breakdown.forEach((stage) => {
     const li = $(`[data-stage="${stage.id}"]`, pipe);
     if (!li) return;
+    painted += 1;
     const count = $('.pipe-count b', li) || $('.count b', li);
     if (count) count.textContent = stage.count;
     // The editable count on unit detail is the same number; keep it honest.
@@ -80,6 +91,8 @@ function repaintPipe(breakdown) {
     const untick = $('.untick', li);
     if (untick) untick.disabled = stage.count === 0;
   });
+
+  if (!painted) location.reload();
 }
 
 /* Stepping back. The mirror of advance(), and deliberately just as cheap:

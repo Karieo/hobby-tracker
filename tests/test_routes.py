@@ -979,3 +979,25 @@ def test_unit_detail_shows_the_ramp_not_the_old_count_form(client, army_with_uni
     assert 'count-at' in body, 'counts are editable in place'
     assert 'id="count-form"' not in body, 'the separate Set-a-count form is gone'
     assert 'untick' in body, 'and the ramp carries −1'
+
+
+def test_every_pipeline_row_carries_its_stage_id(client, army_with_unit):
+    """The screen repaints by matching rows to stage ids. A row without one is
+    never matched, so the model moves and the page silently does not — which is
+    exactly what happened when repaintPipe changed to id-matching while this
+    markup still identified rows by position. Caught here rather than by
+    someone tapping advance and seeing nothing.
+    """
+    import re
+    unit_id = army_with_unit['unit_id']
+    for url in (f'/units/{unit_id}', f'/paint/{unit_id}'):
+        body = client.get(url).get_data(as_text=True)
+        pipeline = re.search(r'<ul class="(?:ramp|pipe)[^"]*"[^>]*>(.*?)</ul>',
+                             body, re.S)
+        assert pipeline, f'{url} has no pipeline to repaint'
+        rows = re.findall(r'<li[^>]*>', pipeline.group(1))
+        assert rows, f'{url} pipeline has no rows'
+        for row in rows:
+            assert 'data-stage=' in row, (
+                f'{url}: a pipeline row has no data-stage, so repainting it '
+                f'after an advance would silently do nothing — {row[:80]}')
