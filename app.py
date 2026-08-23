@@ -246,10 +246,36 @@ def _int(value, default=None):
         return default
 
 
+# Money is stored in minor units (cents) everywhere and only ever becomes a
+# symbol at the edge. CURRENCY names which symbol; USD because that is where
+# Clay buys. A setting rather than a constant because the symbol was hardcoded
+# in three templates with two different format strings, which is how a fourth
+# one ends up in a third format — and because if this is ever shared, someone
+# in a different country should not have to edit templates.
+CURRENCY = (os.getenv('CURRENCY') or 'USD').strip().upper()
+CURRENCY_SYMBOLS = {'USD': '$', 'GBP': '£', 'EUR': '€', 'CAD': 'CA$',
+                    'AUD': 'A$', 'NZD': 'NZ$'}
+CURRENCY_SYMBOL = CURRENCY_SYMBOLS.get(CURRENCY, CURRENCY + ' ')
+
+
+@app.template_filter('money')
+def money(cents):
+    """Minor units to a readable amount, or an em dash for nothing.
+
+    None and 0 both render as "—" on purpose: a kit with no recorded price and
+    a kit that cost nothing are the same fact on screen — nobody typed a price
+    — and "$0.00" reads like a claim that it was free.
+    """
+    if not cents:
+        return '—'
+    return f'{CURRENCY_SYMBOL}{cents / 100:,.2f}'
+
+
 @app.context_processor
 def inject_globals():
     return {'owner': os.getenv('OWNER_NAME', 'Clay'), 'version': VERSION,
-            'asset_version': _ASSET_VERSION}
+            'asset_version': _ASSET_VERSION, 'currency': CURRENCY,
+            'currency_symbol': CURRENCY_SYMBOL}
 
 
 # ── Armies ───────────────────────────────────────────────

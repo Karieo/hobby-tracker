@@ -12,7 +12,7 @@
     <label>Primary faction
       <select name="primary_faction_id">
         <option value="">— none —</option>
-        {% for f in factions %}<option value="{{ f.id }}">{{ f.name }}</option>{% endfor %}
+        {% for f in factions %}<option value="{{ f.id }}">{{ f.label }}</option>{% endfor %}
       </select>
     </label>
     <p class="hint">

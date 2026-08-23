@@ -70,7 +70,7 @@
         <option value="">—</option>
         {% for f in factions %}
           <option value="{{ f.id }}"
-                  {% if kit.faction_id == f.id %}selected{% endif %}>{{ f.name }}</option>
+                  {% if kit.faction_id == f.id %}selected{% endif %}>{{ f.label }}</option>
         {% endfor %}
       </select>
     </label>
