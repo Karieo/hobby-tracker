@@ -48,6 +48,95 @@ def test_a_unit_needs_at_least_one_model(conn, orks):
         col.create_unit(conn, orks['Boyz'], 0)
 
 
+# ── A second helping joins the first ─────────────────────
+
+def test_adding_more_extends_the_unit_rather_than_making_a_second(conn, orks):
+    """Clay's report: "if I add more of a model it needs to add them not make
+    2 lines." Three Killa Kans in two goes read as "1 model" and "2 models"
+    with nothing on either line to tell them apart."""
+    first = col.add_or_extend_unit(conn, orks['Boyz'], 1)
+    second = col.add_or_extend_unit(conn, orks['Boyz'], 2)
+    assert second['unit_id'] == first['unit_id']
+    assert second['extended'] is True
+    assert len(col.unit_models(conn, first['unit_id'])) == 3
+    assert conn.execute('SELECT COUNT(*) FROM units').fetchone()[0] == 1
+
+
+def test_the_extension_keeps_its_own_stage(conn, orks, stages):
+    """One painted and two on sprue is one squad of three, told truthfully.
+    Per-model stages exist for exactly this."""
+    first = col.add_or_extend_unit(conn, orks['Boyz'], 1,
+                                   stage_id=stages['Painted']['id'])
+    col.add_or_extend_unit(conn, orks['Boyz'], 2,
+                           stage_id=stages['On sprue']['id'])
+    counts = {s['name']: s['count']
+              for s in col.unit_breakdown(conn, first['unit_id'])}
+    assert counts['Painted'] == 1
+    assert counts['On sprue'] == 2
+
+
+def test_only_the_new_models_come_back(conn, orks):
+    """The caller stamps provenance on these ids, so they must not include the
+    models that were already there — see lists._stamp."""
+    first = col.add_or_extend_unit(conn, orks['Boyz'], 4)
+    second = col.add_or_extend_unit(conn, orks['Boyz'], 2)
+    assert len(second['model_ids']) == 2
+    assert not set(second['model_ids']) & set(first['model_ids'])
+
+
+def test_a_different_kit_stays_a_different_unit(conn, orks):
+    """Disposals are per kit: sell the box and its models go with it. Two
+    copies of a box poured into one unit could never be unpicked again."""
+    one = col.create_kit(conn, 'Combat Patrol: Orks')
+    two = col.create_kit(conn, 'Combat Patrol: Orks')
+    a = col.add_or_extend_unit(conn, orks['Boyz'], 10, kit_id=one)
+    b = col.add_or_extend_unit(conn, orks['Boyz'], 10, kit_id=two)
+    assert a['unit_id'] != b['unit_id']
+    assert b['extended'] is False
+
+
+def test_a_different_army_stays_a_different_unit(conn, orks):
+    speed = col.create_army(conn, 'Speed Freeks')
+    goffs = col.create_army(conn, 'Goffs')
+    a = col.add_or_extend_unit(conn, orks['Boyz'], 5, army_id=speed)
+    b = col.add_or_extend_unit(conn, orks['Boyz'], 5, army_id=goffs)
+    assert a['unit_id'] != b['unit_id']
+
+
+def test_a_named_squad_stays_its_own_thing(conn, orks):
+    a = col.add_or_extend_unit(conn, orks['Boyz'], 5, nickname="Grukk's lot")
+    b = col.add_or_extend_unit(conn, orks['Boyz'], 5)
+    assert a['unit_id'] != b['unit_id']
+
+
+def test_wanted_models_never_join_owned_ones(conn, orks, stages):
+    """A wishlist line offers "Bought it →" and an owned line "Advance all →".
+    Merging them swallows the wishlist entry, and with it the loop closing."""
+    wishlist = db.wishlist_stage(conn)
+    owned = col.add_or_extend_unit(conn, orks['Boyz'], 5)
+    wanted = col.add_or_extend_unit(conn, orks['Boyz'], 3,
+                                    stage_id=wishlist['id'])
+    assert wanted['unit_id'] != owned['unit_id']
+    assert wanted['extended'] is False
+
+
+def test_wanted_models_do_join_other_wanted_ones(conn, orks):
+    wishlist = db.wishlist_stage(conn)
+    a = col.add_or_extend_unit(conn, orks['Boyz'], 3, stage_id=wishlist['id'])
+    b = col.add_or_extend_unit(conn, orks['Boyz'], 2, stage_id=wishlist['id'])
+    assert b['unit_id'] == a['unit_id']
+
+
+def test_a_disposed_kit_does_not_collect_new_models(conn, orks):
+    """The sold squad stays sold. Its unit is out of the collection, so it must
+    not silently swallow the replacements Clay buys."""
+    kit_id = col.create_kit(conn, 'Boyz')
+    sold = col.add_or_extend_unit(conn, orks['Boyz'], 10, kit_id=kit_id)
+    col.dispose_kit(conn, kit_id, 'sold')
+    fresh = col.add_or_extend_unit(conn, orks['Boyz'], 10, kit_id=kit_id)
+    assert fresh['unit_id'] != sold['unit_id']
+
+
 # ── Advancing: the primary interaction ───────────────────
 
 def test_advance_all_moves_the_whole_unit_one_step(conn, orks, stages):

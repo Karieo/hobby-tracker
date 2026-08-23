@@ -523,13 +523,16 @@ def api_create_unit():
     if model_count < 1:
         return jsonify({'error': 'A unit needs at least one model'}), 400
     with _write() as conn:
-        unit_id = col.create_unit(
+        # Adding ten more Boyz to the ten already recorded is one squad of
+        # twenty, not two rows of ten with nothing to tell them apart.
+        added = col.add_or_extend_unit(
             conn, datasheet_id, model_count,
             army_id=_int(data.get('army_id')),
             kit_id=_int(data.get('kit_id')),
             stage_id=_int(data.get('stage_id')),
             nickname=(data.get('nickname') or '').strip() or None)
-    return jsonify({'id': unit_id}), 201
+    return jsonify({'id': added['unit_id'],
+                    'extended': added['extended']}), 201
 
 
 @app.route('/api/units/<int:unit_id>/advance', methods=['POST'])

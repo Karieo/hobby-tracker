@@ -83,6 +83,33 @@ def test_army_and_unit_pages_render(client, army_with_unit):
     assert client.get(f'/paint/{army_with_unit["unit_id"]}').status_code == 200
 
 
+def test_adding_a_unit_twice_makes_one_line(client, army_with_unit, db_path):
+    """"if I add more of a model it needs to add them not make 2 lines."" The
+    collection is where Clay saw it, so this asserts on the rendered screen and
+    not only on the count of rows."""
+    payload = {'datasheet_id': army_with_unit['datasheet_id'],
+               'model_count': 5, 'army_id': army_with_unit['army_id']}
+    first = client.post('/api/units', json=payload).get_json()
+    second = client.post('/api/units', json=payload).get_json()
+    assert second['id'] == first['id']
+    assert second['extended'] is True
+
+    body = client.get('/collection').get_data(as_text=True)
+    assert body.count('class="unit-line"') == 1, \
+        'one squad, one line — a second line is a second thing to think about'
+    assert '20 models' in body
+
+
+def test_collection_nests_its_unit_lines(client, army_with_unit):
+    """Clay: "A line to me is a defining break between records, but not the
+    case in this design." A unit line sits inside its datasheet's card, so it
+    has to be wrapped in something that says so — bare siblings separated by a
+    rule are what read as records in the first place."""
+    body = client.get('/collection').get_data(as_text=True)
+    assert 'class="unit-lines"' in body
+    assert body.index('class="unit-lines"') < body.index('class="unit-line"')
+
+
 def test_missing_things_404(client):
     assert client.get('/armies/999').status_code == 404
     assert client.get('/units/999').status_code == 404

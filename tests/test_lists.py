@@ -341,6 +341,48 @@ def test_unwanting_leaves_a_want_from_a_list_alone(conn, box, sheets):
     assert row['from_lists'] == 20
 
 
+def test_two_lists_short_of_the_same_unit_share_one_line(conn, sheets, stages):
+    """The wishlist is read on the collection too, where a datasheet wanted by
+    two lists used to stack two identical lines with nothing to tell them
+    apart. One line, and it still knows both lists raised it."""
+    saturday = lists.create_list(conn, 'Saturday')
+    lists.add_entry(conn, saturday, sheets['Boyz'], 10)
+    lists.raise_wishlist(conn, saturday)
+    sunday = lists.create_list(conn, 'Sunday')
+    lists.add_entry(conn, sunday, sheets['Boyz'], 20)
+    lists.raise_wishlist(conn, sunday)
+
+    units = conn.execute(
+        'SELECT COUNT(*) FROM units WHERE datasheet_id = ?',
+        (sheets['Boyz'],)).fetchone()[0]
+    assert units == 1
+    row = next(r for r in lists.wishlist(conn) if r['name'] == 'Boyz')
+    assert 'Saturday' in row['list_names'] and 'Sunday' in row['list_names']
+    # 30, not 20: each list raises its own whole shortfall, because nothing in
+    # the app yet says the same ten Boyz could serve both. Sharing models
+    # between competing lists is unbuilt and out of scope here — this pins the
+    # behaviour rather than blessing it, so a later fix has to face the test.
+    assert row['wanted'] == 30
+
+
+def test_dropping_one_list_leaves_the_shared_line_standing(conn, sheets, stages):
+    """The danger of sharing a line: a stamp applied by unit rather than by
+    model would relabel the other list's models, and deleting one list would
+    take both."""
+    saturday = lists.create_list(conn, 'Saturday')
+    lists.add_entry(conn, saturday, sheets['Boyz'], 10)
+    lists.raise_wishlist(conn, saturday)
+    sunday = lists.create_list(conn, 'Sunday')
+    lists.add_entry(conn, sunday, sheets['Boyz'], 20)
+    lists.raise_wishlist(conn, sunday)
+
+    stamped = dict(conn.execute("""
+        SELECT wishlist_source_list_id, COUNT(*) FROM models
+         GROUP BY wishlist_source_list_id""").fetchall())
+    assert stamped == {saturday: 10, sunday: 20}, \
+        'each list keeps its own models inside the shared line'
+
+
 def test_a_box_with_no_contents_cannot_be_wanted(conn):
     empty = conn.execute(
         'INSERT INTO kit_templates (name, created_at, updated_at) '
