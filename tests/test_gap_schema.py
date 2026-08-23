@@ -58,54 +58,91 @@ def _apply_008(path):
     conn.close()
 
 
+def _kit(conn, name, template_id=None):
+    return conn.execute(
+        'INSERT INTO kits (name, kit_template_id, box_state, status, '
+        'created_at, updated_at) VALUES (?, ?, \'opened\', \'owned\', ?, ?)',
+        (name, template_id, db.now(), db.now())).lastrowid
+
+
+def _unit(conn, datasheet_id, count, kit_id=None):
+    """A unit and its models, written the way 007 wrote them.
+
+    No `models.datasheet_id` — that column is what 008 adds, and stamping it
+    here would defeat the point of the fixture.
+    """
+    stamp = db.now()
+    unit_id = conn.execute(
+        'INSERT INTO units (kit_id, datasheet_id, created_at, updated_at) '
+        'VALUES (?, ?, ?, ?)', (kit_id, datasheet_id, stamp, stamp)).lastrowid
+    stage_id = db.first_owned_stage(conn)['id']
+    for _ in range(count):
+        model_id = conn.execute(
+            'INSERT INTO models (unit_id, stage_id, stage_changed_at, '
+            'created_at) VALUES (?, ?, ?, ?)',
+            (unit_id, stage_id, stamp, stamp)).lastrowid
+        conn.execute('INSERT INTO stage_events (model_id, from_stage_id, '
+                     'to_stage_id, changed_at) VALUES (?, NULL, ?, ?)',
+                     (model_id, stage_id, stamp))
+    return unit_id
+
+
 @pytest.fixture
 def seeded(tmp_path):
-    """A database at 007 holding the shapes 008 has to survive."""
-    import collection as col
-    import lists
+    """A database at 007 holding the shapes 008 has to survive.
 
+    EVERY ROW HERE IS WRITTEN WITH 007-ERA SQL, deliberately, and this fixture
+    calls no application code at all.
+
+    It was built on `collection` and `lists` helpers at first and broke twice,
+    both times for the same reason: those helpers target the *current* schema.
+    `lists.add_entry` started assigning `position`, and `collection.add_models`
+    started stamping `models.datasheet_id` — both columns 008 is about to add,
+    and both writes fail against the very database shape this fixture exists to
+    reproduce.
+
+    Application code always runs against a migrated database (`init_db()`
+    migrates on boot), so the helpers are right and the fixture was wrong. A
+    migration test has to construct the old shape itself or it is testing the
+    new one.
+    """
     path = _migrate_to_007(tmp_path)
     conn = db.connect(path)
     orks = db.upsert_faction(conn, 'Orks', 'orks')
     sheets = {}
     for slug, name in (('boyz', 'Boyz'), ('trukk', 'Trukk'),
                        ('warboss', 'Warboss'), ('kans', 'Killa Kans')):
-        cur = conn.execute(
+        sheets[name] = conn.execute(
             'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
             'created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)',
-            (slug, name, orks, db.now(), db.now()))
-        sheets[name] = cur.lastrowid
+            (slug, name, orks, db.now(), db.now())).lastrowid
 
     # A box whose contents are known from the catalogue, adopted into units.
     template_id = conn.execute(
         'INSERT INTO kit_templates (name, faction_id, created_at, updated_at) '
         'VALUES (?, ?, ?, ?)', ('Combat Patrol: Orks', orks, db.now(), db.now())
     ).lastrowid
+    kit_id = _kit(conn, 'Combat Patrol: Orks', template_id)
     for name, count in (('Boyz', 10), ('Trukk', 1), ('Warboss', 1)):
         conn.execute('INSERT INTO kit_template_units (kit_template_id, '
                      'datasheet_id, model_count) VALUES (?, ?, ?)',
                      (template_id, sheets[name], count))
-    kit_id, _units = col.instantiate_template(conn, template_id)
+        _unit(conn, sheets[name], count, kit_id=kit_id)
 
     # A box with no template at all — bought loose, units added by hand.
-    loose_kit = col.create_kit(conn, 'Killa Kans')
-    col.create_unit(conn, sheets['Killa Kans'], 3, kit_id=loose_kit)
+    loose_kit = _kit(conn, 'Killa Kans')
+    _unit(conn, sheets['Killa Kans'], 3, kit_id=loose_kit)
 
     # A box recorded off a barcode and never identified: no template, no units.
-    empty_kit = col.create_kit(conn, 'Unidentified box 5011921000000')
+    empty_kit = _kit(conn, 'Unidentified box 5011921000000')
 
     # A unit with no kit at all — pasted in, or built years ago.
-    col.create_unit(conn, sheets['Boyz'], 5)
+    _unit(conn, sheets['Boyz'], 5)
 
     # And a list, because 008 rebuilds the table its entries live in.
-    #
-    # The entries are written with 007-era SQL rather than through
-    # `lists.add_entry`. That helper targets the current schema — it assigns
-    # `position` and `resolved_by`, columns 008 is about to add — so calling it
-    # here would fail against the very database shape this fixture exists to
-    # reproduce. Application code always runs against a migrated database
-    # (`init_db()` migrates on boot); only this fixture deliberately does not.
-    list_id = lists.create_list(conn, 'Saturday', faction_id=orks)
+    list_id = conn.execute(
+        'INSERT INTO army_lists (name, faction_id, created_at) '
+        'VALUES (?, ?, ?)', ('Saturday', orks, db.now())).lastrowid
     entry_ids = []
     for name, count in (('Boyz', 20), ('Warboss', 1), ('Killa Kans', 3)):
         entry_ids.append(conn.execute(

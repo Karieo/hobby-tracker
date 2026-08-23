@@ -84,6 +84,28 @@ is the sweep working.
    and if listings disagree about counts, work out whether they are describing
    two different boxes before picking a number.
 
+## Also check whether the rules data has aged
+
+Separate from the catalogue, and quick:
+
+```
+python3 scripts/check_rules_pins.py
+```
+
+It compares each pinned upstream — the Munitorum Field Manual, BSData's
+datasheets, BSData's Kill Team catalogues — against its current HEAD and exits
+1 if any has moved. It writes nothing.
+
+**Do not bump a pin.** Report it. Games Workshop reprices with every balance
+dataslate, and a list that was legal on Saturday quietly becoming illegal on
+Monday is worse than being told and choosing when. The MFM one matters most:
+points are what every list screen quotes, and a superseded manual is wrong in
+the way that still adds up.
+
+Put it in the report as a line or two — which source moved, from which commit
+to which — and leave it there. If the script cannot reach GitHub, say that
+instead; "could not check" is a different answer from "nothing moved".
+
 ## Verify before shipping
 
 ```

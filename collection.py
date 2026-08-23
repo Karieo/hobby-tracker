@@ -456,13 +456,28 @@ def add_or_extend_unit(conn, datasheet_id, model_count, army_id=None,
 
 
 def add_models(conn, unit_id, count, stage_id):
-    """Append models to an existing unit, all at one stage."""
+    """Append models to an existing unit, all at one stage.
+
+    `datasheet_id` is stamped from the unit rather than left null. Migration
+    008 backfilled every model that existed when it ran and this is the writer
+    that keeps that true afterwards — without it the column would be complete
+    for old rows and empty for every model added since, which is worse than not
+    having it at all, because allocation resolves ownership *through* it and
+    would quietly report a full collection as owning nothing.
+
+    A model is only ever anything other than its unit's datasheet once Clay
+    says so — magnetising it, or building a multi-option sprue as one of its
+    other options — and that is an update, never a default.
+    """
+    datasheet_id = conn.execute('SELECT datasheet_id FROM units WHERE id = ?',
+                                (unit_id,)).fetchone()['datasheet_id']
     stamp = db.now()
     ids = []
     for _ in range(count):
         cur = conn.execute(
-            'INSERT INTO models (unit_id, stage_id, stage_changed_at, created_at) '
-            'VALUES (?, ?, ?, ?)', (unit_id, stage_id, stamp, stamp))
+            'INSERT INTO models (unit_id, datasheet_id, stage_id, '
+            'stage_changed_at, created_at) VALUES (?, ?, ?, ?, ?)',
+            (unit_id, datasheet_id, stage_id, stamp, stamp))
         ids.append(cur.lastrowid)
         # The starting position is history too: without it, a model that never
         # moves has no record of when it arrived.
@@ -994,6 +1009,255 @@ def _segments(ladder, counts, total):
              'is_terminal': bool(s['is_terminal']),
              'is_owned': bool(s['is_owned'])}
             for s in ladder if counts.get(s['id'])]
+
+
+def export_inventory(conn, army_id=None, include_unassigned=False,
+                    include_capability=True):
+    """The inventory as a program needs it: join keys, points, and capability.
+
+    A sibling of `inventory()` rather than an edit to it. The collection screen
+    depends on that function's shape, and this one answers a different
+    question — an external list optimiser asking "which detachment turns on the
+    most of what Clay already owns, and what is the shortest paint queue to a
+    better list?" It needs three things the screen does not:
+
+    - **`bsdata_id`**, the join key. The local integer id means nothing outside
+      this database and would silently mismatch after a re-sync.
+    - **Army grouping.** Ork inventory must not leak into a Knights list.
+    - **Points**, all tiers, uncollapsed.
+
+    Everything else is the same aggregation and the same two traps handled the
+    same way: disposed kits leave the counts, and wishlist models are counted
+    apart from owned ones because a model Clay wants is not a model he has.
+    """
+    first_owned = db.first_owned_stage(conn)
+    ladder = stage_ladder(conn)
+    where, args = _export_scope(army_id, include_unassigned)
+
+    rows = {r['datasheet_id']: dict(r) for r in conn.execute(f"""
+        SELECT d.id AS datasheet_id, d.bsdata_id, d.name, d.effort,
+               d.min_models, d.max_models, d.game_system,
+               f.name AS faction_name,
+               COALESCE(SUM(CASE WHEN st.is_owned THEN 1 ELSE 0 END), 0) AS owned,
+               COALESCE(SUM(CASE WHEN NOT st.is_owned THEN 1 ELSE 0 END), 0)
+                                                                   AS wishlist,
+               COALESCE(SUM(CASE WHEN st.is_terminal THEN 1 ELSE 0 END), 0)
+                                                               AS battle_ready,
+               COALESCE(SUM(CASE WHEN st.is_owned AND st.position > ?
+                                 THEN 1 ELSE 0 END), 0)          AS assembled
+          FROM models m
+          JOIN units u        ON u.id = m.unit_id
+          -- Joined on the *model's* datasheet, not the unit's. Post-008 they
+          -- agree unless Clay has said otherwise, and where they disagree the
+          -- model is right: a magnetised Armiger built as a Warglaive is a
+          -- Warglaive right now, and an uncommitted sprue is not anything yet.
+          -- Counting it as its unit's datasheet would report the same plastic
+          -- as both owned and buildable, and the optimiser would build a list
+          -- on models that do not exist.
+          JOIN datasheets d   ON d.id = m.datasheet_id
+          JOIN stages st      ON st.id = m.stage_id
+          LEFT JOIN factions f ON f.id = d.faction_id
+         WHERE {_ACTIVE_UNIT} AND (d.variant IS NULL OR d.game_system <> 'wh40k')
+               {where}
+         GROUP BY d.id
+    """, [first_owned['position'], *args])}
+
+    for row in rows.values():
+        row['by_stage'] = {}
+        row['flexible'] = 0
+        row['buildable_from_spare'] = 0
+
+    for r in conn.execute(f"""
+        SELECT m.datasheet_id, s.name AS stage, COUNT(*) AS n
+          FROM models m
+          JOIN units u  ON u.id = m.unit_id
+          JOIN stages s ON s.id = m.stage_id
+         WHERE m.datasheet_id IS NOT NULL AND {_ACTIVE_UNIT} {where}
+         GROUP BY m.datasheet_id, s.id
+    """, args):
+        if r['datasheet_id'] in rows:
+            rows[r['datasheet_id']]['by_stage'][r['stage']] = r['n']
+
+    _export_capability(conn, rows, where, args, include_capability)
+    _export_flexible(conn, rows, where, args)
+    _export_points(conn, rows, army_id)
+
+    # "A datasheet with zero owned models is omitted unless it has wishlist or
+    # buildable-from-spare counts. This is an inventory, not a catalogue dump."
+    # Magnetised models join that list: a Helverin Clay can field in two
+    # minutes by swapping arms is exactly what this export exists to surface,
+    # and it owns no Helverin at all by any other measure.
+    out = [r for r in rows.values()
+           if r['owned'] or r['wishlist'] or r['flexible']
+           or r.get('buildable_from_spare')]
+    out.sort(key=lambda r: (r['faction_name'] or '', r['name']))
+
+    army = None
+    if army_id:
+        found = conn.execute("""
+            SELECT a.id, a.name, f.name AS primary_faction
+              FROM armies a LEFT JOIN factions f ON f.id = a.primary_faction_id
+             WHERE a.id = ?""", (army_id,)).fetchone()
+        army = dict(found) if found else None
+
+    return {
+        'generated_at': db.now(),
+        'army': army,
+        'stages': [{'name': s['name'], 'position': s['position'],
+                    'is_owned': bool(s['is_owned']),
+                    'is_terminal': bool(s['is_terminal'])} for s in ladder],
+        'datasheets': [_export_row(r, include_capability) for r in out],
+    }
+
+
+def _export_scope(army_id, include_unassigned):
+    """Which units the export may see.
+
+    `units.army_id` is nullable by design — a sealed box not yet committed to
+    an army is real plastic — so "include the unassigned" is a real question
+    rather than an edge case. Off by default here (unlike the gap report, where
+    it is on) because an army query that quietly swept in everything unfiled
+    would not be an army query at all.
+    """
+    if army_id is None:
+        return ('', []) if include_unassigned else (' AND u.army_id IS NOT NULL', [])
+    if include_unassigned:
+        return (' AND (u.army_id = ? OR u.army_id IS NULL)', [army_id])
+    return (' AND u.army_id = ?', [army_id])
+
+
+def _ensure_row(conn, rows, datasheet_id):
+    """Give a datasheet a row even though no model *is* one yet.
+
+    Capability alone earns a place in the inventory: three uncommitted Armiger
+    sprues mean Clay can field a Helverin tonight, and a report that omitted it
+    because he owns none would be answering a different question than the one
+    the optimiser asked. Spec: omitted only when there is nothing at all —
+    no models, no wishlist, no spare plastic, no magnets.
+    """
+    if datasheet_id in rows:
+        return rows[datasheet_id]
+    found = conn.execute("""
+        SELECT d.id AS datasheet_id, d.bsdata_id, d.name, d.effort,
+               d.min_models, d.max_models, d.game_system,
+               f.name AS faction_name
+          FROM datasheets d LEFT JOIN factions f ON f.id = d.faction_id
+         WHERE d.id = ? AND (d.variant IS NULL OR d.game_system <> 'wh40k')
+    """, (datasheet_id,)).fetchone()
+    if not found:
+        # Never invent a datasheet: a capability row pointing at a [Legends]
+        # printing, or at nothing, is simply not emitted.
+        return None
+    rows[datasheet_id] = dict(found, owned=0, wishlist=0, battle_ready=0,
+                              assembled=0, by_stage={}, flexible=0,
+                              buildable_from_spare=0)
+    return rows[datasheet_id]
+
+
+def _export_capability(conn, rows, where, args, include_capability):
+    """Magnetised models, and plastic that could still become something.
+
+    Both answer "you already have this" without the model being it yet, and
+    they are kept apart because the work differs: a swap is two minutes, a
+    sprue is an evening.
+
+    Neither is added to `by_stage`. A magnetised Armiger built as a Warglaive
+    is counted once under Warglaive's stage breakdown and reported as
+    *capability* under Helverin — so `sum(by_stage) == owned + wishlist` stays
+    true for every row, which is the assertion that catches a double count
+    before the optimiser turns it into a list Clay cannot field.
+    """
+    if not include_capability:
+        return
+
+    for r in conn.execute(f"""
+        SELECT kd.datasheet_id, COUNT(*) AS n
+          FROM models m
+          JOIN units u ON u.id = m.unit_id
+          JOIN kit_datasheets kd ON kd.kit_id = u.kit_id
+          JOIN stages s ON s.id = m.stage_id AND s.is_owned = 1
+         WHERE m.datasheet_id IS NULL AND {_ACTIVE_UNIT} {where}
+         GROUP BY kd.datasheet_id
+    """, args):
+        row = _ensure_row(conn, rows, r['datasheet_id'])
+        if row is not None:
+            row['buildable_from_spare'] = r['n']
+
+
+def _export_flexible(conn, rows, where, args):
+    """Magnetised models, against every datasheet they could be.
+
+    Reported per datasheet with the consumer deduplicating by model, per the
+    spec. If that turns out awkward the fix is a top-level array of flexible
+    models with their candidate datasheets — never silently picking one.
+    """
+    for r in conn.execute(f"""
+        SELECT kd.datasheet_id, COUNT(DISTINCT m.id) AS n
+          FROM models m
+          JOIN units u ON u.id = m.unit_id
+          JOIN kit_datasheets kd ON kd.kit_id = u.kit_id
+         WHERE m.is_flexible = 1 AND {_ACTIVE_UNIT} {where}
+         GROUP BY kd.datasheet_id
+    """, args):
+        row = _ensure_row(conn, rows, r['datasheet_id'])
+        if row is not None:
+            row['flexible'] = r['n']
+
+
+def _export_points(conn, rows, army_id):
+    """Every tier, uncollapsed.
+
+    "Requisition Thresholds are exactly the thing a list optimizer has to
+    reason about, and flattening here would hide the third-copy surcharge that
+    changes list decisions."
+
+    Faction-scoped prices are the other half: one Repulsor Executioner
+    datasheet costs a Black Templar 255 and a Blood Angel 230. With an army
+    naming a faction, only that faction's price is emitted; without one, every
+    row goes out with its faction labelled rather than the app guessing.
+    """
+    faction_id = None
+    if army_id:
+        found = conn.execute('SELECT primary_faction_id FROM armies WHERE id = ?',
+                             (army_id,)).fetchone()
+        faction_id = found['primary_faction_id'] if found else None
+
+    for row in rows.values():
+        row['points'] = []
+    if not rows:
+        return
+    marks = ','.join('?' * len(rows))
+    for r in conn.execute(f"""
+        SELECT p.datasheet_id, p.model_count, p.points, p.tier_min, p.tier_max,
+               p.faction_id, f.name AS faction_name
+          FROM datasheet_points p
+          LEFT JOIN factions f ON f.id = p.faction_id
+         WHERE p.datasheet_id IN ({marks})
+         ORDER BY p.model_count, p.tier_min
+    """, list(rows)):
+        if faction_id and r['faction_id'] and r['faction_id'] != faction_id:
+            continue
+        entry = {'model_count': r['model_count'], 'points': r['points'],
+                 'tier_min': r['tier_min'], 'tier_max': r['tier_max']}
+        if r['faction_id'] and not faction_id:
+            entry['faction'] = r['faction_name']
+        rows[r['datasheet_id']]['points'].append(entry)
+
+
+def _export_row(row, include_capability):
+    out = {
+        'bsdata_id': row['bsdata_id'], 'name': row['name'],
+        'faction': row['faction_name'], 'game_system': row['game_system'],
+        'min_models': row['min_models'], 'max_models': row['max_models'],
+        'effort': row['effort'],
+        'owned': row['owned'], 'battle_ready': row['battle_ready'],
+        'assembled': row['assembled'], 'wishlist': row['wishlist'],
+        'by_stage': row['by_stage'], 'flexible': row['flexible'],
+        'points': row['points'],
+    }
+    if include_capability:
+        out['buildable_from_spare'] = row['buildable_from_spare']
+    return out
 
 
 def inventory(conn, query=None, faction_id=None, game_system=None,

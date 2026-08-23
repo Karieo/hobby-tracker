@@ -37,10 +37,12 @@ doors onto §2.7 — importing a list from a file or a URL — and those stay ga
 on a source: every candidate host is refused by egress policy. Pasting never
 was. §5 of the spec has the measured state of each step.
 
-**In progress: the gap checker** (spec §8, written as "Section 7"). Three
+**In progress: the gap checker** (spec §8, written as "Section 7"). Four
 commits of five: migration 008 (`models.datasheet_id`, `is_flexible`,
-`kit_datasheets`, `datasheet_aliases`, `list_entries` rebuilt), `list_parse.py`
-and `list_resolve.py`. Still to come: allocation, and the routes and views.
+`kit_datasheets`, `datasheet_aliases`, `list_entries` rebuilt), `list_parse.py`,
+`list_resolve.py` and `list_allocate.py`. Still to come: the routes and views —
+until then `/lists/<id>` still renders `lists.list_gap`, which is the code with
+the double-count bug in it.
 
 **One name-similarity function, `list_resolve.similarity`**, used by both paste
 doors. It sorts the words before comparing (rapidfuzz calls that
@@ -49,11 +51,24 @@ strict subset as a perfect match — built that way it resolved "Warboss on
 Warbike" to Warboss at 100, a wrong confident match on the very example §8 uses
 to explain why aliases exist. It exists because `lists.list_gap` counts ownership per entry with
 nothing consuming a model once assigned, so a list asking for two squads of ten
-Boyz reports "fieldable" against ten Boyz owned.
+Boyz reports "fieldable" against ten Boyz owned. `list_allocate.allocate` now
+answers that correctly — short 10, not fieldable — but nothing renders it yet.
+
+**A column a migration fills is a column some writer has to keep filling.**
+Twice now: 008 numbered `list_entries.position` and `add_entry` left new rows
+at 0; 008 backfilled `models.datasheet_id` and `add_models` left new models
+null, which would have made allocation report a full collection as owning
+nothing. Both fixed at the writer. When adding a column in a migration, find
+every INSERT into that table in the same commit.
 
 **§9 of the spec lists ten requirements the 2026-08-22 re-scope stopped
-mentioning without deciding against** — CSV export chief among them, which the
-original called non-negotiable. None is a bug; each is a decision still owed.
+mentioning without deciding against.** None is a bug; each is a decision still
+owed. The first to be discharged is export: `GET /api/export/inventory` (spec
+§9.1) serves an external list optimiser as JSON or CSV, authenticated by a
+bearer token from `api_tokens` — the table migration 001 created and nothing
+read until now. **A token reaches `/api/export/` and nothing else**; widening
+that is one entry in `app.TOKEN_PATHS` and should be a decision rather than a
+side effect.
 
 ## Commands
 
@@ -67,6 +82,9 @@ python3 app.py                       # http://localhost:3100
 python3 seed/combat_patrol_magazine.py --status   # magazine seed
 python3 seed/derived_kits.py --status            # researched box contents
 python3 scripts/report_kit_datasheets.py         # what migration 008 could not map
+python3 scripts/api_token.py --create "name"     # mint an export token (shown once)
+python3 scripts/api_token.py --list|--revoke ID  # ...and manage them
+python3 scripts/check_rules_pins.py              # has BSData or the MFM moved?
 python3 -m pytest                    # tests
 shellcheck backup.sh restore.sh      # the shell half, linted in CI too
 ```
@@ -161,6 +179,16 @@ the Munitorum Field Manual (flat per-size tables, official, licensed). They join
 on normalised name **scoped by faction** — 35 names carry different points per
 faction, so a global join would silently write wrong values. See the module
 docstring in `scripts/import_bsdata.py` for the full reasoning and measurements.
+
+**Neither source is ever re-imported on its own.** Both are pinned —
+`rules_data.py` holds all three SHAs, and the fetch scripts import them from
+there — and `deploy.sh` only imports when the datasheets table is empty. So the
+app stays on whatever revision it was first built with until someone bumps a
+pin deliberately. `/reference` shows which manual priced the database and warns
+when `data/mfm/` is newer than the import; `scripts/check_rules_pins.py` asks
+GitHub whether the pins have aged, and the weekly sweep runs it. Nothing bumps
+a pin automatically: points moving under a list is something to accept
+deliberately, not to wake up to.
 
 Two columns exist to survive re-sync: `datasheet_points.manual_override` and
 `datasheets.effort_is_override`. The importer reports them and leaves them

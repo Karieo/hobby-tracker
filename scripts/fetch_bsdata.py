@@ -20,10 +20,13 @@ import subprocess
 import sys
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, BASE_DIR)
 DEST = os.path.join(BASE_DIR, 'data', 'bsdata')
 
-BSDATA_REPO = 'https://github.com/BSData/wh40k-11e'
-BSDATA_SHA = '13f3c4e54d15f96baebdc48c3a8c10431db2990f'
+# The pin lives in `rules_data`, which `/reference` and the weekly sweep
+# both read too. Declared in one place because a pin recorded twice is a
+# pin that will eventually disagree with itself.
+from rules_data import BSDATA_REPO, BSDATA_SHA  # noqa: E402
 
 
 def git(*args):
