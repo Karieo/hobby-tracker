@@ -989,6 +989,25 @@ def api_scan_sweep():
 # Built by hand first, deliberately: onboarding must never depend on an EAN
 # lookup answering or a vision model being right.
 
+@app.route('/sets/new')
+def add_set_page():
+    """Add a set, three ways in.
+
+    By name is the door: most of the time Clay knows what the box is called,
+    and typing it beats hunting for a barcode on a shelf or waiting for a
+    camera to focus. Scanning and typing a code stay as the other two doors —
+    they are better when the box is in his hand and the name is a mouthful.
+
+    All three end in the same place: a kit, with its contents if the app knows
+    them and honestly without if it does not.
+    """
+    with _read() as conn:
+        return render_template(
+            'add_set.html',
+            recent=scan.list_templates(conn, with_contents=True)[:8],
+            factions=col.list_factions(conn))
+
+
 @app.route('/catalogue')
 def catalogue_page():
     """What exists, and whether Clay has it.
@@ -1078,6 +1097,27 @@ def _contents_from(data):
         except ValueError:
             contents = []
     return contents or []
+
+
+@app.route('/api/templates/search')
+def api_search_templates():
+    """Sets matching a typed name, for the add-a-set screen.
+
+    Reuses the catalogue's own query, so searching "Boyz" finds Combat Patrol:
+    Orks by what is inside it and not only by what it is called.
+    """
+    query = (request.args.get('q') or '').strip()
+    if len(query) < 2:
+        return jsonify({'results': []})
+    with _read() as conn:
+        rows = scan.list_templates(conn, query, with_contents=True)[:20]
+    return jsonify({'results': [{
+        'id': r['id'], 'name': r['name'], 'year': r['year'],
+        'faction_name': r['faction_name'], 'model_count': r['model_count'],
+        'owned_count': r['owned_count'], 'barcode_count': r['barcode_count'],
+        'contents': [f"{c['model_count']}× {c['datasheet_name']}"
+                     for c in r['contents']],
+    } for r in rows]})
 
 
 @app.route('/api/templates', methods=['POST'])

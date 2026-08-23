@@ -14,7 +14,8 @@
 
   {# Opened automatically when arriving from an unknown scan, with the code
      pre-filled so linking it is not a second step Clay has to remember. #}
-  <form class="panel stack {% if not request.args.get('code') %}hidden{% endif %}"
+  <form class="panel stack {% if not request.args.get('code')
+                              and not request.args.get('name') %}hidden{% endif %}"
         id="new-template">
     {% if request.args.get('code') %}
       <p class="hint">
@@ -22,7 +23,8 @@
         other copy of this box on the shelf resolves behind it.
       </p>
     {% endif %}
-    <label>Name<input name="name" required placeholder="Combat Patrol: Orks"></label>
+    <label>Name<input name="name" required placeholder="Combat Patrol: Orks"
+                      value="{{ request.args.get('name') or '' }}"></label>
     <div class="row">
       <label>Faction
         <select name="faction_id">

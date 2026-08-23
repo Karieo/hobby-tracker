@@ -1110,3 +1110,59 @@ def test_the_warning_ships_hidden(client):
     import re
     panel = re.search(r'<div class="([^"]*)" id="insecure"', body)
     assert panel and 'hidden' in panel.group(1)
+
+
+# ── Adding a set, three ways in ──────────────────────────
+#
+# By name is the door. A barcode is only quicker when the box is already in
+# hand, and the camera only when there are twenty of them — so they stay as
+# options rather than as the way in.
+
+def test_the_add_a_set_screen_offers_all_three(client):
+    body = client.get('/sets/new').get_data(as_text=True)
+    assert 'id="set-q"' in body, 'by name'
+    assert 'id="set-code"' in body, 'by code'
+    assert 'href="/scan"' in body, 'with the camera'
+
+
+def test_searching_sets_by_name(client, a_template):
+    res = client.get('/api/templates/search?q=Combat')
+    names = [r['name'] for r in res.get_json()['results']]
+    assert any('Combat' in n for n in names)
+
+
+def test_searching_sets_by_what_is_inside_them(client, a_template):
+    """"Boyz" should find the box that holds them, not just a box called Boyz."""
+    res = client.get('/api/templates/search?q=Boyz')
+    assert res.get_json()['results'], 'found by contents'
+
+
+def test_a_one_letter_search_returns_nothing(client, a_template):
+    """Every keystroke hits this; one letter would return the whole catalogue."""
+    assert client.get('/api/templates/search?q=C').get_json()['results'] == []
+
+
+def test_search_results_carry_what_is_in_the_box(client, a_template):
+    """So Clay can tell two similarly-named boxes apart without opening either."""
+    row = client.get('/api/templates/search?q=Combat').get_json()['results'][0]
+    assert 'contents' in row and 'model_count' in row
+    assert 'owned_count' in row, 'and whether he already has one'
+
+
+def test_the_define_form_opens_with_the_typed_name(client):
+    """A name typed once should not be typed again."""
+    body = client.get('/templates?name=Nobz+Mob').get_data(as_text=True)
+    assert 'value="Nobz Mob"' in body
+    assert 'hidden' not in body.split('id="new-template"')[0][-120:], \
+        'the form is open, not collapsed'
+
+
+def test_recording_a_set_by_name_invents_no_models(client):
+    """The honest bargain the scanner already makes: ownership now, contents
+    whenever. Guessing contents from a name is the one thing this will not do."""
+    res = client.post('/api/kits', json={'name': 'Nobz Mob 2019'})
+
+    assert res.status_code == 201
+    kit_id = res.get_json()['id']
+    body = client.get(f'/kits/{kit_id}').get_data(as_text=True)
+    assert 'Nobz Mob 2019' in body
