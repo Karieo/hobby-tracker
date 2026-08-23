@@ -42,6 +42,37 @@ function recentlySeen(code) {
   return at !== undefined && now - at < DEBOUNCE_MS;
 }
 
+/* The camera cannot work here, and saying so up front is the whole point.
+ *
+ * This used to appear only inside the catch — tap Start camera, watch it fail,
+ * then get told why. On a phone at a shelf that is a wasted tap and a moment
+ * of "is this broken?". `isSecureContext` is knowable before anything is
+ * attempted, so it is checked on load: the panel opens, Start camera is
+ * disabled rather than lying about what it will do, and the manual field takes
+ * focus because it is the thing that still works. */
+function revealInsecure() {
+  const panel = $('#insecure');
+  if (panel) panel.classList.remove('hidden');
+  const start = $('#start');
+  if (start) {
+    start.disabled = true;
+    start.title = 'Needs an HTTPS address';
+  }
+}
+
+function checkSecureContext() {
+  if (window.isSecureContext) return;
+  revealInsecure();
+  setStatus('Camera needs HTTPS — type the code below', 'error');
+  const manual = $('#manual input[name="code"]');
+  if (manual) manual.focus();
+  // Carry the current screen across to the secure address rather than dumping
+  // the scanner's front page: identify mode and a half-finished sprint should
+  // survive the hop.
+  const link = $('#secure-link');
+  if (link) link.href = link.href.replace(/\/scan$/, location.pathname + location.search);
+}
+
 function setStatus(text, kind = '') {
   statusEl.textContent = text;
   statusEl.className = `scanner-status ${kind}`;
@@ -164,9 +195,9 @@ async function start() {
   } catch (err) {
     running = false;
     if (!window.isSecureContext) {
-      setStatus('The camera needs HTTPS. Use the tunnel address, not a plain '
-                + 'http:// LAN or Tailscale IP — and type the code below '
+      setStatus('The camera needs HTTPS — see above. Type the code below '
                 + 'meanwhile.', 'error');
+      revealInsecure();
     } else {
       setStatus(`Camera unavailable: ${err.message}. Type the code below.`, 'error');
     }
@@ -278,5 +309,8 @@ manual.querySelector('input[name=code]').addEventListener('input', (e) => {
     manualNote.className = data.notes.length ? 'hint warnline' : 'hint';
   }, 250);
 });
+
+// Last, so everything it touches exists.
+checkSecureContext();
 
 })();

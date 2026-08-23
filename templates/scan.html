@@ -15,6 +15,32 @@
     </a>
   </header>
 
+  {# Shown before the camera is even tried, not after it fails.
+     `isSecureContext` is a browser fact the server cannot know, so the panel
+     ships hidden and scan.js reveals it. The link is the point: telling
+     someone holding a box to "use the tunnel address" is not help unless the
+     app hands them the address. #}
+  <div class="panel warn hidden" id="insecure">
+    <p><b>The camera needs HTTPS.</b></p>
+    <p class="muted">
+      This page is on a plain <code>http://</code> address, and browsers refuse
+      the camera outside a secure context. Nothing is wrong with the app.
+    </p>
+    {% if public_url %}
+      <div class="actions">
+        <a class="go" id="secure-link" href="{{ public_url }}/scan">
+          Open this over HTTPS →
+        </a>
+      </div>
+    {% else %}
+      <p class="hint">
+        Set <code>PUBLIC_URL</code> in <code>.env</code> to your tunnel address
+        and this becomes a link you can tap.
+      </p>
+    {% endif %}
+    <p class="hint">Or type the code below — that always works.</p>
+  </div>
+
   <div class="scanner">
     <video id="video" playsinline muted></video>
     <div class="scanner-overlay"><span class="reticle"></span></div>

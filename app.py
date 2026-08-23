@@ -275,7 +275,11 @@ def money(cents):
 def inject_globals():
     return {'owner': os.getenv('OWNER_NAME', 'Clay'), 'version': VERSION,
             'asset_version': _ASSET_VERSION, 'currency': CURRENCY,
-            'currency_symbol': CURRENCY_SYMBOL}
+            'currency_symbol': CURRENCY_SYMBOL,
+            # Where this app answers over HTTPS. The scan page needs it: the
+            # camera refuses to run outside a secure context, and "use the
+            # tunnel address" is a poor answer to give someone holding a box.
+            'public_url': (os.getenv('PUBLIC_URL') or '').strip().rstrip('/')}
 
 
 # ── Armies ───────────────────────────────────────────────
