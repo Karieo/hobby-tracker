@@ -456,13 +456,28 @@ def add_or_extend_unit(conn, datasheet_id, model_count, army_id=None,
 
 
 def add_models(conn, unit_id, count, stage_id):
-    """Append models to an existing unit, all at one stage."""
+    """Append models to an existing unit, all at one stage.
+
+    `datasheet_id` is stamped from the unit rather than left null. Migration
+    008 backfilled every model that existed when it ran and this is the writer
+    that keeps that true afterwards — without it the column would be complete
+    for old rows and empty for every model added since, which is worse than not
+    having it at all, because allocation resolves ownership *through* it and
+    would quietly report a full collection as owning nothing.
+
+    A model is only ever anything other than its unit's datasheet once Clay
+    says so — magnetising it, or building a multi-option sprue as one of its
+    other options — and that is an update, never a default.
+    """
+    datasheet_id = conn.execute('SELECT datasheet_id FROM units WHERE id = ?',
+                                (unit_id,)).fetchone()['datasheet_id']
     stamp = db.now()
     ids = []
     for _ in range(count):
         cur = conn.execute(
-            'INSERT INTO models (unit_id, stage_id, stage_changed_at, created_at) '
-            'VALUES (?, ?, ?, ?)', (unit_id, stage_id, stamp, stamp))
+            'INSERT INTO models (unit_id, datasheet_id, stage_id, '
+            'stage_changed_at, created_at) VALUES (?, ?, ?, ?, ?)',
+            (unit_id, datasheet_id, stage_id, stamp, stamp))
         ids.append(cur.lastrowid)
         # The starting position is history too: without it, a model that never
         # moves has no record of when it arrived.

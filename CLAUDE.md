@@ -37,10 +37,12 @@ doors onto §2.7 — importing a list from a file or a URL — and those stay ga
 on a source: every candidate host is refused by egress policy. Pasting never
 was. §5 of the spec has the measured state of each step.
 
-**In progress: the gap checker** (spec §8, written as "Section 7"). Three
+**In progress: the gap checker** (spec §8, written as "Section 7"). Four
 commits of five: migration 008 (`models.datasheet_id`, `is_flexible`,
-`kit_datasheets`, `datasheet_aliases`, `list_entries` rebuilt), `list_parse.py`
-and `list_resolve.py`. Still to come: allocation, and the routes and views.
+`kit_datasheets`, `datasheet_aliases`, `list_entries` rebuilt), `list_parse.py`,
+`list_resolve.py` and `list_allocate.py`. Still to come: the routes and views —
+until then `/lists/<id>` still renders `lists.list_gap`, which is the code with
+the double-count bug in it.
 
 **One name-similarity function, `list_resolve.similarity`**, used by both paste
 doors. It sorts the words before comparing (rapidfuzz calls that
@@ -49,7 +51,15 @@ strict subset as a perfect match — built that way it resolved "Warboss on
 Warbike" to Warboss at 100, a wrong confident match on the very example §8 uses
 to explain why aliases exist. It exists because `lists.list_gap` counts ownership per entry with
 nothing consuming a model once assigned, so a list asking for two squads of ten
-Boyz reports "fieldable" against ten Boyz owned.
+Boyz reports "fieldable" against ten Boyz owned. `list_allocate.allocate` now
+answers that correctly — short 10, not fieldable — but nothing renders it yet.
+
+**A column a migration fills is a column some writer has to keep filling.**
+Twice now: 008 numbered `list_entries.position` and `add_entry` left new rows
+at 0; 008 backfilled `models.datasheet_id` and `add_models` left new models
+null, which would have made allocation report a full collection as owning
+nothing. Both fixed at the writer. When adding a column in a migration, find
+every INSERT into that table in the same commit.
 
 **§9 of the spec lists ten requirements the 2026-08-22 re-scope stopped
 mentioning without deciding against** — CSV export chief among them, which the
