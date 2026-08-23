@@ -264,6 +264,31 @@ if (moveForm) {
   });
 }
 
+const removeForm = $('#remove-models');
+if (removeForm) {
+  removeForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const count = Number($('input[name="count"]', removeForm).value);
+    const unit = removeForm.dataset.unit;
+    // Confirmed, unlike every other control here. The rest of this page moves
+    // models between stages and is undone by tapping the other way; this one
+    // deletes rows, and there is nothing to tap afterwards.
+    if (!window.confirm(
+        `Remove ${count} model${count === 1 ? '' : 's'}? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      const data = await post(`/api/units/${unit}/models`, {count}, 'DELETE');
+      if (data && data.unit_deleted) {
+        // Nothing left to come back to.
+        location.href = '/collection';
+        return;
+      }
+      location.reload();
+    } catch (err) { toast(err.message, 'error'); }
+  });
+}
+
 /* ── Generic form posting ───────────────────────────────── */
 
 function formBody(form) {

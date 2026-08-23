@@ -148,7 +148,17 @@ anyone notices.
 - **`box_state` is not a model stage.** A sealed box and an opened one both hold
   models "On sprue", but only one carries a resale premium. Keep it on the kit.
 - **Disposals are status changes, never deletions.** A sold kit stays with its
-  models, excluded from ownership counts, retained for spend history.
+  models, excluded from ownership counts, retained for spend history. A
+  *correction* is the other thing: `collection.remove_models` and
+  `delete_unit` delete rows outright, because plastic that was never there has
+  no history worth keeping. Every screen that offers one has to say which it
+  is, or the cheap control becomes the one Clay reaches for and the spend
+  history quietly empties.
+- **An endpoint with no caller is not a feature.** `DELETE /api/units/<id>`
+  shipped in the first commit and nothing ever called it, so "I have no way to
+  remove models" was true while the route sat there answering. `POST
+  /api/units/<id>/models` is still in that state. Grep the templates and
+  `static/js/` before believing a capability exists.
 - **Every progress figure is effort-weighted.** A Knight and a Termagant are
   both "1 model", which makes model-count percentages meaningless. Raw counts
   show alongside, never instead.

@@ -573,6 +573,53 @@ def update_unit(conn, unit_id, nickname=None, notes=None):
                                   db.now(), unit_id))
 
 
+def remove_models(conn, unit_id, count):
+    """Take models off a unit. The undo for adding too many.
+
+    This is a **correction, not a disposal**. Models Clay actually owned and
+    then sold or traded leave through `dispose_kit`, which keeps every row and
+    the spend history. This deletes rows outright, so it is only ever for
+    plastic that was never there — a mistyped count, a bulk add that ran twice.
+
+    Which ones go: least advanced first, and within a stage the most recently
+    added. Both orderings point at the same models — the extras just typed in,
+    still on sprue and untouched — and between them it is hard to delete
+    recorded work by accident. Paint six of ten, trim to six, and the four that
+    go are the four never started.
+
+    Removing every model deletes the unit with them. A unit with no models is a
+    row that shows up in every count as a zero and can never become anything
+    else; leaving it behind would make "delete the lot" the one correction that
+    does not finish the job.
+
+    `stage_events` is ON DELETE CASCADE, so a model's history leaves with it.
+    That is right for a model that never existed and wrong for one that did,
+    which is the whole reason a disposal is a different operation.
+    """
+    total = conn.execute('SELECT COUNT(*) AS n FROM models WHERE unit_id = ?',
+                         (unit_id,)).fetchone()['n']
+    count = max(0, min(count, total))
+    if not count:
+        return {'removed': 0, 'remaining': total, 'unit_deleted': False}
+
+    doomed = [row['id'] for row in conn.execute("""
+        SELECT m.id FROM models m
+          JOIN stages s ON s.id = m.stage_id
+         WHERE m.unit_id = ?
+         ORDER BY s.position, m.id DESC
+         LIMIT ?
+    """, (unit_id, count))]
+    conn.executemany('DELETE FROM models WHERE id = ?',
+                     [(model_id,) for model_id in doomed])
+
+    remaining = total - count
+    if not remaining:
+        delete_unit(conn, unit_id)
+        return {'removed': count, 'remaining': 0, 'unit_deleted': True}
+    _touch_unit(conn, unit_id)
+    return {'removed': count, 'remaining': remaining, 'unit_deleted': False}
+
+
 def delete_unit(conn, unit_id):
     """Only for a genuine data-entry mistake.
 

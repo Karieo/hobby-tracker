@@ -1654,3 +1654,53 @@ def test_the_resolve_button_does_not_shadow_its_own_row(client, gap_list):
     row = body.split('row-unresolved', 1)[1].split('</li>', 1)[0]
     assert 'data-resolve=' in row
     assert 'entry-resolve" data-entry=' not in row
+
+
+# ── Removing models ──────────────────────────────────────
+#
+# Clay: "I have no way to remove models if I accidentally add too many." Both
+# halves of the fix are asserted here — the endpoint, and the control on the
+# page that reaches it, because the endpoint to delete a whole unit had existed
+# since the beginning with nothing anywhere calling it.
+
+def test_removing_models_trims_the_unit(client, army_with_unit):
+    unit_id = army_with_unit['unit_id']
+
+    res = client.delete(f'/api/units/{unit_id}/models', json={'count': 4})
+
+    assert res.status_code == 200
+    assert res.get_json() == {'removed': 4, 'remaining': 6,
+                              'unit_deleted': False}
+
+
+def test_removing_them_all_reports_the_unit_gone(client, army_with_unit):
+    """So the page can send Clay somewhere that still exists rather than
+    reloading into a 404."""
+    unit_id = army_with_unit['unit_id']
+
+    res = client.delete(f'/api/units/{unit_id}/models', json={'count': 10})
+
+    assert res.get_json()['unit_deleted'] is True
+    assert client.get(f'/units/{unit_id}').status_code == 404
+
+
+def test_removing_nothing_is_refused(client, army_with_unit):
+    """A zero or a missing count is a mis-submitted form, not an instruction."""
+    unit_id = army_with_unit['unit_id']
+    for payload in ({'count': 0}, {}, {'count': -3}):
+        assert client.delete(f'/api/units/{unit_id}/models',
+                             json=payload).status_code == 400
+
+
+def test_removing_from_a_unit_that_is_not_there(client):
+    assert client.delete('/api/units/9999/models',
+                         json={'count': 1}).status_code == 404
+
+
+def test_the_unit_page_offers_the_control(client, army_with_unit):
+    """The endpoint existing is not the feature — Clay could not reach it."""
+    body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    assert 'id="remove-models"' in body
+    assert 'Dispose of the kit' in body, \
+        'the panel has to say what this is not, or it becomes the disposal path'

@@ -161,6 +161,33 @@
     <button type="submit">Save</button>
   </form>
 
+  <h2>Too many?</h2>
+  {# The counterpart to every other control on this page, which move models
+     between stages and are undone by tapping the other way. This one deletes
+     rows, so it says what it is and asks before doing it.
+
+     It is deliberately not the disposal path: a sold kit keeps its models and
+     its spend history, and confusing the two would quietly erase what Clay
+     paid for something months before he went looking for it. #}
+  <p class="hint">
+    For plastic that was never there — a mistyped count, or a bulk add that ran
+    twice. The least advanced go first, so anything you have recorded work
+    against is the last to leave.
+    {% if models|length %}
+      Removing all {{ models|length }} deletes the unit.
+    {% endif %}
+    <b>Sold or traded them instead?</b> Dispose of the kit — that keeps the
+    models and what you paid.
+  </p>
+  <form class="panel row" id="remove-models" data-unit="{{ unit.id }}">
+    <label>Remove
+      <input type="number" name="count" min="1" max="{{ models|length }}"
+             value="1" autocomplete="off"
+             aria-label="how many models to remove">
+    </label>
+    <button class="danger" type="submit">Remove</button>
+  </form>
+
   <form class="panel row" id="move-form" data-unit="{{ unit.id }}">
     <label>Move to army
       <select name="army_id">

@@ -299,8 +299,11 @@ button.advance, button.go, a.go, button[type="submit"] {
 }
 button.primary { flex: 1; }
 button.huge { width: 100%; font-size: 1.15rem; padding: 1.1rem; min-height: 64px; }
-/* Outlined rather than filled: this is the one control in the app that
-   destroys history, and it should read as a warning, not an invitation. */
+/* Outlined rather than filled: these are the controls that destroy history
+   rather than move something between stages — deleting a kit, and trimming
+   models off a unit — and they should read as a warning, not an invitation.
+   The rule sits after the submit-button one deliberately, so a destructive
+   control that happens to submit a form does not come out looking primary. */
 button.danger { background: transparent; color: var(--bad); border-color: var(--bad); }
 button:disabled { opacity: .4; cursor: not-allowed; }
 .ghost { background: transparent; color: var(--muted); font-size: .9rem; }
