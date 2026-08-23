@@ -20,7 +20,7 @@ here builds toward accounts and nothing here makes that harder.
 
 ## Current state
 
-Working and browser-verified at 430px and 1440px. **522 tests green.**
+Working and browser-verified at 430px and 1440px. **570 tests green.**
 
 **The loop closes.** All eleven end-to-end checks pass against a fresh
 database: buy → scan → onboard → build → paint → list → gap → wishlist → buy,
@@ -99,6 +99,36 @@ telling Clay to go find it.
 **discards the pasted points** — this app prices from the Munitorum manual, and
 a number out of someone else's app would quietly outrank the official one.
 Near-miss suggestions now rank by `difflib` similarity.
+
+## The 2026-08-23 review
+
+Clay asked for a full pass: every spec checked for missed requirements, a code
+review, and dead code removed. What it found:
+
+- **Ten requirements the re-scope stopped mentioning without deciding against.**
+  Now written down as spec §9 with the state of each. CSV export is the one
+  the original called non-negotiable and it does not exist in any form.
+- **Section 7 lived only in a chat upload.** Appended to the spec as §8, with
+  its disagreements with this database recorded once instead of re-argued per
+  commit. A spec that exists only in an upload is one the next session cannot
+  read.
+- **A whole orphaned CSS block.** Implementing the wireframes rebuilt both
+  stage screens on `.ramp`/`.rung`; nothing has rendered `class="pipe"` since,
+  and the rules outlived their markup by four pull requests. `repaintPipe` was
+  still falling through `$('.pipe') || $('.ramp')` and
+  `$('.pipe-count b') || $('.count b')` — every one of those `||` read as a
+  live alternative and was dead code hiding the live path. Same hazard as the
+  silent-repaint bug, one level up.
+- **`list_entries.position` was true of old rows and false of new ones.**
+  Migration 008 numbered existing entries by insertion order; `add_entry` never
+  set one, so everything added since sat at 0. Fixed, with `resolved_by` and
+  the pasted `raw_name`/`points` now maintained by the same writer.
+- **The invariants hold.** Checked against a live database rather than read:
+  disposals delete no rows and drop out of ownership, `box_state` is nowhere
+  near `models`, progress is effort-weighted, and a sold box does not leak onto
+  the collection as an actionable unit.
+- **No dead functions, templates or JS.** 247 top-level functions, all
+  referenced; every template rendered; every script included.
 
 ## Failed attempts
 

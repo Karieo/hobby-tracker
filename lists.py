@@ -98,11 +98,20 @@ def points_for(conn, datasheet_id, model_count, faction_id=None):
     return None
 
 
-def add_entry(conn, list_id, datasheet_id, model_count, is_proxy=False):
+def add_entry(conn, list_id, datasheet_id, model_count, is_proxy=False,
+              raw_name=None, points=None):
     """Put a unit in the list. Points are snapshotted at the time of adding.
 
     A snapshot rather than a live lookup because a list is a record of what
     Clay intended to field on a day, and the Munitorum manual changes under it.
+
+    ``position`` is assigned here rather than left to the column default.
+    Migration 008 numbered every existing entry by the order it was added, and
+    a writer that then left new ones at 0 would make the column true of old
+    data and false of new — the worst state for a column the report is about to
+    order by. ``raw_name`` and ``points`` are what a paste said, kept beside
+    the app's own figures rather than instead of them; both are None when the
+    entry came from the builder, where there was no text to disagree with.
     """
     if not get_list(conn, list_id):
         raise ValueError(f'no list {list_id}')
@@ -113,11 +122,16 @@ def add_entry(conn, list_id, datasheet_id, model_count, is_proxy=False):
     if not sheet:
         raise ValueError(f'no datasheet {datasheet_id}')
 
-    points = points_for(conn, datasheet_id, model_count, sheet['faction_id'])
+    position = conn.execute(
+        'SELECT COALESCE(MAX(position) + 1, 0) FROM list_entries '
+        ' WHERE list_id = ?', (list_id,)).fetchone()[0]
+    snapshot = points_for(conn, datasheet_id, model_count, sheet['faction_id'])
     cur = conn.execute(
-        'INSERT INTO list_entries (list_id, datasheet_id, model_count, '
-        'points_snapshot, is_proxy) VALUES (?, ?, ?, ?, ?)',
-        (list_id, datasheet_id, model_count, points, 1 if is_proxy else 0))
+        'INSERT INTO list_entries (list_id, position, raw_name, datasheet_id, '
+        'model_count, points_snapshot, points, resolved_by, is_proxy) '
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?)",
+        (list_id, position, raw_name, datasheet_id, model_count, snapshot,
+         points, 1 if is_proxy else 0))
     return cur.lastrowid
 
 

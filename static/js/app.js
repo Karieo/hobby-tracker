@@ -58,7 +58,7 @@ function paintTimestamps(root = document) {
 /* ── Stage movement ─────────────────────────────────────── */
 
 function repaintPipe(breakdown) {
-  const pipe = $('.pipe') || $('.ramp');
+  const pipe = $('.ramp');
   if (!pipe || !breakdown) return;
 
   // Matched by stage id, not by index: a ramp renders only the owned stages,
@@ -71,19 +71,22 @@ function repaintPipe(breakdown) {
   // manual refresh. A repaint that quietly matches nothing is the worst
   // outcome available, so the failure now costs a page load instead of the
   // user's trust in the number.
+  //
+  // The `.pipe` selectors this used to fall back through were the same hazard
+  // one level up: they had matched nothing since the ramp replaced that markup,
+  // so every `x || y` here read as a live alternative and was really dead code
+  // shielding the live path from view.
   let painted = 0;
   breakdown.forEach((stage) => {
     const li = $(`[data-stage="${stage.id}"]`, pipe);
     if (!li) return;
     painted += 1;
-    const count = $('.pipe-count b', li) || $('.count b', li);
+    // Session mode shows a plain count; unit detail makes it editable. Both
+    // are the same number and both have to stay honest.
+    const count = $('.count b', li);
     if (count) count.textContent = stage.count;
-    // The editable count on unit detail is the same number; keep it honest.
     const field = $('.count-at', li);
     if (field) field.value = stage.count;
-    const pct = $('.pipe-count .muted', li);
-    if (pct) pct.textContent = `${stage.percent}%`;
-    li.classList.toggle('zero', stage.count === 0);
     li.classList.toggle('empty', stage.count === 0);
     const tick = $('.tick', li);
     if (tick) tick.disabled = !stage.can_advance;

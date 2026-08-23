@@ -383,6 +383,56 @@ def test_dropping_one_list_leaves_the_shared_line_standing(conn, sheets, stages)
         'each list keeps its own models inside the shared line'
 
 
+def test_entries_are_numbered_in_the_order_they_were_added(conn, sheets):
+    """Migration 008 numbered every existing entry by the order it was added.
+    A writer that then left new ones at the column default would make position
+    true of old rows and false of new ones — the worst possible state for a
+    column the report is about to order by."""
+    lid = lists.create_list(conn, 'Saturday')
+    ids = [lists.add_entry(conn, lid, sheets['Boyz'], 20),
+           lists.add_entry(conn, lid, sheets['Nobz'], 5),
+           lists.add_entry(conn, lid, sheets['Boyz'], 10)]
+    rows = conn.execute('SELECT id, position FROM list_entries '
+                        ' WHERE list_id = ? ORDER BY position', (lid,)).fetchall()
+    assert [r['id'] for r in rows] == ids
+    assert [r['position'] for r in rows] == [0, 1, 2]
+
+
+def test_two_lists_number_their_entries_independently(conn, sheets):
+    saturday = lists.create_list(conn, 'Saturday')
+    sunday = lists.create_list(conn, 'Sunday')
+    lists.add_entry(conn, saturday, sheets['Boyz'], 20)
+    second = lists.add_entry(conn, sunday, sheets['Boyz'], 20)
+    row = conn.execute('SELECT position FROM list_entries WHERE id = ?',
+                       (second,)).fetchone()
+    assert row['position'] == 0, 'position is per list, not global'
+
+
+def test_an_entry_from_the_builder_is_marked_manually_resolved(conn, sheets):
+    """It could not have been created without a datasheet Clay chose, which is
+    the same thing migration 008 said about every entry that predated it."""
+    lid = lists.create_list(conn, 'Saturday')
+    entry = lists.add_entry(conn, lid, sheets['Boyz'], 20)
+    row = conn.execute('SELECT raw_name, points, resolved_by FROM list_entries'
+                       ' WHERE id = ?', (entry,)).fetchone()
+    assert row['resolved_by'] == 'manual'
+    assert row['raw_name'] is None and row['points'] is None, \
+        'there was no pasted text to disagree with'
+
+
+def test_a_pasted_entry_keeps_the_line_and_the_points_it_claimed(conn, sheets):
+    """Recorded beside the app's own snapshot, never instead of it — §2.7
+    settled that this app prices a list from the Munitorum manual."""
+    lid = lists.create_list(conn, 'Saturday')
+    entry = lists.add_entry(conn, lid, sheets['Boyz'], 20,
+                            raw_name='20x Boyz [180pts]', points=180)
+    row = conn.execute('SELECT raw_name, points, points_snapshot FROM '
+                       'list_entries WHERE id = ?', (entry,)).fetchone()
+    assert row['raw_name'] == '20x Boyz [180pts]'
+    assert row['points'] == 180
+    assert row['points'] != row['points_snapshot'] or row['points_snapshot'] is None
+
+
 def test_a_box_with_no_contents_cannot_be_wanted(conn):
     empty = conn.execute(
         'INSERT INTO kit_templates (name, created_at, updated_at) '

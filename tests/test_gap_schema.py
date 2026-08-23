@@ -98,10 +98,20 @@ def seeded(tmp_path):
     col.create_unit(conn, sheets['Boyz'], 5)
 
     # And a list, because 008 rebuilds the table its entries live in.
+    #
+    # The entries are written with 007-era SQL rather than through
+    # `lists.add_entry`. That helper targets the current schema — it assigns
+    # `position` and `resolved_by`, columns 008 is about to add — so calling it
+    # here would fail against the very database shape this fixture exists to
+    # reproduce. Application code always runs against a migrated database
+    # (`init_db()` migrates on boot); only this fixture deliberately does not.
     list_id = lists.create_list(conn, 'Saturday', faction_id=orks)
-    entry_ids = [lists.add_entry(conn, list_id, sheets['Boyz'], 20),
-                 lists.add_entry(conn, list_id, sheets['Warboss'], 1),
-                 lists.add_entry(conn, list_id, sheets['Killa Kans'], 3)]
+    entry_ids = []
+    for name, count in (('Boyz', 20), ('Warboss', 1), ('Killa Kans', 3)):
+        entry_ids.append(conn.execute(
+            'INSERT INTO list_entries (list_id, datasheet_id, model_count, '
+            'points_snapshot, is_proxy) VALUES (?, ?, ?, NULL, 0)',
+            (list_id, sheets[name], count)).lastrowid)
     conn.commit()
     conn.close()
     return {'path': path, 'sheets': sheets, 'kit_id': kit_id,

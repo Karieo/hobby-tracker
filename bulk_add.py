@@ -261,8 +261,14 @@ def commit_as_list(conn, rows, name, faction_id=None, points_limit=None,
                                 detachment=detachment)
     added = []
     for row in confirmed:
+        # What the paste said travels with the entry — the line as written and
+        # the points it claimed. Recorded beside the app's own snapshot, never
+        # instead of it, so a later "where did this number come from" has an
+        # answer and re-reading the stored text stays possible.
         entry_id = lists.add_entry(conn, list_id, row['datasheet_id'],
-                                   max(1, int(row.get('count') or 1)))
+                                   max(1, int(row.get('count') or 1)),
+                                   raw_name=row.get('raw') or row.get('name'),
+                                   points=row.get('points_hint'))
         added.append(entry_id)
     return {'list_id': list_id, 'entries': added}
 
