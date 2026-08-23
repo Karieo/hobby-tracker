@@ -68,12 +68,24 @@ preflight generates one if it is blank.
 makes this publicly reachable the moment it starts, and the owner account is
 seeded from `.env` on first run. The preflight refuses `changeme`.
 
-## The tunnel is not optional for scanning
+## An HTTPS origin is not optional for scanning
 
-`getUserMedia` needs a secure context. The tunnel's HTTPS origin provides one; a
-plain-http Tailscale IP or `http://bastion.local:3100` does not, and the camera
-will simply never start there. The scan page says so rather than failing
-quietly, and manual digit entry works either way.
+`getUserMedia` needs a secure context. `http://bastion.local:3100` and a bare
+Tailscale IP are not one, and the camera will simply never start there.
+
+Two doors give you one, and the app does not care which:
+
+- **The Cloudflare Tunnel** — point it at port 3100.
+- **`tailscale serve`** — with HTTPS certs enabled on the tailnet,
+  `tailscale serve --bg 3100` publishes the app at
+  `https://<host>.<tailnet>.ts.net` behind a real certificate. This is a secure
+  context; the "Tailscale doesn't work" warning is about plain-http Tailscale
+  *IPs*, not about MagicDNS names served over TLS. It also keeps the app off
+  the public internet, which the tunnel does not.
+
+Put whichever one you use in `PUBLIC_URL`, so the scan page can hand it over as
+a tappable link instead of describing it. The scan page says so rather than
+failing quietly, and manual digit entry works either way.
 
 ## Rules data
 

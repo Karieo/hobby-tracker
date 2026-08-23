@@ -204,8 +204,10 @@ datasheet, 255 points for Black Templars and 230 for Blood Angels).
   fails silently on every iOS browser. Build against ZXing-js as the *primary*
   decoder; feature-detect `BarcodeDetector` for desktop Chrome but never depend
   on it.
-- `getUserMedia` needs a secure context — the Cloudflare Tunnel provides it, a
-  plain-HTTP Tailscale IP does not.
+- `getUserMedia` needs a secure context — any `https://` origin provides it,
+  whether that is the Cloudflare Tunnel or `tailscale serve` on the MagicDNS
+  name. A plain-HTTP Tailscale **IP** does not, and neither does
+  `http://bastion.local:3100`. `PUBLIC_URL` is whichever one is live.
 - Manual digit entry is non-negotiable: glare, damaged boxes and dim shop
   lighting defeat camera scanning regularly.
 - Split capture from enrichment. Camera stays open, decodes drop onto
