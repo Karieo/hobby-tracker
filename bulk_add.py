@@ -58,7 +58,9 @@ _BULLET = re.compile(r'^[\s\-*•·—]+')
 # Never a bare trailing number: "Boyz x20" ends in a *count*, and reading it
 # as points loses the count and leaves a unit called "Boyz x". Points have to
 # announce themselves — brackets, the word, or a separator before them.
-_POINTS = re.compile(
+# Public for the same reason as SECTION_RE: `list_parse`'s permissive handler
+# reads the very same annotations off a retyped sheet.
+POINTS_RE = re.compile(
     r'\s*(?:'
     r'[\(\[]\s*\d+\s*(?:pts?|points?)?\s*[\)\]]'      # (95)  [200pts]
     r'|[-–—:]\s*\d+\s*(?:pts?|points?)?'                  # - 185 pts   : 95
@@ -69,9 +71,12 @@ _POINTS = re.compile(
 # BattleScribe and New Recruit bracket their sections, and people write their
 # own headings. None of them are units, and reporting them as unresolved names
 # would bury the lines that genuinely need a decision.
-_SECTION = re.compile(
+# Public because `list_parse` skips exactly the same scaffolding. Two copies
+# of these drifting apart is how a line gets read in one paste door and
+# reported as an unknown unit in the other.
+SECTION_RE = re.compile(
     r'^(?:\+{1,3}[^+]*\+{1,3}|#{1,3}\s*\w.*|=+.*=+)$')
-_TOTAL = re.compile(
+TOTAL_RE = re.compile(
     r'^\s*(?:total|points|pts|army|list|detachment|faction|subfaction|'
     r'battle\s*size|show/hide\s*options)\b.*$', re.IGNORECASE)
 
@@ -91,11 +96,11 @@ def parse_lines(text):
         # Scaffolding from whichever app the list came out of. Skipped rather
         # than reported: a screen full of "no datasheet named + HQ +" buries
         # the two lines that actually need Clay to choose something.
-        if _SECTION.match(line) or _TOTAL.match(line):
+        if SECTION_RE.match(line) or TOTAL_RE.match(line):
             continue
 
         points_hint = None
-        stripped = _POINTS.sub('', line)
+        stripped = POINTS_RE.sub('', line)
         # Only when something survives. "20" alone is a count, not a unit whose
         # entire name is its points, and a name that is only digits is not one.
         if stripped and stripped != line and not stripped.isdigit():
