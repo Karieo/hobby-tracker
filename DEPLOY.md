@@ -29,10 +29,16 @@ $EDITOR .env          # OWNER_PASSWORD at minimum; save before running deploy
 a nested copy at `hobby-tracker/hobby-tracker`, which is confusing to find
 later.
 
-### Either flavour of compose works
+### Either flavour of compose works — but type the right one
 
-bastion runs Ubuntu 20.04, which ships the standalone `docker-compose` (v1)
-rather than the `docker compose` plugin. `deploy.sh` uses whichever is present.
+bastion runs Ubuntu 20.04, which ships the standalone **`docker-compose`** (v1)
+rather than the `docker compose` plugin. `deploy.sh` detects and uses whichever
+is present, so the deploy itself does not care.
+
+**You do, when typing commands by hand.** On bastion, `docker compose ps`
+fails with `'compose' is not a docker command` — the hyphen is not optional
+there. Every command below is written the way bastion wants it; drop the hyphen
+if you are on a box with the v2 plugin.
 
 `docker-compose.yml` declares `version: '3.3'` for the same reason. Compose v2
 calls a `version` key obsolete and warns; v1 **requires** it, and without one
@@ -54,7 +60,7 @@ Then point the Cloudflare Tunnel at **port 3100** and verify a backup:
 
 ## The three things that go wrong, and why the preflight checks them
 
-**`.env` must exist before the first `docker compose up`.** Compose bind-mounts
+**`.env` must exist before the first `docker-compose up`.** Compose bind-mounts
 `./.env` into the container. If the file is not there, the Docker daemon creates
 a *directory* with that name, the app reads no config at all, and the obvious
 fix (`cp .env.example .env`) then fails with "is a directory". The preflight
@@ -76,8 +82,7 @@ Tailscale IP are not one, and the camera will simply never start there.
 Two doors give you one, and the app does not care which:
 
 - **The Cloudflare Tunnel** — point it at port 3100.
-- **`tailscale serve`** — with HTTPS certs enabled on the tailnet,
-  `tailscale serve --bg 3100` publishes the app at
+- **`tailscale serve`** — publishes the app at
   `https://<host>.<tailnet>.ts.net` behind a real certificate. This is a secure
   context; the "Tailscale doesn't work" warning is about plain-http Tailscale
   *IPs*, not about MagicDNS names served over TLS. It also keeps the app off
@@ -87,6 +92,36 @@ Put whichever one you use in `PUBLIC_URL`, so the scan page can hand it over as
 a tappable link instead of describing it. The scan page says so rather than
 failing quietly, and manual digit entry works either way.
 
+### Setting up `tailscale serve`, the way it actually went
+
+This is what bastion runs. Three surprises, all of them in the first minute:
+
+```bash
+tailscale serve status              # "No serve config"
+sudo tailscale serve --bg 3100      # sudo is not optional
+```
+
+1. **It needs root.** Without `sudo` it fails with `Access denied: serve config
+   denied`. `sudo tailscale set --operator=$USER` once removes the need, if you
+   would rather not keep typing it.
+2. **A MagicDNS name is not HTTPS.** Before `serve` runs, the name resolves and
+   Safari still says *"couldn't establish a secure connection"* — nothing is
+   listening on 443. The name existing proves only that Tailscale is up.
+3. **The tailnet needs HTTPS certificates enabled** — admin console → DNS →
+   HTTPS Certificates. `serve` refuses with a message saying so if they are off.
+
+Verify from bastion itself before blaming the phone:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:3100/healthz   # the app
+curl -sS -o /dev/null -w '%{http_code}\n' https://bastion.tail25c97e.ts.net/healthz
+```
+
+Both 200 means the phone will work. The second returning **502** means TLS is
+fine and the app is not answering — a container problem, not a Tailscale one.
+
+The config persists across reboots. `tailscale serve --https=443 off` undoes it.
+
 ## Rules data
 
 `data/bsdata/` is fetched rather than committed (65 MB, no licence file), so a
@@ -95,8 +130,8 @@ fresh box has none and there are no datasheets to add units against.
 To redo it by hand:
 
 ```bash
-docker compose exec tracker python3 scripts/fetch_bsdata.py
-docker compose exec tracker python3 scripts/import_bsdata.py
+docker-compose exec tracker python3 scripts/fetch_bsdata.py
+docker-compose exec tracker python3 scripts/import_bsdata.py
 ```
 
 Both are safe to re-run. Hand corrections (`manual_override`,
@@ -131,9 +166,9 @@ snapshot whose schema is ahead of the code you are rolling back to.
 ## Logs and health
 
 ```bash
-docker compose logs -f tracker
+docker-compose logs -f tracker
 curl -fsS http://localhost:3100/healthz
 ```
 
-Compose has a healthcheck on `/healthz` at 30s intervals, so `docker compose ps`
+Compose has a healthcheck on `/healthz` at 30s intervals, so `docker-compose ps`
 shows the container as unhealthy rather than merely running if the app is wedged.

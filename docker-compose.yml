@@ -2,9 +2,13 @@
 # Cloudflare Tunnel.
 #
 #   cp .env.example .env      # then edit SESSION_SECRET, OWNER_*, TIMEZONE
-#   docker compose up -d --build
-#   docker compose exec tracker python3 scripts/fetch_bsdata.py
-#   docker compose exec tracker python3 scripts/import_bsdata.py
+#   docker-compose up -d --build
+#   docker-compose exec tracker python3 scripts/fetch_bsdata.py
+#   docker-compose exec tracker python3 scripts/import_bsdata.py
+#
+# The hyphen matters on bastion: Ubuntu 20.04 ships standalone docker-compose
+# (v1), where `docker compose` fails with "'compose' is not a docker command".
+# deploy.sh detects either; typed commands do not.
 #
 # The tunnel supplies HTTPS, which getUserMedia requires — barcode scanning
 # will not work over plain http on a Tailscale IP.
