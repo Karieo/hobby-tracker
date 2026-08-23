@@ -179,11 +179,16 @@ Measured 2026-08-22, from the code rather than memory.
 | 2.4 Building | **Built.** The ladder's first half, moved a whole unit at a time. Not a separate mode — building and painting are one pipeline. |
 | 2.5 Painting | **Built.** Paint mode, session mode, per-unit pipeline, and basing applicability. |
 | 2.6 List → gap → wishlist | **Built.** The gap splits buy from paint; the shortfall raises a wishlist tagged with the list that wanted it. |
-| 2.7 List import | **Not built.** Blocked on a source — every candidate host is refused by egress policy. |
+| 2.7 List import | **Built.** Paste a list, confirm every line, and it lands on its own gap report. The paste door needs no source; fetching one still has none. |
 
-Walked end to end against a fresh database: 10 of the 11 checks in the loop
-pass, the eleventh being 2.7. Buying the shortfall closes the gap, which is the
-loop actually closing rather than each step working alone.
+Walked end to end against a fresh database: all 11 checks in the loop pass.
+Buying the shortfall closes the gap, which is the loop actually closing rather
+than each step working alone.
+
+2.7 sat marked "blocked on a source" longer than it deserved. That was true of
+*fetching* a list — every candidate host is still refused by egress policy —
+but never of pasting one, and pasting is the door that always works. The
+file and photo doors remain unbuilt; neither is needed for the loop to close.
 
 Rules data is in place for all of it: 1,445 Warhammer 40,000 datasheets, 2,544
 points rows, 1,450 Kill Team operatives.
@@ -201,7 +206,8 @@ The loop's own order, not the old step numbers:
 4. ~~**List builder, gap, wishlist** (2.6)~~ — done.
 5. ~~**Onboarding at shelf scale** (2.2, 2.3)~~ — done. The sweep, the box
    page, identify mode, adopt-all, the derived catalogue, and paste-import.
-6. **List import** (2.7) — remaining, and gated on a source.
+6. ~~**List import** (2.7)~~ — done, by paste. The blocker was on fetching a
+   list, not on receiving one.
 
 What is left after that is not new machinery but the things the loop makes
 worth having: allocating models between competing lists, and a build mode of
