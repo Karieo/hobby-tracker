@@ -306,6 +306,15 @@ button.huge { width: 100%; font-size: 1.15rem; padding: 1.1rem; min-height: 64px
    control that happens to submit a form does not come out looking primary. */
 button.danger { background: transparent; color: var(--bad); border-color: var(--bad); }
 button:disabled { opacity: .4; cursor: not-allowed; }
+/* Clay: "only show the − and + that have models available to move." A rung
+   with nothing at it has nothing to step back, and the top rung has nowhere
+   to go — greyed-out buttons on every such row are noise on the one screen
+   that is meant to be read at a glance.
+
+   visibility, not display: the button keeps its space, so the counts stay in
+   one column down the ladder. Hiding them outright makes every number sit at
+   a different place on the row and the pipeline stops reading as a pipeline. */
+.nudge button:disabled { visibility: hidden; }
 .ghost { background: transparent; color: var(--muted); font-size: .9rem; }
 .stepper { display: flex; gap: .3rem; align-items: center; }
 .stepper input { width: 3.6rem; text-align: center; padding: .6rem .3rem; }
@@ -666,15 +675,17 @@ a.go {
 /* Header actions never wrap mid-phrase. */
 .page > .ghost, .page > a.ghost { white-space: nowrap; }
 
-/* An editable count inside a rung. Same box as the read-only one on the paint
-   session, so the two screens read as the same control. */
+/* The count inside a rung. It was an <input> and is now a <span>, so this no
+   longer needs to undo any field styling — but it keeps the same box as the
+   paint session's, because the two screens are the same control and should
+   not drift apart again. */
 .rung .count-at {
-  width: 3.2rem; min-height: 40px; margin: 0; text-align: center;
+  width: 3.2rem; min-height: 40px; text-align: center;
   font-variant-numeric: tabular-nums; background: var(--panel-2);
-  border: 1px solid var(--rule); color: var(--ink); padding: 0 .2rem;
+  border: 1px solid var(--rule); color: var(--ink);
+  display: inline-flex; align-items: center; justify-content: center;
 }
 .rung.na .count-at { opacity: .4; }
-.rung .count-at:disabled { cursor: not-allowed; }
 
 /* ── Desktop: use the width, don't just stretch into it ──
    The phone layout is the baseline and stays exactly as it is. On a wide

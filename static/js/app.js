@@ -81,12 +81,12 @@ function repaintPipe(breakdown) {
     const li = $(`[data-stage="${stage.id}"]`, pipe);
     if (!li) return;
     painted += 1;
-    // Session mode shows a plain count; unit detail makes it editable. Both
-    // are the same number and both have to stay honest.
+    // Both screens show a plain number now — unit detail used to make it an
+    // editable field. Same number either way, and both have to stay honest.
     const count = $('.count b', li);
     if (count) count.textContent = stage.count;
     const field = $('.count-at', li);
-    if (field) field.value = stage.count;
+    if (field) field.textContent = stage.count;
     li.classList.toggle('empty', stage.count === 0);
     const tick = $('.tick', li);
     if (tick) tick.disabled = !stage.can_advance;
@@ -159,11 +159,37 @@ document.addEventListener('click', (e) => {
 
   const untick = e.target.closest('button.untick');
   if (untick && untick.dataset.unit) {
+    // The bottom rung has nowhere to step back to, so its −1 takes the model
+    // out of the collection instead. Confirmed, unlike every other tap on this
+    // screen: the rest move models between stages and are undone by tapping
+    // the other way, and this one cannot be — +1 here advances a model, it
+    // does not conjure one back.
+    if (untick.classList.contains('removes')) {
+      if (window.confirm('Remove one model from the collection? '
+                         + 'This cannot be undone.')) {
+        removeOne(untick.dataset.unit);
+      }
+      return;
+    }
     retreat(untick.dataset.unit,
             {count: 1, from_stage_id: Number(untick.dataset.from)});
     return;
   }
 });
+
+/* Taking one model off the bottom of the ladder. A correction — plastic that
+ * was never there — and not how a sold kit leaves, which keeps its models and
+ * its spend history. */
+async function removeOne(unitId) {
+  try {
+    const data = await post(`/api/units/${unitId}/models`, {count: 1}, 'DELETE');
+    if (data && data.unit_deleted) { location.href = '/collection'; return; }
+    toast('Removed one model');
+    setTimeout(() => location.reload(), 600);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
 
 /* ── Bulk model selection ────────────────────────────────
  * The escape hatch, not the default path. It still has to be good: select-all,
@@ -213,43 +239,6 @@ if (bulkForm) {
     } catch (err) { toast(err.message, 'error'); }
   });
 }
-
-/* ── "N of them are at X" ────────────────────────────────
- * For most real updates this replaces selection entirely — you know six are
- * primed, you don't know or care which six.
- *
- * Typed straight into the rung it refers to, rather than into a separate form
- * with its own stage picker: the stage is the row you are typing in, so there
- * is nothing to re-select and nothing to get out of step with the pipeline
- * above it. Commits on change (blur or Enter), not on every keystroke — a
- * partially-typed "1" on the way to "12" would otherwise reconcile to one. */
-document.addEventListener('change', async (e) => {
-  const field = e.target.closest('.count-at');
-  if (!field) return;
-  const wanted = Math.max(0, Number(field.value) || 0);
-  field.value = wanted;
-  try {
-    const data = await post(`/api/units/${field.dataset.unit}/stage`, {
-      stage_id: Number(field.dataset.stage),
-      count: wanted,
-    });
-    // Repaint from the server's answer either way. Asking for six when the
-    // unit holds five legitimately moves nothing, and the field must not keep
-    // showing the six — a count that disagrees with the data is worse than no
-    // count, and this is the number the whole screen is about.
-    repaintPipe(data.breakdown);
-    if (!data.moved) {
-      toast(`Still ${field.value} there`, 'warn');
-      return;
-    }
-    toast(`${data.moved} model${data.moved === 1 ? '' : 's'} updated`);
-    // The bars and percentages elsewhere on the page are server-rendered.
-    setTimeout(() => location.reload(), 700);
-  } catch (err) {
-    toast(err.message, 'error');
-    setTimeout(() => location.reload(), 600);
-  }
-});
 
 const moveForm = $('#move-form');
 if (moveForm) {

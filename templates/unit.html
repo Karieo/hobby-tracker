@@ -40,6 +40,12 @@
   <div class="detail-cols">
   <section class="col-work">
   <h2>Pipeline</h2>
+  {# `ns.first_owned` marks the bottom rung — "On sprue" for most units. Its
+     −1 has nowhere to step back to, so until now it was enabled, moved
+     nothing, and toasted "Nothing to step back": a live-looking control that
+     could never do anything. It removes a model instead, which is the thing
+     Clay actually wanted there. #}
+  {% set ns = namespace(first_owned=true) %}
   <ul class="ramp" data-unit="{{ unit.id }}">
     {% for s in breakdown %}
       {% if s.is_owned %}
@@ -50,18 +56,24 @@
           <span class="swatch s{{ s.position }}"></span>
           <span class="rname">{{ s.name }}</span>
           <span class="nudge">
-            <button class="untick" data-unit="{{ unit.id }}" data-from="{{ s.id }}"
-                    {% if not s.count or not s.applies %}disabled{% endif %}
-                    aria-label="step one model back from {{ s.name }}">−1</button>
-            {# autocomplete=off matters here. Browsers restore typed form values
-               across location.reload(), so without it a count that the server
-               refused — asking for six when the unit holds five — would keep
-               showing six while the database held five. A number that disagrees
-               with the data is worse than no number. #}
-            <input class="count-at" type="number" min="0" max="{{ models|length }}"
-                   value="{{ s.count }}" data-unit="{{ unit.id }}" autocomplete="off"
-                   data-stage="{{ s.id }}" {% if not s.applies %}disabled{% endif %}
-                   aria-label="how many models are at {{ s.name }}">
+            {% if ns.first_owned %}
+              <button class="untick removes" data-unit="{{ unit.id }}"
+                      data-from="{{ s.id }}"
+                      {% if not s.count or not s.applies %}disabled{% endif %}
+                      aria-label="remove one model from the collection">−1</button>
+            {% else %}
+              <button class="untick" data-unit="{{ unit.id }}" data-from="{{ s.id }}"
+                      {% if not s.count or not s.applies %}disabled{% endif %}
+                      aria-label="step one model back from {{ s.name }}">−1</button>
+            {% endif %}
+            {# A number to read, not a field to type in — the same control
+               paint mode has always had. It was an input so a count could be
+               reconciled by typing it; what that cost was a box that looks
+               editable on every rung of a ladder whose actual controls are the
+               two buttons beside it. Reconciling still has three doors: −1/+1,
+               "Advance" with a count, and picking models below. #}
+            <span class="count-at" data-stage="{{ s.id }}"
+                  aria-label="{{ s.count }} at {{ s.name }}">{{ s.count }}</span>
             {% if s.is_terminal %}
               <button disabled aria-hidden="true">—</button>
             {% else %}
@@ -71,6 +83,7 @@
             {% endif %}
           </span>
         </li>
+        {% set ns.first_owned = false %}
       {% endif %}
     {% endfor %}
   </ul>
@@ -84,9 +97,10 @@
     </div>
   </div>
   <p class="hint">
-    Type into a count to reconcile it — "six of these ten are primed". It fills
-    from behind first, so the models furthest back catch up and anything
-    finished is disturbed last.
+    Advancing a count fills from behind first, so the models furthest back
+    catch up and anything finished is disturbed last — "six of these ten are
+    primed" never asks which six. The bottom rung's −1 removes a model from
+    the collection; every other −1 steps one back a stage.
   </p>
 
   </section>

@@ -1704,3 +1704,52 @@ def test_the_unit_page_offers_the_control(client, army_with_unit):
     assert 'id="remove-models"' in body
     assert 'Dispose of the kit' in body, \
         'the panel has to say what this is not, or it becomes the disposal path'
+
+
+# ── The ramp's bottom rung ───────────────────────────────
+#
+# Clay, on the unit page: "Can the negative 1 on the 'on Sprue' remove the
+# model from inventory and make the number between the - and + non editable.
+# And only show the - and + that have models available to move."
+#
+# The first of those fixed a control that had always been live and inert:
+# retreat_unit skips models at the first owned stage, so −1 there moved
+# nothing and toasted "Nothing to step back".
+
+def test_the_bottom_rung_is_marked_as_removing(client, army_with_unit):
+    """It calls a different endpoint from every other −1, so the markup has to
+    say which it is — a class the handler branches on."""
+    body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    assert 'class="untick removes"' in body
+    assert body.count('class="untick removes"') == 1, \
+        'exactly one rung removes — the rest step back a stage'
+    assert 'remove one model from the collection' in body
+
+
+def test_the_counts_are_not_editable(client, army_with_unit):
+    """A number to read, not a field to type in. Paint mode has always shown
+    it this way; this is the two screens agreeing."""
+    body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    assert 'class="count-at"' in body
+    assert '<input class="count-at"' not in body
+
+
+def test_paint_mode_never_offers_to_delete(client, army_with_unit):
+    """Same dead button there, but a painting session with wet hands is no
+    place for an irreversible one. Off, not repurposed."""
+    body = client.get(f'/paint/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    assert 'removes' not in body
+    first = body.index('class="untick"')
+    assert 'disabled' in body[first:first + 260], \
+        "the bottom rung's −1 has nowhere to step back to"
+
+
+def test_inert_nudge_buttons_are_hidden_not_greyed(client):
+    """"only show the − and + that have models available to move" — and with
+    visibility, so the counts stay in one column down the ladder."""
+    body = client.get('/static/css/app.css').get_data(as_text=True)
+
+    assert '.nudge button:disabled { visibility: hidden; }' in body
