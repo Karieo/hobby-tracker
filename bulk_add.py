@@ -24,6 +24,7 @@ Team, and several names repeat across factions — picking one because it sorted
 first is exactly the silent corruption the rules-data importer refuses to do.
 """
 
+import difflib
 import re
 
 import collection as col
@@ -49,6 +50,31 @@ _LEADING_COUNT = re.compile(r'^(\d+)\s*[x×]?\s+(.*)$', re.IGNORECASE)
 _TRAILING_COUNT = re.compile(r'^(.*?)\s*[x×]\s*(\d+)$', re.IGNORECASE)
 _BULLET = re.compile(r'^[\s\-*•·—]+')
 
+# An army list carries its points, and every app writes them differently:
+#   Captain (95)      Captain [95pts]      Captain - 95 points      Captain: 95
+# They are stripped rather than read. This app prices a list from the Munitorum
+# manual itself, so a number copied out of someone else's app is at best a
+# duplicate and at worst a stale one from a previous edition.
+# Never a bare trailing number: "Boyz x20" ends in a *count*, and reading it
+# as points loses the count and leaves a unit called "Boyz x". Points have to
+# announce themselves — brackets, the word, or a separator before them.
+_POINTS = re.compile(
+    r'\s*(?:'
+    r'[\(\[]\s*\d+\s*(?:pts?|points?)?\s*[\)\]]'      # (95)  [200pts]
+    r'|[-–—:]\s*\d+\s*(?:pts?|points?)?'                  # - 185 pts   : 95
+    r'|\d+\s*(?:pts?|points?)'                             # 185pts
+    r')\s*$',
+    re.IGNORECASE)
+
+# BattleScribe and New Recruit bracket their sections, and people write their
+# own headings. None of them are units, and reporting them as unresolved names
+# would bury the lines that genuinely need a decision.
+_SECTION = re.compile(
+    r'^(?:\+{1,3}[^+]*\+{1,3}|#{1,3}\s*\w.*|=+.*=+)$')
+_TOTAL = re.compile(
+    r'^\s*(?:total|points|pts|army|list|detachment|faction|subfaction|'
+    r'battle\s*size|show/hide\s*options)\b.*$', re.IGNORECASE)
+
 
 def parse_lines(text):
     """Turn pasted text into `{count, name, stage_word, raw}` per line.
@@ -62,6 +88,20 @@ def parse_lines(text):
         line = line.rstrip('.,;')
         if not line:
             continue
+        # Scaffolding from whichever app the list came out of. Skipped rather
+        # than reported: a screen full of "no datasheet named + HQ +" buries
+        # the two lines that actually need Clay to choose something.
+        if _SECTION.match(line) or _TOTAL.match(line):
+            continue
+
+        points_hint = None
+        stripped = _POINTS.sub('', line)
+        # Only when something survives. "20" alone is a count, not a unit whose
+        # entire name is its points, and a name that is only digits is not one.
+        if stripped and stripped != line and not stripped.isdigit():
+            found = re.search(r'(\d+)', line[len(stripped):])
+            points_hint = int(found.group(1)) if found else None
+            line = stripped.strip()
 
         stage_word = None
         words = line.split()
@@ -84,7 +124,8 @@ def parse_lines(text):
         if not name:
             continue
         parsed.append({'raw': raw.strip(), 'name': name,
-                       'count': max(1, count), 'stage_word': stage_word})
+                       'count': max(1, count), 'stage_word': stage_word,
+                       'points_hint': points_hint})
     return parsed
 
 
@@ -154,18 +195,71 @@ def _near_misses(conn, name, rows, limit=8):
         return []
     words = set(key.split())
 
-    def score(row):
-        other = norm(row['name'])
-        if key in other or other in key:
-            return 0
-        if other[:4] and other[:4] == key[:4]:
-            return 1
-        overlap = words & set(other.split())
-        return 2 if overlap else 99
+    def rank(row):
+        """Lower is better. Similarity decides, not the alphabet.
 
-    ranked = sorted(((score(r), r['name'], r) for r in rows),
-                    key=lambda t: (t[0], t[1]))
-    return [dict(row) for rank, _name, row in ranked if rank < 99][:limit]
+        This used to bucket by a shared four-letter prefix and then sort the
+        bucket by name, which is arbitrary exactly where it matters. "Killa
+        Kanz" — one letter off Killa Kans — suggested Kill Krusha, Kill Rig and
+        Kill Tank, and not the unit Clay meant; "Intercesor Squad" put
+        Interceptor Squad above Intercessor Squad. Someone tapping the first
+        suggestion in a hurry gets the wrong datasheet, which is precisely the
+        silent wrong answer the unresolved-line machinery exists to prevent.
+
+        A one-letter typo is now what it looks like: a near-identical string.
+        difflib is stdlib, so this stays a no-dependency, no-build-step app.
+        """
+        other = norm(row['name'])
+        ratio = difflib.SequenceMatcher(None, key, other).ratio()
+        contained = key in other or other in key
+        overlap = bool(words & set(other.split()))
+        # Keep the old signals as a floor: containment and a shared word are
+        # meaningful even when the strings are different lengths.
+        if not contained and not overlap and ratio < 0.55:
+            return None
+        return (-ratio, len(other), other)
+
+    ranked = []
+    for row in rows:
+        score = rank(row)
+        if score is not None:
+            ranked.append((score, row))
+    ranked.sort(key=lambda t: t[0])
+    return [dict(row) for _score, row in ranked][:limit]
+
+
+def commit_as_list(conn, rows, name, faction_id=None, points_limit=None,
+                   detachment=None):
+    """Turn confirmed rows into an army list rather than into owned models.
+
+    Spec §2.7, the last step of the loop. It is the same paste, the same
+    matching and the same per-line confirmation as adding models — the only
+    difference is where a confirmed line lands. A list says what Clay *wants to
+    field*; the collection says what he *has*. Keeping them apart is the whole
+    point, because the gap between them is what the app is for.
+
+    The pasted points are deliberately not stored. `add_entry` prices each
+    entry from the Munitorum manual this app imported, scoped by faction — a
+    number copied out of someone else's app is at best a duplicate and at worst
+    a stale one from a previous edition, and it would quietly outrank the
+    official figure in every total the gap report shows.
+    """
+    import lists
+
+    confirmed = [r for r in rows if r.get('datasheet_id') and not r.get('skip')]
+    if not confirmed:
+        raise ValueError('nothing to import — every line was skipped or '
+                         'unresolved')
+
+    list_id = lists.create_list(conn, name, faction_id=faction_id,
+                                points_limit=points_limit,
+                                detachment=detachment)
+    added = []
+    for row in confirmed:
+        entry_id = lists.add_entry(conn, list_id, row['datasheet_id'],
+                                   max(1, int(row.get('count') or 1)))
+        added.append(entry_id)
+    return {'list_id': list_id, 'entries': added}
 
 
 def stage_ids(conn):

@@ -919,6 +919,62 @@ def api_add_commit():
         return jsonify({'error': str(exc)}), 400
 
 
+# ── List import (spec §2.7) ──────────────────────────────
+#
+# The last step of the loop, and it was recorded as blocked on a source for
+# longer than it deserved. That was true of *fetching* a list from the web —
+# every candidate host is refused by egress policy — but it was never true of
+# pasting one, and pasting is the door that always works. A list arrives as
+# text far more often than as a file: out of a chat message, a forum post, a
+# photo of a printed sheet retyped, someone's app export.
+
+@app.route('/lists/import')
+def import_list_page():
+    with _read() as conn:
+        return render_template(
+            'list_import.html', factions=col.list_factions(conn))
+
+
+@app.route('/lists/import/preview', methods=['POST'])
+def import_list_preview():
+    """Every pasted line, matched or not, before anything is written.
+
+    The same per-line confirmation the collection paste uses, for the same
+    reason: a silently dropped line is a unit Clay turns up to a game without.
+    """
+    text = request.form.get('text') or ''
+    system = request.form.get('game_system') or None
+    with _read() as conn:
+        rows = bulk_add.match_lines(conn, bulk_add.parse_lines(text),
+                                    game_system=system)
+        return render_template(
+            'list_import_preview.html', rows=rows, text=text,
+            game_system=system,
+            name=(request.form.get('name') or '').strip(),
+            points_limit=_int(request.form.get('points_limit')),
+            faction_id=_int(request.form.get('faction_id')),
+            factions=col.list_factions(conn),
+            unresolved=sum(1 for r in rows if not r['datasheet_id']))
+
+
+@app.route('/api/lists/import', methods=['POST'])
+def api_import_list():
+    data = _payload()
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'The list needs a name'}), 400
+    try:
+        with _write() as conn:
+            result = bulk_add.commit_as_list(
+                conn, data.get('rows') or [], name,
+                faction_id=_int(data.get('faction_id')),
+                points_limit=_int(data.get('points_limit')),
+                detachment=(data.get('detachment') or '').strip() or None)
+            return jsonify(result), 201
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
 @app.route('/box/<code>')
 def box_page(code):
     """Everything known about one barcode, reached by scanning the box itself.
