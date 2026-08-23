@@ -94,8 +94,9 @@ every browser on iOS. Since an iPhone is the target, depending on it would mean
 the scanner never fires on the only phone that matters. It is feature-detected
 and used when present, and nothing relies on it.
 
-The camera needs a secure context, which the Cloudflare Tunnel provides and a
-plain-http Tailscale IP does not — the page says so rather than failing quietly.
+The camera needs a secure context, which any `https://` origin provides — the
+Cloudflare Tunnel or `tailscale serve` on a MagicDNS name — and a plain-http
+Tailscale IP does not; the page says so rather than failing quietly.
 **Typing the digits is always available**, because glare, damaged boxes and dim
 shop lighting defeat camera scanning regularly.
 

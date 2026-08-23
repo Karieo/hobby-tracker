@@ -1097,9 +1097,11 @@ def test_faction_pickers_never_print_a_bare_ambiguous_name(client):
 # ── The camera's secure-context guard ────────────────────
 #
 # getUserMedia refuses to run outside a secure context, so scanning does
-# nothing over a plain-http LAN or Tailscale address. The app cannot fix that
-# — but "use the tunnel address" is a poor answer to give someone holding a
-# box, so it hands over the address instead of naming it.
+# nothing over a plain-http LAN address or a bare Tailscale IP. The app cannot
+# fix that — but "use the HTTPS address" is a poor answer to give someone
+# holding a box, so it hands over the address instead of naming it. Any
+# https:// origin qualifies: the Cloudflare Tunnel, or tailscale serve on the
+# MagicDNS name.
 
 def test_the_scan_page_offers_the_secure_address(client, monkeypatch):
     import app as appmod
