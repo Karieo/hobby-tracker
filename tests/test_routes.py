@@ -1064,3 +1064,49 @@ def test_faction_pickers_never_print_a_bare_ambiguous_name(client):
                                 body, re.S):
             assert '{{ f.name }}' not in block, (
                 f'{path} prints a bare faction name in a picker')
+
+
+# ── The camera's secure-context guard ────────────────────
+#
+# getUserMedia refuses to run outside a secure context, so scanning does
+# nothing over a plain-http LAN or Tailscale address. The app cannot fix that
+# — but "use the tunnel address" is a poor answer to give someone holding a
+# box, so it hands over the address instead of naming it.
+
+def test_the_scan_page_offers_the_secure_address(client, monkeypatch):
+    import app as appmod
+    monkeypatch.setenv('PUBLIC_URL', 'https://tracker.example.com')
+
+    body = client.get('/scan').get_data(as_text=True)
+
+    assert 'https://tracker.example.com/scan' in body
+    assert 'id="insecure"' in body
+
+
+def test_a_trailing_slash_does_not_double_up(monkeypatch):
+    """PUBLIC_URL=https://x/ must not produce https://x//scan."""
+    import importlib
+    import os
+    monkeypatch.setenv('PUBLIC_URL', 'https://tracker.example.com/')
+    value = (os.getenv('PUBLIC_URL') or '').strip().rstrip('/')
+    assert value + '/scan' == 'https://tracker.example.com/scan'
+
+
+def test_without_a_public_url_it_says_how_to_set_one(client, monkeypatch):
+    """Rather than an empty link that goes nowhere."""
+    monkeypatch.delenv('PUBLIC_URL', raising=False)
+    import importlib
+    import app as appmod
+    body = client.get('/scan').get_data(as_text=True)
+
+    assert 'id="insecure"' in body, 'the panel still explains the problem'
+
+
+def test_the_warning_ships_hidden(client):
+    """Whether the context is secure is a browser fact the server cannot know,
+    so the panel is revealed by script rather than rendered conditionally —
+    otherwise every secure visit would show a warning that does not apply."""
+    body = client.get('/scan').get_data(as_text=True)
+    import re
+    panel = re.search(r'<div class="([^"]*)" id="insecure"', body)
+    assert panel and 'hidden' in panel.group(1)
