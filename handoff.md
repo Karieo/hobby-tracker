@@ -2,194 +2,203 @@
 
 ## Goal
 
-Three goals across this session, in order.
+One goal this session, arrived at in stages: **build the list gap checker** —
+paste a list, and be told what to buy, what to build, what to paint, and what
+is already on the shelf. Spec §8 (uploaded as "Section 7"), five commits, each
+stopped at for review.
 
-1. **Get Clay's collection into the app** as easily as possible. He is starting
-   from zero and the collection is **mostly still boxed**.
-2. **Know what exists, not just what he owns** — "find all of the models and box
-   sets out there that someone could add to their collection", plus a **weekly
-   sweep for new releases**.
-3. **Make it look like the design he drew.** Clay built `Tracker Wireframes` in
-   Claude Design and asked for it in the app: the theme, the fonts, and the
-   three loop screens. Everything after that came out of using it — the ramp,
-   the desktop layout, USD and Central time, the doubled faction list, the
-   camera's HTTPS guard, adding a set by name, and the last unbuilt loop step.
+Three things attached themselves to it along the way:
 
-He may share the app with other people later; the form is undecided, so nothing
-here builds toward accounts and nothing here makes that harder.
+1. **A full review of every spec** — Clay asked for it mid-build: missed
+   requirements, a code review, dead code removed.
+2. **`GET /api/export/inventory`** — the first of spec §9's ten dropped
+   requirements to be discharged, from an uploaded export spec.
+3. **Provenance for the rules data** — "how often are the MFM and the
+   datasheets imported?" turned out to have no answer anywhere in the app.
 
 ## Current state
 
-Working and browser-verified at 430px and 1440px. **570 tests green.**
+**686 tests green.** ShellCheck clean. Working tree clean at `a8f707d`.
+`main` has everything; nothing is in flight.
 
-**The loop closes.** All eleven end-to-end checks pass against a fresh
-database: buy → scan → onboard → build → paint → list → gap → wishlist → buy,
-and now a list can arrive by paste as well as by hand.
-
-Merged: **#17**–**#24**. On the branch and pushed, no PR yet: the list-import
-commit (`f027ca7`).
+Merged this session: **#27** (commits 1–2), **#28** (the review pass +
+commit 3), **#29** (commit 4, the export, the rules-data work), **#30**
+(commit 5).
 
 | Piece | State |
 |---|---|
-| Rules data (every unit in the game) | 1,445 40k datasheets + 1,450 Kill Team operatives. **Already complete**; re-run the two BSData scripts to refresh |
-| Box catalogue (contents, EANs) | 9 entries. Grows weekly + from scanned codes. No bulk source exists |
-| Weekly sweep | Armed: Mondays 14:00 UTC (9am CDT), fresh session, push notification |
-| Scan → sweep → identify → adopt | Built, verified |
-| Paste import `/add` (models) | Built, verified |
-| Catalogue `/catalogue` | Built, verified |
-| Add a set by name `/sets/new` | Built, verified |
-| **List import `/lists/import` (spec §2.7)** | **Built, verified.** The last loop step |
-| Theme, fonts, desktop layout | Built. `Tracker Wireframes` ground, Pirata One + Special Elite served locally |
+| Gap report `/lists/<id>` (spec §8) | **Built, browser-verified.** Six row states, live on every load, never stored |
+| Allocation (`list_allocate.py`) | Built. Two passes, models consumed as they go |
+| Resolution (`list_resolve.py`) | Built. Alias → exact → fuzzy → null. Aliases learned from every hand pick |
+| Export parser (`list_parse.py`) | Built. GW app + New Recruit + plain; **never drops a line** |
+| `GET /api/export/inventory` (§9.1) | Built. JSON or CSV, bearer token from `api_tokens` |
+| `/reference` provenance | Built. Which manual priced the database, and whether `data/mfm/` is newer |
+| `scripts/check_rules_pins.py` | Built, wired into the weekly sweep. Reports; never bumps |
+| Spec §8 and §9 | Written into the repo. Section 7 existed only as a chat upload |
 
-## The three doors, and why there are three
+**Migration 008 is pending on bastion.** It is applied here and in CI.
 
-Every way data gets in is the same bargain: something pre-fills a form, Clay
-confirms it, nothing is saved before he does.
+## The bug the whole thing existed to kill
 
-- **Barcode** — the box identifies itself. Fastest, and the only one that
-  supplies an EAN.
-- **Name** — `/sets/new`, for a box with no code to hand or a code the camera
-  will not read.
-- **Paste** — `/add` for models, `/lists/import` for a list. Needs nothing
-  fetched, no format supported, no site reachable. It is the door that always
-  works, which is why §2.7 turned out not to be blocked after all.
+`lists.list_gap` counted ownership per entry with nothing consuming a model
+once assigned. A list wanting two ten-model Boyz mobs and one twenty-model mob
+matched all three against the same twenty Boyz and reported **fieldable**.
+Reproduced against shipped code before a line of the replacement was written:
+it needed forty, owned twenty, said `to_buy=0 fieldable=True`.
+
+`list_allocate.allocate` now answers that correctly — short 10 — and
+`lists.list_gap` is a name over it, so `raise_wishlist` and the list index
+inherit the fix. The wishlist had been reading the same double-counted numbers
+and under-asking for exactly the models Clay would have found missing at the
+table.
 
 ## Active files
 
-- `bulk_add.py` — `parse_lines`, `match_lines`, `commit`, `commit_as_list`
-- `templates/list_import.html`, `templates/list_import_preview.html`,
-  `static/js/list-import.js`
-- `app.py` — `/lists/import`, `/lists/import/preview`, `/api/lists/import`,
-  `/sets/new`, `money` filter, `public_url`
-- `static/css/app.css` — the theme tokens, `.ramp`/`.rung`, the desktop layer
-- `collection.py` — `home_summary`, `stalled_unit`, `retreat_unit`
-- `migrations/007_merge_duplicate_factions.sql`
-- `seed/data/kits/*.yaml`, `seed/derived_kits.py`, `docs/weekly-sweep.md`
+- `list_parse.py` — `parse`, three format handlers, `ParsedList`/`ParsedEntry`
+- `list_resolve.py` — `similarity`, `normalise`, `resolve_entry`, `learn_alias`
+- `list_allocate.py` — `allocate`, `_pass_one`, `_pass_two`, `_candidates`,
+  `_summarise`, `_state`, `_army_clause`
+- `lists.py` — `list_gap` (now a thin name), `import_list`, `reparse`,
+  `add_entry`, `raise_wishlist`
+- `rules_data.py` — all three pins, `mfm_meta`, `provenance`, `check_pins`
+- `collection.py` — `export_inventory`, `add_or_extend_unit`, `add_models`,
+  `buildable_options`, `set_built_as`
+- `app.py` — `/api/export/inventory`, `TOKEN_PATHS`, `_bearer_token`,
+  `PATCH /api/lists/<id>/entries/<eid>`, `POST /api/lists/<id>/reparse`,
+  `POST /api/units/<id>/built-as`
+- `migrations/008_gap_checker_schema.sql`
+- `templates/list.html`, `static/js/list-report.js`, `templates/reference.html`
+- `scripts/api_token.py`, `scripts/check_rules_pins.py`,
+  `scripts/report_kit_datasheets.py`
 
 ## Changes made
 
-**#17** — collection screen made actionable; queue sweep; `/box/<code>` and
-identify mode; adopt-all by barcode; `/add` paste import; `names.py`.
+**Commit 1 — what a model is, and what it could be.** Migration 008:
+`models.datasheet_id` and `models.is_flexible`, `kit_datasheets`,
+`datasheet_aliases`, `army_lists` provenance columns, and `list_entries`
+rebuilt (SQLite cannot drop NOT NULL) with `position`, `raw_name`, `points`,
+`resolved_by`.
 
-**#18** — catalogue split per faction with duplicate refusal; barcode learning
-from scans; `docs/weekly-sweep.md`; weekly Routine armed; 4 products researched.
+**Commit 2 — read the export, lose nothing.** `list_parse.py`. Detects the
+format, drops the preamble, carries points and position. `/lists/import` uses
+it now, so a real export's header is dropped rather than reported as four
+unknown units; `/add` still uses `bulk_add.parse_lines`, which is right for it
+— that one reads a shelf typed from memory and *may* skip a line. The two
+share `SECTION_RE`, `TOTAL_RE`, `POINTS_RE` so they cannot drift.
 
-**#19** — `/catalogue` browse/search/filter; want a box (records *which* box);
-own a box; search covers units inside a box, not just its name.
+**The review pass.** Ten requirements the 2026-08-22 re-scope dropped without
+deciding against, now spec §9. Section 7 appended as spec §8. A whole orphaned
+CSS block and `repaintPipe`'s dead `||` fallbacks removed.
 
-**#20–#21** — the Tracker Wireframes ground: theme tokens, locally-served
-fonts, every radius zeroed, home/collection/unit rebuilt, the **ramp** with its
-−1 rung (`retreat_unit`, which did not exist), and a desktop layout instead of
-a stretched phone one.
+**Commit 3 — name to datasheet, or admit it could not.** Alias, exact, fuzzy
+above 90 with a 10-point margin, else null. The alias write-back lives inside
+`resolve_entry` so no route can forget it.
 
-**#22** — USD and `America/Chicago` throughout, via a `money` filter and a
-configured timezone; then migration `007` **merging** the duplicated factions
-rather than labelling them, because the Kill Team importer had created a second
-Adepta Sororitas rather than reusing the 40k one. Verified first that the
-faction-scoped points join could not be corrupted by the merge.
+**Commit 4 — one model, one place.** `list_allocate.py`. Pass 1 spends models
+that already are the datasheet, largest requirement first, battle-ready first.
+Pass 2 fills the rest from plastic that *could become* it, most-constrained
+requirement first, magnetised-and-ready before bare sprues.
 
-**#23** — the camera's HTTPS guard now hands over the tunnel address instead of
-telling Clay to go find it.
+**Commit 5 — the report.** `/lists/<id>` rebuilt as §8's view: three stat
+tiles, points as a sentence, the unassigned toggle, six `row-<state>` classes,
+an inline picker on unresolved rows that teaches the alias table, a "which
+models" expansion, and "read it again" to re-parse the kept paste.
 
-**#24** — add a set by name.
+**The export.** `GET /api/export/inventory` serves an external list optimiser
+as JSON or CSV, authenticated by a bearer token from `api_tokens` — the table
+migration 001 created and nothing read until now. **A token reaches
+`/api/export/` and nothing else**; widening that is one entry in
+`app.TOKEN_PATHS` and should be a decision rather than a side effect.
+`scripts/api_token.py` mints, lists and revokes.
 
-**`f027ca7`** — **list import.** `parse_lines` learned points annotations
-(`(95)`, `[200pts]`, `- 185 pts`, `: 105`) and section headings (`+ HQ +`,
-`Total: 645pts`); `commit_as_list` creates a list rather than models, and
-**discards the pasted points** — this app prices from the Munitorum manual, and
-a number out of someone else's app would quietly outrank the official one.
-Near-miss suggestions now rank by `difflib` similarity.
-
-## The 2026-08-23 review
-
-Clay asked for a full pass: every spec checked for missed requirements, a code
-review, and dead code removed. What it found:
-
-- **Ten requirements the re-scope stopped mentioning without deciding against.**
-  Now written down as spec §9 with the state of each. CSV export is the one
-  the original called non-negotiable and it does not exist in any form.
-- **Section 7 lived only in a chat upload.** Appended to the spec as §8, with
-  its disagreements with this database recorded once instead of re-argued per
-  commit. A spec that exists only in an upload is one the next session cannot
-  read.
-- **A whole orphaned CSS block.** Implementing the wireframes rebuilt both
-  stage screens on `.ramp`/`.rung`; nothing has rendered `class="pipe"` since,
-  and the rules outlived their markup by four pull requests. `repaintPipe` was
-  still falling through `$('.pipe') || $('.ramp')` and
-  `$('.pipe-count b') || $('.count b')` — every one of those `||` read as a
-  live alternative and was dead code hiding the live path. Same hazard as the
-  silent-repaint bug, one level up.
-- **`list_entries.position` was true of old rows and false of new ones.**
-  Migration 008 numbered existing entries by insertion order; `add_entry` never
-  set one, so everything added since sat at 0. Fixed, with `resolved_by` and
-  the pasted `raw_name`/`points` now maintained by the same writer.
-- **The invariants hold.** Checked against a live database rather than read:
-  disposals delete no rows and drop out of ownership, `box_state` is nowhere
-  near `models`, progress is effort-weighted, and a sold box does not leak onto
-  the collection as an actionable unit.
-- **No dead functions, templates or JS.** 247 top-level functions, all
-  referenced; every template rendered; every script included.
+**The rules data answered its own question.** All three SHAs moved into
+`rules_data.py`; the fetch scripts import them from there. `/reference` shows
+which manual priced the database and warns when `data/mfm/` is newer than the
+import. `scripts/check_rules_pins.py` asks GitHub whether a pin has aged; the
+weekly sweep runs it. Nothing bumps a pin automatically.
 
 ## Failed attempts
 
-- **Tried to bulk-import a box catalogue. There isn't one.** GitHub search for a
-  GW product/EAN dataset returns **zero** repos. Every candidate host is
-  egress-blocked. Do not go looking again without new information.
-- **Called §2.7 "blocked on a source" for weeks.** That was true of *fetching* a
-  list and never of *pasting* one. A blocker recorded against a step, rather
-  than against the specific approach that hit it, hides work that was always
-  doable. It took two days to build once actually attempted.
-- **Shipped a repaint that silently matched nothing.** `repaintPipe` selected by
-  a class the ramp markup no longer had, so advancing a unit moved the data and
-  not the screen — Clay found it, not the tests. Fixed by matching on
-  `data-stage`, plus a `location.reload()` guard so a future mismatch degrades
-  to a refresh instead of a lie, plus a regression test proved against the
-  broken markup first.
-- **The first "proof" that regression test had teeth was invalid** — it failed
-  on a login redirect, not on the missing attribute. These route tests only pass
-  as a suite; a single-test run fails in the client fixture's login.
-- **`_POINTS` was too greedy**: `Boyz x20` became a unit called `Boyz x` with a
-  count of 1. A bare trailing number is a *count*. Points must announce
-  themselves — brackets, the word, or a separator.
-- **Near misses ranked alphabetically inside prefix buckets.** "Killa Kanz"
-  suggested Kill Krusha, Kill Rig and Kill Tank — never Killa Kans. Someone
-  tapping the first suggestion gets the wrong datasheet, which is the exact
-  silent wrong answer the unresolved-line machinery exists to prevent.
-- **"Verified" the camera guard against `localhost`.** localhost *is* a secure
-  context, so the check passed and proved nothing. Re-run against a real LAN IP
-  with `host='0.0.0.0'`.
-- **A Playwright *live* locator (`.cat-row:has(.cat-want)`)** re-resolved after
-  the class changed and reported a working feature as broken. Use
-  `[data-template="N"]`.
-- **Ran the drive script against the wrong database.** `DB_PATH` is **not** an
-  env var this app reads. Set `db.DB_PATH` in a launcher (`scratchpad/serve.py`).
-- **`ps | grep` matching the shell's own command line** → exit 144, repeatedly.
-  Use `ps -eo pid,args | awk '/pat/ && !/awk/'`.
-- **Numbered a migration 006 when 005 did not exist.** Renumber before applying.
+- **`token_set_ratio` was the spec's own counterexample.** §8 specifies it;
+  built that way, it resolved **"Warboss on Warbike" → Warboss at 100** — a
+  wrong confident match on the very example the spec uses to explain why
+  aliases exist, because a strict subset scores as a perfect match. Sorting the
+  words instead scores that pair 56. `list_resolve.similarity` is one function
+  used by both paste doors so this cannot be half-fixed later.
+- **`models.datasheet_id` had no writer.** Migration 008 backfilled it and
+  `add_models` left every new model null — allocation would have reported a
+  full collection as owning nothing. **Second time this exact class:** 008 also
+  numbered `list_entries.position` while `add_entry` left new rows at 0. Now in
+  CLAUDE.md: *a column a migration fills is a column some writer has to keep
+  filling*. Find every INSERT into that table in the same commit.
+- **The export grouped by `units.datasheet_id`.** An uncommitted sprue came
+  back as both owned *and* buildable — double-counted in the file an optimiser
+  would trust. Grouping is `models.datasheet_id` now.
+- **Two picker bugs, one already shipped, and a browser found both.**
+  `input.closest('form')` was assumed non-null, so the report threw
+  `null.addEventListener` at page load; and **both paste-confirmation screens
+  have been shipping with no `.results` element at all**, so typing a datasheet
+  name there had never done anything. Tests were green throughout. The picker
+  now builds its own results list and hoists the form lookup once.
+- **`data-entry` on both the row and its resolve button**, so `closest`
+  matched the button and the click silently did nothing. The button carries
+  `data-resolve`; the handler uses `closest('li')`.
+- **A teeth-check I ran was invalid and I nearly reported it.** The "no
+  consumption" variant only failed case 9, because case 1 is protected by local
+  slicing — it looked like the bug was narrower than it is. Re-ran the correct
+  variant. Same shape as the earlier `token_set_ratio` variant that referenced
+  `kit_datasheets` before creation and aborted the script. **A proof that a
+  test has teeth needs the same scrutiny as the test.**
+- **`tests/test_gap_schema.py`'s fixture broke twice** by using current
+  helpers against a 007-era database. A migration test may only use SQL that
+  existed before the migration, and no application code.
+- **I told Clay to run `python3 migrate.py` as a deploy step for most of a
+  session. Wrong.** `app.py:123` calls `db.init_db()`, which migrates on boot.
+  `./deploy.sh` is enough; `migrate.py --status` is how you *check*.
 
 ## Next steps
 
-1. **On bastion**: `git pull && ./deploy.sh && python3 migrate.py` (**007 is
-   pending there**), and add to `.env`: `TIMEZONE=America/Chicago`,
-   `CURRENCY=USD`, `PUBLIC_URL=https://<tunnel>` — the last one is what the
-   camera guard hands over.
-2. **The weekly sweep needs `0 15 * * 1` after 1 November**, when CDT ends. The
-   existing DST-fix Routine does not cover this one.
-3. **Do a real shelf session.** ~100 boxes against test fixtures is the only way
-   to find what is still slow.
-4. **`BACKUP_DEST` is unset** — snapshots sit on the same Jetson as the database.
-5. **Two incomplete catalogue entries**: the Daemon Prince and GSC Broodcoven
-   premium kits each list only half their contents. Needs Clay's decision on the
-   variant/split.
-6. **The rest of the design.** Armies, lists, the gap report, scan review, kit
-   templates, kit detail and sign-in still carry the old structure on the new
-   ground.
-7. **Two lists wanting the same unit raise both shortfalls.** Saturday wanting
-   ten Boyz and Sunday wanting twenty puts thirty on the wishlist, not twenty —
-   nothing yet says the same models could serve both. They now share one
-   wishlist line, so the total is in plain sight where it used to be split
-   across two rows. Allocating models between competing lists is the fix and it
-   is unbuilt; `test_two_lists_short_of_the_same_unit_share_one_line` pins the
-   current behaviour so a later fix has to face it.
-8. **The sharing question** decides whether the collection needs a user column.
+1. **Deploy to bastion** (Clay's): `./backup.sh` → `git pull` → `./deploy.sh`.
+   Boot applies migration 008. Verify with
+   `docker compose exec tracker python3 migrate.py --status` (expect
+   `8 applied, 0 pending`), then `scripts/report_kit_datasheets.py` for what
+   008 could not map.
+2. **Two pins have moved — Clay's call, deliberately.** BSData
+   `13f3c4e5 → 04c62fcd` (cheap: new units appear). MFM
+   `06754e2f → 3c1efe0d` (**changes points under existing lists**). Kill Team
+   is current. `scripts/check_rules_pins.py` prints the exact steps for each.
+3. **Spec §9's remaining nine requirements**, each a decision still owed: sale
+   candidates, list validation's three-state badge, the shortfall→box inversion
+   with à la carte comparison, cross-list wishlist dedupe, the "also appears in
+   Speed Freeks 1000" note, the dashboard's 30-day view and spend, the backlog
+   view, an admin overrides UI, and the flat per-model CSV.
+4. **`BACKUP_DEST` is unset** — snapshots sit on the same Jetson as the
+   database.
+5. **The weekly sweep needs `0 15 * * 1` after 1 November**, when CDT ends.
+6. **Two incomplete catalogue entries**: the Daemon Prince and GSC Broodcoven
+   premium kits each list only half their contents. Needs Clay's decision on
+   the variant/split.
+7. **Do a real shelf session.** ~100 boxes against test fixtures is still the
+   only way to find what is slow.
+8. **The rest of the design.** Armies, scan review, kit templates, kit detail
+   and sign-in still carry the old structure on the new ground. `/lists/<id>`
+   came across this session.
+9. **The sharing question** decides whether the collection needs a user column.
    Nothing built so far assumes single-user in the data.
+
+## Standing hazards worth re-reading
+
+- **Two lists wanting the same unit raise both shortfalls.** Allocation is
+  *within* one list, deliberately — the original spec is explicit that models
+  are not allocated between lists. Spec §9 records the cross-list note it asks
+  for instead, still unbuilt.
+- **There is no bulk box catalogue.** GitHub search returns zero repos; every
+  candidate host is egress-blocked. Do not go looking again without new
+  information.
+- **A blocker belongs to an approach, not to a step.** §2.7 was called "blocked
+  on a source" for weeks; that was true of *fetching* a list and never of
+  *pasting* one.
+- **Route tests only pass as a suite.** A single-test run fails in the client
+  fixture's login, which looks like the assertion failing.
+- **`DB_PATH` is not an env var this app reads.** Set `db.DB_PATH` in a
+  launcher (`scratchpad/serve.py`).
