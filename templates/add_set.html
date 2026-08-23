@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Add a set · Collection Tracker{% endblock %}
+{% block body %}
+{# Three doors, one destination.
+
+   By name is the door, because most of the time Clay knows what the box is
+   called and typing it beats hunting for a barcode on a shelf or waiting for a
+   camera to focus. The code and the camera are better when the box is in his
+   hand and the name is a mouthful, so they stay — as options, not as the only
+   way in.
+
+   All three end the same way: a kit, with its contents when the app knows
+   them and honestly without when it does not. #}
+
+  <header class="page">
+    <div>
+      <h1>Add a set</h1>
+      <p class="hint">
+        By name, by code, or with the camera — whichever is quicker with the
+        box in front of you.
+      </p>
+    </div>
+    <a class="ghost" href="/kits">All kits</a>
+  </header>
+
+  <h2 class="label">By name</h2>
+  <form class="search" id="by-name" onsubmit="return false">
+    <label class="sr-only" for="set-q">Set name</label>
+    <input id="set-q" autocomplete="off" autofocus
+           placeholder="Combat Patrol, Wrecka Krew, Boyz…">
+  </form>
+  <p class="hint">
+    Searches what a box is called and what is inside it, so "Boyz" finds the
+    Combat Patrol that holds them.
+  </p>
+
+  <ul class="catalogue" id="set-results"></ul>
+
+  {# Shown only when a search returns nothing. Two honest options and no third:
+     say what is in the box, or record that you own it and say later. Guessing
+     the contents from the name is the one thing this app will not do. #}
+  <div class="panel warn hidden" id="no-match">
+    <p><b>Nothing in the catalogue matches “<span id="typed"></span>”.</b></p>
+    <p class="muted">
+      That is normal — the catalogue only holds boxes someone has looked up.
+    </p>
+    <div class="actions">
+      <a class="go" id="define-it" href="/templates">Say what's in it →</a>
+      <button class="ghost" id="record-it">Just record the box</button>
+    </div>
+    <p class="hint">
+      Recording it counts the box as owned with no models inside, and it waits
+      on the review screen until you fill it in. Nothing is invented from the
+      name.
+    </p>
+  </div>
+
+  <h2 class="label">By code</h2>
+  <form class="search" id="by-code" onsubmit="return false">
+    <label class="sr-only" for="set-code">Barcode</label>
+    <input id="set-code" inputmode="numeric" autocomplete="off"
+           placeholder="5011921204021">
+    <button class="go" id="code-go">Look up</button>
+  </form>
+  <p class="hint" id="code-note">
+    A known code adds the box and its contents outright. An unknown one is
+    recorded against the code, and every later copy resolves behind it.
+  </p>
+
+  <h2 class="label">With the camera</h2>
+  <div class="actions">
+    <a class="go" href="/scan">Open the scanner →</a>
+  </div>
+  <p class="hint">
+    Best for a shelf full of boxes rather than one. Needs an HTTPS address.
+  </p>
+
+  {% if recent %}
+    <h2 class="label">In the catalogue</h2>
+    <ul class="catalogue">
+      {% for t in recent %}
+        <li class="cat-row {% if t.owned_count %}owned{% endif %}"
+            data-template="{{ t.id }}">
+          <div class="cat-head">
+            <div>
+              <b>{{ t.name }}</b>
+              {% if t.year %}<span class="muted">{{ t.year }}</span>{% endif %}
+            </div>
+            {% if t.owned_count %}
+              <span class="ok-badge">
+                Own{% if t.owned_count > 1 %} ×{{ t.owned_count }}{% endif %}
+              </span>
+            {% endif %}
+          </div>
+          <p class="muted">
+            {{ t.model_count }} model{{ '' if t.model_count == 1 else 's' }}
+            {%- if t.contents %} ·
+              {% for c in t.contents %}{{ c.model_count }}× {{ c.datasheet_name }}
+                {%- if not loop.last %}, {% endif %}
+              {%- endfor %}
+            {%- endif %}
+          </p>
+          <div class="actions">
+            <button class="go set-own">I have this →</button>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+    <p class="hint"><a href="/catalogue">Browse the whole catalogue</a></p>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  <script src="/static/js/add-set.js?v={{ asset_version }}"></script>
+{% endblock %}
