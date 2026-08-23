@@ -37,11 +37,17 @@ doors onto §2.7 — importing a list from a file or a URL — and those stay ga
 on a source: every candidate host is refused by egress policy. Pasting never
 was. §5 of the spec has the measured state of each step.
 
-**In progress: the gap checker** (spec §8, written as "Section 7"). Commits 1
-and 2 of five are merged — migration 008 (`models.datasheet_id`,
-`is_flexible`, `kit_datasheets`, `datasheet_aliases`, `list_entries` rebuilt)
-and `list_parse.py`. Still to come: resolution, allocation, and the routes and
-views. It exists because `lists.list_gap` counts ownership per entry with
+**In progress: the gap checker** (spec §8, written as "Section 7"). Three
+commits of five: migration 008 (`models.datasheet_id`, `is_flexible`,
+`kit_datasheets`, `datasheet_aliases`, `list_entries` rebuilt), `list_parse.py`
+and `list_resolve.py`. Still to come: allocation, and the routes and views.
+
+**One name-similarity function, `list_resolve.similarity`**, used by both paste
+doors. It sorts the words before comparing (rapidfuzz calls that
+`token_sort_ratio`) rather than using §8's `token_set_ratio`, which scores any
+strict subset as a perfect match — built that way it resolved "Warboss on
+Warbike" to Warboss at 100, a wrong confident match on the very example §8 uses
+to explain why aliases exist. It exists because `lists.list_gap` counts ownership per entry with
 nothing consuming a model once assigned, so a list asking for two squads of ten
 Boyz reports "fieldable" against ten Boyz owned.
 

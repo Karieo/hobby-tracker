@@ -24,11 +24,11 @@ Team, and several names repeat across factions — picking one because it sorted
 first is exactly the silent corruption the rules-data importer refuses to do.
 """
 
-import difflib
 import re
 
 import collection as col
 import database as db
+import list_resolve
 from names import norm
 
 # Stage words people actually write, mapped onto the ladder. Deliberately not
@@ -212,10 +212,15 @@ def _near_misses(conn, name, rows, limit=8):
         silent wrong answer the unresolved-line machinery exists to prevent.
 
         A one-letter typo is now what it looks like: a near-identical string.
-        difflib is stdlib, so this stays a no-dependency, no-build-step app.
+        The scorer is `list_resolve.similarity`, stdlib difflib underneath, so
+        this stays a no-dependency, no-build-step app.
         """
         other = norm(row['name'])
-        ratio = difflib.SequenceMatcher(None, key, other).ratio()
+        # The same scorer the gap checker resolves with. Word order is free
+        # there, which matters here too — "Squad Intercessor" is a thing people
+        # type — and a second scoring function would be one more place for the
+        # two paste doors to disagree about what a near miss is.
+        ratio = list_resolve.similarity(key, other) / 100
         contained = key in other or other in key
         overlap = bool(words & set(other.split()))
         # Keep the old signals as a floor: containment and a shared word are
