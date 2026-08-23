@@ -176,6 +176,20 @@ def list_gap(conn, list_id):
 
 # ── The wishlist ─────────────────────────────────────────
 
+def _stamp(conn, column, value, model_ids):
+    """Record what raised these models, and only these models.
+
+    Wishlist lines are shared now — two lists short of the same unit raise one
+    line between them — so stamping by unit would relabel models a different
+    list is still waiting on, and `unwant_template` would then delete them.
+    """
+    if not model_ids:
+        return
+    marks = ','.join('?' * len(model_ids))
+    conn.execute(f'UPDATE models SET {column} = ? WHERE id IN ({marks})',
+                 (value, *model_ids))
+
+
 def raise_wishlist(conn, list_id):
     """Turn the buy half of the gap into wishlist models.
 
@@ -207,11 +221,14 @@ def raise_wishlist(conn, list_id):
         want = entry['buy'] - raised.get(entry['datasheet_id'], 0)
         if want <= 0:
             continue
-        unit_id = col.create_unit(conn, entry['datasheet_id'], want,
-                                  stage_id=wishlist['id'])
-        conn.execute(
-            'UPDATE models SET wishlist_source_list_id = ? WHERE unit_id = ?',
-            (list_id, unit_id))
+        # Two lists wanting the same unit join one wishlist line rather than
+        # stacking two identical ones on the collection. The stamp goes on the
+        # models this call added and no others, so taking one list back off the
+        # wishlist cannot take the other list's models with it.
+        raised_now = col.add_or_extend_unit(conn, entry['datasheet_id'], want,
+                                            stage_id=wishlist['id'])
+        _stamp(conn, 'wishlist_source_list_id', list_id,
+               raised_now['model_ids'])
         added += want
     return added
 
@@ -282,10 +299,10 @@ def want_template(conn, template_id):
         want = line['model_count'] - already.get(line['datasheet_id'], 0)
         if want <= 0:
             continue
-        unit_id = col.create_unit(conn, line['datasheet_id'], want,
-                                  stage_id=wishlist_stage['id'])
-        conn.execute('UPDATE models SET wishlist_source_template_id = ? '
-                     'WHERE unit_id = ?', (template_id, unit_id))
+        raised_now = col.add_or_extend_unit(conn, line['datasheet_id'], want,
+                                            stage_id=wishlist_stage['id'])
+        _stamp(conn, 'wishlist_source_template_id', template_id,
+               raised_now['model_ids'])
         added += want
     return added
 

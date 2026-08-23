@@ -270,7 +270,7 @@ def stage_ids(conn):
 
 
 def commit(conn, rows, default_stage_id=None, army_id=None):
-    """Create a unit per confirmed row.
+    """Record every confirmed row, extending a matching unit where one exists.
 
     ``rows`` is ``{datasheet_id, count, stage_word|stage_id, skip}``. A row with
     no datasheet is refused rather than skipped quietly — the whole point is
@@ -292,8 +292,10 @@ def commit(conn, rows, default_stage_id=None, army_id=None):
         stage_id = (row.get('stage_id')
                     or words.get(row.get('stage_word'))
                     or default_stage_id)
-        unit_id = col.create_unit(conn, row['datasheet_id'],
-                                  max(1, int(row.get('count') or 1)),
-                                  army_id=army_id, stage_id=stage_id)
-        created.append(unit_id)
+        # Pasting a shelf twice, or pasting the half you forgot, adds to the
+        # squad already recorded rather than starting a second one beside it.
+        added = col.add_or_extend_unit(conn, row['datasheet_id'],
+                                       max(1, int(row.get('count') or 1)),
+                                       army_id=army_id, stage_id=stage_id)
+        created.append(added['unit_id'])
     return created

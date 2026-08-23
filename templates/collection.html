@@ -110,14 +110,26 @@
 
             {# The whole point of the front door being here: it has to be
                actionable. One tap per unit moves the lot forward — per §3 that
-               is the primary interaction, not a per-model selection. #}
+               is the primary interaction, not a per-model selection.
+
+               Wrapped and inset so these read as belonging to the datasheet
+               above them. Most rows now hold exactly one: adding more of a
+               model joins the unit already recorded, so a second line here
+               means a genuinely separate squad — a different box, a different
+               army, a name of its own, or one that is still only wanted. #}
+            <div class="unit-lines">
             {% for u in r.units %}
               <div class="unit-line">
                 <a href="/units/{{ u.id }}">
-                  {{ u.model_count }} model{{ '' if u.model_count == 1 else 's' }}
+                  <b>{{ u.model_count }} model{{ '' if u.model_count == 1 else 's' }}</b>
                   {% if u.owned_count == 0 %}<span class="muted">· wanted</span>
                   {% elif u.kit_name %}<span class="muted">· {{ u.kit_name }}</span>
-                  {% elif u.army_name %}<span class="muted">· {{ u.army_name }}</span>{% endif %}
+                  {% elif u.army_name %}<span class="muted">· {{ u.army_name }}</span>
+                  {# Only worth saying when there is something to tell apart.
+                     On a record with one line it is noise; on a record with
+                     two it is the difference between them. #}
+                  {% elif r.units|length > 1 %}<span class="muted">· no box</span>
+                  {% endif %}
                 </a>
                 {% if u.owned_count == 0 %}
                   {# A wishlist unit. Advancing it means "I went and bought
@@ -132,6 +144,7 @@
                 {% endif %}
               </div>
             {% endfor %}
+            </div>
 
             {% if r.basing == 'unbased' %}
               <p class="hint basing">

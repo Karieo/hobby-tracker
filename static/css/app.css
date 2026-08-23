@@ -245,9 +245,20 @@ footer { max-width: 60rem; margin: 3rem auto 0; color: var(--muted);
 .s6 { background: var(--s6); } .s7 { background: var(--s7); }
 
 /* ── Units ──────────────────────────────────────────── */
+/* Clay, reading the collection on his phone: "A line to me is a defining break
+   between records, but not the case in this design." He was right. Every row
+   sat on the page ground with nothing around it, and the only rules on screen
+   were *inside* a record, separating a datasheet from its own units — so the
+   one mark that looks like a boundary was drawn everywhere except at the
+   boundaries.
+
+   The fix is structural rather than decorative: **one record, one box.** Every
+   `.units` child is a card, on all five screens that use the list, and a rule
+   now only ever appears within a card. Nothing that divides two records is
+   thinner than a border and a gap. */
 .units { list-style: none; margin: 0; padding: 0; display: grid; gap: .7rem; }
-.unit { background: var(--panel); border: 1px solid var(--line);
-        border-radius: 0; padding: .9rem; }
+.units > li, .unit { background: var(--panel); border: 1px solid var(--line);
+                     border-radius: 0; padding: .9rem; }
 .unit-head { display: flex; justify-content: space-between; align-items: baseline;
              gap: .5rem; }
 .unit-head a { text-decoration: none; }
@@ -473,11 +484,21 @@ button.link { background: none; border: none; color: var(--accent); padding: 0;
               cursor: pointer; }
 .ok-badge { color: var(--accent); font-weight: 600; }
 .short { color: var(--warn); }
-/* A unit inside a collection row: what it is on the left, the one control
-   that matters on the right. */
+/* The units inside a collection record: what each is on the left, the one
+   control that matters on the right.
+
+   Inset rather than ruled off. These are nested *within* the datasheet's card,
+   and the old `border-top` on each one read as a record separator — which is
+   exactly the misreading it caused. Sitting them on the second ground says
+   "part of the thing above" without borrowing the mark that means "a new
+   thing starts here". */
+.unit-lines { display: grid; gap: .3rem; margin-top: .6rem;
+              border-top: 1px solid var(--rule); padding-top: .6rem; }
 .unit-line { display: flex; gap: .6rem; align-items: center;
-             justify-content: space-between; padding: .35rem 0;
-             border-top: 1px solid var(--line); font-size: .9rem; }
+             justify-content: space-between; font-size: .9rem;
+             background: var(--panel-2); padding: .35rem .5rem; }
+.unit-line > a { text-decoration: none; }
+.unit-line > a b { text-decoration: underline; }
 .unit-line button { min-height: 38px; padding: .35rem .7rem; font-size: .85rem; }
 
 /* Catalogue: what exists, and whether it is on the shelf. Owned rows are

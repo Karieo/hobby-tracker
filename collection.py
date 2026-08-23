@@ -381,6 +381,80 @@ def create_unit(conn, datasheet_id, model_count, army_id=None, kit_id=None,
     return unit_id
 
 
+def add_or_extend_unit(conn, datasheet_id, model_count, army_id=None,
+                       kit_id=None, stage_id=None, nickname=None):
+    """Add models for a datasheet, extending a unit that already fits.
+
+    Clay's complaint, holding the phone: "if I add more of a model it needs to
+    add them, not make 2 lines." Three Killa Kans recorded in two goes showed
+    up on the collection as "1 model" and "2 models" with nothing on either
+    line to tell them apart — two rows describing one squad, and no single
+    control that moved the squad.
+
+    So a second helping joins the first, and the four things that make two
+    units genuinely different are the four things that refuse the merge:
+
+    - **A different kit.** Disposals are per kit: sell the box and its models
+      go with it. Pouring two boxes into one unit makes that impossible to
+      unpick afterwards, so two copies of the same Combat Patrol stay two
+      units — and they are labelled with the box, so they read as two.
+    - **A different army.** Allied detachments and a second army of the same
+      faction are the whole reason the column exists.
+    - **A different nickname.** Naming a squad is Clay saying this one is its
+      own thing.
+    - **Wanted versus owned.** A wishlist line offers "Bought it →" and an
+      owned line offers "Advance all →". Merging the two would swallow the
+      wishlist entry, and with it the moment the loop closes.
+
+    Everything else merges, *stages included*. One squad of three Kans with one
+    painted and two still on sprue is the truth of the shelf, and per-model
+    stages exist to say exactly that.
+
+    Returns ``{unit_id, model_ids, extended}``. ``model_ids`` is the models
+    this call added and no others, so a caller stamping provenance on them —
+    which list wanted them, which box — cannot stamp the ones already there.
+    """
+    if model_count < 1:
+        raise ValueError('a unit needs at least one model')
+    if stage_id is None:
+        stage_id = db.first_owned_stage(conn)['id']
+    nickname = nickname or None
+
+    stage = conn.execute('SELECT is_owned FROM stages WHERE id = ?',
+                         (stage_id,)).fetchone()
+    adding_owned = bool(stage and stage['is_owned'])
+
+    # `IS` rather than `=` throughout: a unit with no army and no kit is the
+    # common case, and `NULL = NULL` is NULL, so `=` would match nothing at all
+    # and quietly never merge anything.
+    candidates = conn.execute(f"""
+        SELECT u.id,
+               COALESCE(SUM(CASE WHEN st.is_owned THEN 1 ELSE 0 END), 0) AS owned
+          FROM units u
+          LEFT JOIN models m  ON m.unit_id = u.id
+          LEFT JOIN stages st ON st.id = m.stage_id
+         WHERE u.datasheet_id = ?
+           AND u.army_id IS ? AND u.kit_id IS ? AND u.nickname IS ?
+           AND {_ACTIVE_UNIT}
+         GROUP BY u.id
+         ORDER BY u.id
+    """, (datasheet_id, army_id, kit_id, nickname)).fetchall()
+
+    target = next((row['id'] for row in candidates
+                   if bool(row['owned']) == adding_owned), None)
+    if target is not None:
+        return {'unit_id': target,
+                'model_ids': add_models(conn, target, model_count, stage_id),
+                'extended': True}
+
+    unit_id = create_unit(conn, datasheet_id, model_count, army_id=army_id,
+                          kit_id=kit_id, stage_id=stage_id, nickname=nickname)
+    return {'unit_id': unit_id,
+            'model_ids': [r['id'] for r in conn.execute(
+                'SELECT id FROM models WHERE unit_id = ?', (unit_id,))],
+            'extended': False}
+
+
 def add_models(conn, unit_id, count, stage_id):
     """Append models to an existing unit, all at one stage."""
     stamp = db.now()

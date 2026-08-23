@@ -20,7 +20,7 @@ here builds toward accounts and nothing here makes that harder.
 
 ## Current state
 
-Working and browser-verified at 430px and 1440px. **509 tests green.**
+Working and browser-verified at 430px and 1440px. **522 tests green.**
 
 **The loop closes.** All eleven end-to-end checks pass against a fresh
 database: buy → scan → onboard → build → paint → list → gap → wishlist → buy,
@@ -154,5 +154,12 @@ Near-miss suggestions now rank by `difflib` similarity.
 6. **The rest of the design.** Armies, lists, the gap report, scan review, kit
    templates, kit detail and sign-in still carry the old structure on the new
    ground.
-7. **The sharing question** decides whether the collection needs a user column.
+7. **Two lists wanting the same unit raise both shortfalls.** Saturday wanting
+   ten Boyz and Sunday wanting twenty puts thirty on the wishlist, not twenty —
+   nothing yet says the same models could serve both. They now share one
+   wishlist line, so the total is in plain sight where it used to be split
+   across two rows. Allocating models between competing lists is the fix and it
+   is unbuilt; `test_two_lists_short_of_the_same_unit_share_one_line` pins the
+   current behaviour so a later fix has to face it.
+8. **The sharing question** decides whether the collection needs a user column.
    Nothing built so far assumes single-user in the data.
