@@ -223,3 +223,296 @@ its own if building ever wants one.
   an enumeration of everything GW has published. Each product costs one lookup,
   ever, and every copy on the shelf resolves behind it.
 - **`BACKUP_DEST` unset.** Snapshots live on the same machine as the database.
+
+---
+
+## 8 · The gap checker
+
+Written as "Section 7 — List Gap Checker" against the original spec's
+numbering, where §7 was *Ownership, gaps and the shopping list*. It lands here
+as §8 because this file was re-scoped around the loop and §7 is already Known
+blockers. It arrived as a separate document; it is reproduced whole below,
+because a spec that lives only in a chat upload is a spec the next session
+cannot read.
+
+### 8.0 · Where it disagrees with this database
+
+Recorded once, here, rather than argued again in each commit.
+
+- **"Models currently link to kits ... the gap checker cannot resolve anything
+  without a direct link" is not true here.** `models.unit_id` is NOT NULL and
+  `units.datasheet_id` is NOT NULL, so every model already resolves to exactly
+  one datasheet and `collection.inventory()` has done that since the collection
+  screen was built. The premise describes an earlier schema. The columns are
+  still worth having for the half of Section 7 that is new — `is_flexible` and
+  `kit_datasheets` — but the backfill follows the unit rather than the kit, and
+  the "uncommitted" population starts at zero rather than starting large.
+- **`datasheet_id TEXT` is INTEGER here.** `datasheets.id` is an INTEGER
+  primary key. TEXT would still "work" in SQLite and then silently fail every
+  join.
+- **`CREATE TABLE lists` extends `army_lists` instead.** That table already
+  exists and `models.wishlist_source_list_id` references it — the link recording
+  which list wanted a wishlisted model. A parallel table would split that in
+  two. `raw_text` is nullable, because a hand-built list has no pasted text.
+- **`list_entries` was rebuilt, not created.** An unresolved entry needs
+  `datasheet_id` nullable and SQLite cannot drop NOT NULL in place.
+- **"Points owned is the sum of `points`" uses `points_snapshot`.** §2.7
+  settled that this app prices a list from the Munitorum manual it imported. An
+  export's own figure is stored beside it as `points` and shown, never totalled.
+- **No `rapidfuzz`, and no `gap_checker/` package.** Fuzzy matching is stdlib
+  `difflib`, which `bulk_add` already used for the same job, and the modules sit
+  flat at the repo root like every other module here.
+- **"Rolls back clean" is not a thing this repo has.** Migrations are
+  forward-only numbered files recorded in `schema_migrations`. What is
+  guaranteed is atomicity.
+
+##### 8.1 · The document, as written
+
+Append to `warhammer-tracker-spec.md`. Depends on Sections 1–5 (schema, BSData importer, model CRUD with stage management).
+
+#### What it does
+
+You paste an army list exported from New Recruit or the GW app. The app tells you, per unit, how many models the list needs, how many you own, how many are battle ready, and how many you're short. Plus a points summary: list total vs. points-worth of models you actually own.
+
+It does not build lists. It does not validate legality. New Recruit already does both, reads the same BSData files, and is free. This feature answers the one question no list builder can: *can I field this with what's on my shelf?*
+
+#### Prerequisite schema change
+
+Models currently link to kits. Kits don't map cleanly to datasheets — a Combat Patrol box yields three or four datasheets' worth of models — so the gap checker cannot resolve anything without a direct link.
+
+But the link isn't one-way either. An Armiger sprue builds a Helverin or a Warglaive. The big Knight kit builds five-plus datasheets. And magnetized models stay swappable forever. `datasheet_id` is therefore not a property of the kit — it's the decision made at assembly, and sometimes that decision stays reversible.
+
+```sql
+-- What a kit is capable of becoming
+CREATE TABLE kit_datasheets (
+    kit_id       INTEGER NOT NULL REFERENCES kits(id) ON DELETE CASCADE,
+    datasheet_id TEXT NOT NULL REFERENCES datasheets(id),
+    PRIMARY KEY (kit_id, datasheet_id)
+);
+
+-- What a model currently is, and whether that's reversible
+ALTER TABLE models ADD COLUMN datasheet_id TEXT REFERENCES datasheets(id);
+ALTER TABLE models ADD COLUMN is_flexible INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX idx_models_datasheet ON models(datasheet_id);
+CREATE INDEX idx_models_flexible ON models(is_flexible) WHERE is_flexible = 1;
+```
+
+Three states a model can be in:
+
+- **Committed** — `datasheet_id` set, `is_flexible = 0`. Glued as one thing, stays that thing.
+- **Magnetized** — `datasheet_id` set (what it's built as right now), `is_flexible = 1`. Counts as battle ready for any of its kit's datasheets, because swapping arms takes seconds.
+- **Uncommitted** — `datasheet_id` null. On sprue, or assembled but not yet assigned. Can become any of its kit's datasheets, but needs work first.
+
+`is_flexible` survives stage changes. Set it once when you magnetize; it stays true through painting and basing. It is never inferred — a model is only flexible because you said so.
+
+##### Assembly prompt
+
+When a model advances to `assembled`, resolve its datasheet:
+
+- Kit has one entry in `kit_datasheets` → auto-fill silently. Most kits. You never see a prompt.
+- Kit has several → one-tap picker of that kit's options, plus a "magnetized" toggle that sets `is_flexible`.
+- Whole-unit advance → pick once, apply to all models in the unit.
+
+Surface a count of uncommitted assembled models in the collection view so they don't silently rot.
+
+#### New tables
+
+```sql
+-- A pasted list, kept so you can re-check it after painting progress
+CREATE TABLE lists (
+    id            INTEGER PRIMARY KEY,
+    name          TEXT NOT NULL,
+    army_id       INTEGER REFERENCES armies(id),   -- nullable
+    raw_text      TEXT NOT NULL,                   -- exactly what was pasted
+    source_format TEXT,                            -- 'newrecruit' | 'gw_app' | 'unknown'
+    points_total  INTEGER,                         -- as declared by the export
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
+-- One row per parsed unit entry. Order preserved for display.
+CREATE TABLE list_entries (
+    id            INTEGER PRIMARY KEY,
+    list_id       INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+    position      INTEGER NOT NULL,
+    raw_name      TEXT NOT NULL,                   -- name as it appeared in the paste
+    datasheet_id  TEXT REFERENCES datasheets(id),  -- null = unresolved
+    model_count   INTEGER NOT NULL DEFAULT 1,
+    points        INTEGER,
+    resolved_by   TEXT                             -- 'exact' | 'fuzzy' | 'alias' | 'manual'
+);
+
+-- The learned alias table. This is what makes the feature survive.
+CREATE TABLE datasheet_aliases (
+    id           INTEGER PRIMARY KEY,
+    alias        TEXT NOT NULL UNIQUE,             -- normalized form
+    datasheet_id TEXT NOT NULL REFERENCES datasheets(id),
+    created_at   TEXT NOT NULL
+);
+```
+
+`raw_text` is stored deliberately. When the parser gets better, old lists can be re-parsed without re-pasting.
+
+#### Parsing
+
+Both New Recruit and the GW app export plain text with a recognizable shape: a unit name, a model count, a points value, then indented wargear lines. Wargear is discarded — Section 3 already excluded loadout tracking.
+
+Three handlers, tried in order:
+
+1. **New Recruit** — detect by header signature. Entries look like `Boyz (180 points)` with a following `• 20x Ork Boy` line.
+2. **GW app** — detect by its own header. Entries carry the count inline: `10x Boyz [90pts]`.
+3. **Permissive fallback** — scan every line for the pattern `[count] name [points]` in any order, using a regex set. Anything that doesn't match becomes an unresolved entry with `raw_name` set to the whole line.
+
+Do not try to be clever about ambiguous lines. A line the parser can't handle becomes a visible row in the UI that you fix by hand, and that fix teaches the alias table. Silent dropping is the failure mode to avoid — a missing unit makes the whole report wrong in a way you won't notice.
+
+Model count defaults to 1 when absent. Character entries usually have no count.
+
+#### Resolution
+
+For each entry, in order:
+
+1. Normalize the name: lowercase, strip punctuation, collapse whitespace, strip a trailing parenthetical.
+2. Look up `datasheet_aliases` on the normalized form. Hit → `resolved_by = 'alias'`, done.
+3. Exact match against normalized BSData datasheet names. Hit → `'exact'`.
+4. Fuzzy match (token set ratio, `rapidfuzz`). Score ≥ 90 and a clear margin over second place → `'fuzzy'`. Otherwise leave null.
+5. Null entries render in the UI with a searchable datasheet picker. Picking one sets `resolved_by = 'manual'` **and writes a row to `datasheet_aliases`**.
+
+Step 5's write-back is the whole point. If you have to re-answer "which datasheet is *Warboss on Warbike*?" every time you paste a list, you'll stop pasting lists. Every correction must be permanent.
+
+Scope fuzzy matching to the list's faction when `army_id` is set. Cuts the candidate pool and kills most false positives.
+
+#### Allocation
+
+The subtle bug worth naming up front: a list with two 10-model Boyz units and one 20-model Boyz unit needs **40** Boyz. Counting per-entry against your collection will match all three entries against the same 20 models you own and report zero shortfall. You will discover this the night before a game.
+
+Allocate instead, in two passes.
+
+**Pass 1 — committed and magnetized-as-built.** Per datasheet:
+
+```
+requirements = list entries for this datasheet, sorted by model_count DESC
+available    = models where datasheet_id = X, army_id matches (or is unassigned)
+               sorted by stage DESC (battle ready first)
+
+for each requirement:
+    take = min(requirement.model_count, len(available))
+    assign the first `take` models; available = available[take:]
+    requirement.owned        = take
+    requirement.battle_ready = assigned models at stage 'battle ready'
+    requirement.short        = requirement.model_count - take
+```
+
+**Pass 2 — fill remaining shortfalls from models that could become the datasheet.** Candidates are unconsumed models where the kit's `kit_datasheets` includes the required datasheet, and either `datasheet_id IS NULL` or `is_flexible = 1`.
+
+Process shortfalls **most-constrained first** — the requirement with the fewest eligible candidates gets served before one with plenty of options. Within a shortfall, prefer magnetized battle-ready models over uncommitted ones, since those need no work at all.
+
+```
+shortfalls = requirements where short > 0, sorted by len(candidates(r)) ASC
+
+for each shortfall:
+    pool = candidates(shortfall), magnetized-and-ready first, then by stage DESC
+    take = min(shortfall.short, len(pool))
+    assign and consume those models
+    shortfall.swappable  = assigned models that are magnetized and battle ready
+    shortfall.buildable  = assigned models that are not
+    shortfall.short     -= take
+```
+
+A magnetized model is still one physical model. It can serve exactly one requirement in a list, and once consumed it's gone — a single magnetized Knight cannot be both the Paladin and the Errant in the same list.
+
+Most-constrained-first is a heuristic, not provably optimal. At your collection size it won't be wrong in practice, and the alternative is a bipartite matching solver for no real gain.
+
+Largest requirement first in pass 1, battle-ready first throughout. Greedy is correct within a datasheet — all models of the same datasheet are interchangeable.
+
+Whether unassigned models (`army_id IS NULL`) count toward a list should be a toggle on the check view, defaulting to on. You keep kits unassigned on purpose; excluding them by default would make the report pessimistic and useless.
+
+#### Endpoints
+
+Follow Remndrs conventions — Flask blueprint, JSON in/out, server-rendered templates for the views.
+
+```
+POST   /lists                    paste raw text, parse, resolve, persist, return report
+GET    /lists                    saved lists with staleness indicator
+GET    /lists/<id>               re-run allocation against current collection, return report
+PATCH  /lists/<id>/entries/<eid> set datasheet_id manually, write alias, re-run
+DELETE /lists/<id>
+POST   /lists/<id>/reparse       re-run parser over stored raw_text
+```
+
+`GET /lists/<id>` re-running allocation on every load is deliberate. The report is a live view of your collection, not a stored result. Paint three Meganobz, reload the list, the numbers move. That feedback loop is the feature.
+
+#### The report view
+
+One table, one row per list entry, ordered as pasted:
+
+| Unit | Need | Ready | Swap | Build | Short |
+|---|---|---|---|---|---|
+
+Row states, visually distinct:
+- **Short** — you don't own the plastic. The number that matters.
+- **Buildable** — you own models that could become this, but they need work. Uncommitted sprues, or assembled-but-unassigned.
+- **Swappable** — magnetized and battle ready, just built as something else right now. Tap to see which models and what they're currently configured as.
+- **Owned, not ready** — right datasheet, unfinished. Links to the painting queue.
+- **Ready** — done, no action.
+- **Unresolved** — name didn't match. Datasheet picker inline.
+
+Swappable rows should read as green. A magnetized Warglaive built as a Helverin is a two-minute arm swap, not a project.
+
+Summary line above the table: `1,740 / 2,000 pts owned · 1,215 pts battle ready · 2 swaps · 3 units short`.
+
+Points owned is the sum of `points` for entries where `short = 0`, counting swappable and buildable models toward ownership. A partially-owned unit contributes nothing — a 7-of-10 Boyz mob is not 70% of a Boyz mob on the table.
+
+Battle-ready points count swappable models, since a swap costs no hobby time. Buildable models do not count.
+
+Unresolved entries are excluded from all totals and the summary says so explicitly. Never let an unresolved row quietly deflate the numbers.
+
+#### Test cases
+
+Non-negotiable, these are the ones that break silently:
+
+1. Two 10-model and one 20-model entry of the same datasheet, 20 owned → reports 20 short, not 0.
+2. Same datasheet across two armies with `army_id` filtering on → only the matching army's models count.
+3. Unassigned models toggle off → those models excluded from allocation.
+4. Entry with no model count (character) → treated as 1.
+5. Unparseable line → appears as an unresolved row, is not dropped.
+6. Manual resolution → alias persists, second paste of the same text resolves automatically.
+7. Empty paste, wargear-only paste, list with a header but no entries → no crash, clear message.
+8. List needs 2 Warglaives, you own 3 uncommitted Armiger sprues → 0 short, 2 buildable, 1 sprue left over.
+9. List needs 1 Warglaive and 1 Helverin, you own 1 magnetized Armiger → one row swappable, the other short. One model cannot serve both.
+10. Most-constrained ordering: two shortfalls, one with a single eligible candidate and one with several, all drawing from the same pool → the constrained one is served first and neither reports a false shortfall.
+11. Magnetized model at battle ready → counts toward battle-ready points for the datasheet it can swap to, not just the one it's built as.
+12. `is_flexible` survives a stage advance from assembled through battle ready.
+
+#### Out of scope for this section
+
+List creation, legality validation, detachment rules, enhancement caps, wargear matching, and any attempt to reconcile a list against specific physical models rather than counts. Export to New Recruit stays the play path.
+
+---
+
+## 9 · Carried over from the original spec, and not built
+
+Audited 2026-08-23, module by module, against the 14-section build spec this
+file replaced on 2026-08-22.
+
+The re-scope was right to lead with the loop — but it summarised fourteen
+sections into seven and, in doing so, stopped mentioning several concrete
+requirements without ever deciding against them. A requirement nobody argued
+about and nobody wrote down is the one that gets rediscovered as a surprise. So
+they are listed here, with what the app actually has today.
+
+| Original | Requirement | State |
+|---|---|---|
+| §10 | **CSV export of the whole collection** — "non-negotiable. The data must never be trapped in this app." | **Not built.** No export of any kind: no route, no code path, zero occurrences of `csv` in the tree. This is the one on this list with a stated non-negotiable next to it. |
+| §8 | **Sale candidates** — sealed + owned kits, with age, price paid, duplicates, and *whether any list calls for the contents* | **Not built.** Every field it needs exists (`box_state`, `acquired_on`, `cost_cents`, `status`), and disposal itself works. The query and the view do not exist. |
+| §9 | **List validation** — points against the limit, legal unit sizes, faction consistency, and the three-state badge that refuses to show a false green | **Not built.** Points total and limit are displayed side by side and never compared; `min_models`/`max_models` are imported and read but never checked against a list. |
+| §7 | **Shortfalls → purchases** — invert `kit_templates`, show the overage, and always show the à la carte total beside the bundle total | **Not built.** The wishlist names datasheets and model counts. `kit_templates.rrp_cents` and `price_updated_on` exist and are editable, so the data is there; nothing computes the comparison. |
+| §7 | **Global shopping list** — deduplicate across lists on the *maximum* requirement, so two lists needing a Deff Dread means buying one | **Not built,** and the opposite happens: two lists each raise their own whole shortfall, so ten Boyz for Saturday and twenty for Sunday puts thirty on the wishlist. Pinned by `test_two_lists_short_of_the_same_unit_share_one_line`. |
+| §7 | **Sharing models between lists** — "don't allocate models to lists", show a quiet note instead: *"3 Killa Kans also appear in Speed Freeks 1000"* | **Not built.** Note that this does *not* conflict with §8's allocation: that allocates within one report, computed live and never stored, which is what stops one squad satisfying two entries of the same list. Across lists, the original rule still stands. |
+| §5.1 | **Dashboard** — models finished in the last 30 days (from `stage_events`), and total spend | **Partly built.** Home leads with effort-weighted completion, owned, battle ready, sealed and the stage bar. The 30-day figure and the spend total are absent; `stage_events` and `cost_cents` both carry the data. |
+| §5.5 | **Backlog** — every unfinished model, grouped by unit, sortable by army and acquisition date, effort shown, "a big push or a quick win" | **Partly built.** `paintable_units` is the session-mode picker: unfinished units, most-recently-touched first, capped at 40. No sorting, no acquisition date, no effort shown. |
+| §5.9 | **Admin** — points overrides, effort overrides, stage editing | **Partly built.** `datasheet_points.manual_override` and `datasheets.effort_is_override` exist and the importer respects them; nothing in the UI sets either. |
+| §14 | **Non-goals: "No Kill Team", "No 10th edition points"** | **Superseded, deliberately.** 1,450 Kill Team operatives are imported and the points are 11th edition. Both changed on purpose; the original list is stale here rather than violated. |
+
+Nothing on this list is a bug. Each is a decision waiting to be made — build it,
+or write down that it is out of scope — and the point of the table is that the
+decision now has to be made out loud.

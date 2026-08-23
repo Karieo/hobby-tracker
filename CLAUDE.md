@@ -37,6 +37,24 @@ doors onto §2.7 — importing a list from a file or a URL — and those stay ga
 on a source: every candidate host is refused by egress policy. Pasting never
 was. §5 of the spec has the measured state of each step.
 
+**In progress: the gap checker** (spec §8, written as "Section 7"). Three
+commits of five: migration 008 (`models.datasheet_id`, `is_flexible`,
+`kit_datasheets`, `datasheet_aliases`, `list_entries` rebuilt), `list_parse.py`
+and `list_resolve.py`. Still to come: allocation, and the routes and views.
+
+**One name-similarity function, `list_resolve.similarity`**, used by both paste
+doors. It sorts the words before comparing (rapidfuzz calls that
+`token_sort_ratio`) rather than using §8's `token_set_ratio`, which scores any
+strict subset as a perfect match — built that way it resolved "Warboss on
+Warbike" to Warboss at 100, a wrong confident match on the very example §8 uses
+to explain why aliases exist. It exists because `lists.list_gap` counts ownership per entry with
+nothing consuming a model once assigned, so a list asking for two squads of ten
+Boyz reports "fieldable" against ten Boyz owned.
+
+**§9 of the spec lists ten requirements the 2026-08-22 re-scope stopped
+mentioning without deciding against** — CSV export chief among them, which the
+original called non-negotiable. None is a bug; each is a decision still owed.
+
 ## Commands
 
 ```bash
@@ -48,6 +66,7 @@ python3 scripts/import_killteam.py [--dry-run] # Kill Team operatives
 python3 app.py                       # http://localhost:3100
 python3 seed/combat_patrol_magazine.py --status   # magazine seed
 python3 seed/derived_kits.py --status            # researched box contents
+python3 scripts/report_kit_datasheets.py         # what migration 008 could not map
 python3 -m pytest                    # tests
 shellcheck backup.sh restore.sh      # the shell half, linted in CI too
 ```
@@ -60,7 +79,17 @@ only thing standing between a regression and `main`.
 
 Flat module layout at the repo root, mirroring Remndrs: `app.py` owns HTTP
 routes and auth, `database.py` owns connections and queries, one module per
-concern as they arrive. Stdlib `sqlite3` with `sqlite3.Row`, a fresh connection
+concern as they arrive. No packages — the gap checker's modules sit alongside
+the rest rather than under a `gap_checker/`.
+
+**There are two list parsers, deliberately, and they are not interchangeable.**
+`bulk_add.parse_lines` reads a shelf typed from memory: it takes stage words
+("20 Boyz built") and may skip a line it cannot use. `list_parse.parse` reads
+an app's export: it carries points and position, detects the format, and may
+never skip anything. `/lists/import` still uses the first, which is why it
+reports an export's preamble as four unknown units; pointing it at the second
+is part of the gap checker's commit 5. The scaffolding patterns are shared
+(`bulk_add.SECTION_RE`, `TOTAL_RE`, `POINTS_RE`) so the two cannot drift. Stdlib `sqlite3` with `sqlite3.Row`, a fresh connection
 per call, foreign keys ON and WAL. No ORM, no SPA framework, no build step.
 
 **Migrations diverge from Remndrs deliberately.** Remndrs creates its schema
