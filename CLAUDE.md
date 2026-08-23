@@ -62,8 +62,13 @@ nothing. Both fixed at the writer. When adding a column in a migration, find
 every INSERT into that table in the same commit.
 
 **§9 of the spec lists ten requirements the 2026-08-22 re-scope stopped
-mentioning without deciding against** — CSV export chief among them, which the
-original called non-negotiable. None is a bug; each is a decision still owed.
+mentioning without deciding against.** None is a bug; each is a decision still
+owed. The first to be discharged is export: `GET /api/export/inventory` (spec
+§9.1) serves an external list optimiser as JSON or CSV, authenticated by a
+bearer token from `api_tokens` — the table migration 001 created and nothing
+read until now. **A token reaches `/api/export/` and nothing else**; widening
+that is one entry in `app.TOKEN_PATHS` and should be a decision rather than a
+side effect.
 
 ## Commands
 
@@ -77,6 +82,8 @@ python3 app.py                       # http://localhost:3100
 python3 seed/combat_patrol_magazine.py --status   # magazine seed
 python3 seed/derived_kits.py --status            # researched box contents
 python3 scripts/report_kit_datasheets.py         # what migration 008 could not map
+python3 scripts/api_token.py --create "name"     # mint an export token (shown once)
+python3 scripts/api_token.py --list|--revoke ID  # ...and manage them
 python3 -m pytest                    # tests
 shellcheck backup.sh restore.sh      # the shell half, linted in CI too
 ```

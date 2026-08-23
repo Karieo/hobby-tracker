@@ -502,7 +502,7 @@ they are listed here, with what the app actually has today.
 
 | Original | Requirement | State |
 |---|---|---|
-| §10 | **CSV export of the whole collection** — "non-negotiable. The data must never be trapped in this app." | **Not built.** No export of any kind: no route, no code path, zero occurrences of `csv` in the tree. This is the one on this list with a stated non-negotiable next to it. |
+| §10 | **CSV export of the whole collection** — "non-negotiable. The data must never be trapped in this app." | **Part built,** 2026-08-23. `GET /api/export/inventory` emits the inventory as JSON or CSV, bearer-token or session authenticated, with `bsdata_id` as the join key and every points tier uncollapsed. It is per *datasheet*, which is what a list optimiser asked for. Still owed from §10: a flat per-model CSV of whatever the collection screen is currently filtered to (§5.4), and list export as text and JSON. |
 | §8 | **Sale candidates** — sealed + owned kits, with age, price paid, duplicates, and *whether any list calls for the contents* | **Not built.** Every field it needs exists (`box_state`, `acquired_on`, `cost_cents`, `status`), and disposal itself works. The query and the view do not exist. |
 | §9 | **List validation** — points against the limit, legal unit sizes, faction consistency, and the three-state badge that refuses to show a false green | **Not built.** Points total and limit are displayed side by side and never compared; `min_models`/`max_models` are imported and read but never checked against a list. |
 | §7 | **Shortfalls → purchases** — invert `kit_templates`, show the overage, and always show the à la carte total beside the bundle total | **Not built.** The wishlist names datasheets and model counts. `kit_templates.rrp_cents` and `price_updated_on` exist and are editable, so the data is there; nothing computes the comparison. |
@@ -516,3 +516,24 @@ they are listed here, with what the app actually has today.
 Nothing on this list is a bug. Each is a decision waiting to be made — build it,
 or write down that it is out of scope — and the point of the table is that the
 decision now has to be made out loud.
+
+### 9.1 · `GET /api/export/inventory`
+
+Built 2026-08-23 to its own spec. The parts worth carrying here:
+
+- **`collection.export_inventory` is a sibling of `inventory()`, not an edit.**
+  The collection screen depends on that function's shape.
+- **It groups by `models.datasheet_id`, not the unit's.** Post-migration 008
+  they agree unless Clay has said otherwise, and where they disagree the model
+  is right: an uncommitted sprue is not anything yet, and counting it as its
+  unit's datasheet would report the same plastic as both owned and buildable.
+- **`sum(by_stage) == owned + wishlist` for every row**, asserted in a test.
+  A failure there means something is double-counted through the flexible or
+  capability joins, and the optimiser would build lists Clay cannot field.
+- **A bearer token reaches `/api/export/` and nothing else.** Deliberately
+  narrower than "use `api_tokens`": a token that can read the inventory is a
+  different thing to leave in a script's config than one that can delete a
+  kit. `app.TOKEN_PATHS` is where that widens, and it should be a decision.
+- Tokens are SHA-256, not bcrypt — 256 bits of `secrets` output has nothing to
+  brute-force, and a salted hash could not be looked up by index at all.
+  `scripts/api_token.py` mints, lists and revokes them.

@@ -189,3 +189,246 @@ def test_deprecated_40k_printings_stay_out_of_the_inventory(conn, sheets, stages
 
     assert len(rows) == 1
     assert rows[0]['variant'] is None
+
+
+# ── The export endpoint ──────────────────────────────────────────────────────
+#
+# Spec: `GET /api/export/inventory`. A sibling of `inventory()` rather than an
+# edit to it, because the collection screen depends on that function's shape
+# and an external list optimiser needs three things it does not have — the
+# `bsdata_id` join key, army grouping, and points.
+#
+# The assertion that matters most here is the reconciliation one. If
+# `sum(by_stage) != owned + wishlist` something is being double-counted through
+# the flexible or capability joins, and the optimiser would silently produce
+# lists Clay cannot field.
+
+import datetime  # noqa: E402
+import hashlib   # noqa: E402
+import json      # noqa: E402
+
+
+@pytest.fixture
+def knights(conn):
+    """Armigers, because they are the case capability exists for: one sprue
+    builds a Helverin or a Warglaive, and a magnetised one is either."""
+    faction = db.upsert_faction(conn, 'Imperial Knights', 'imperial-knights')
+    made = {'faction': faction}
+    for bsid, name in (('helverin', 'Armiger Helverin'),
+                       ('warglaive', 'Armiger Warglaive')):
+        made[name] = conn.execute(
+            'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+            'min_models, max_models, created_at, updated_at) '
+            'VALUES (?, ?, ?, 4, 1, 3, ?, ?)',
+            (bsid, name, faction, db.now(), db.now())).lastrowid
+    return made
+
+
+def armiger_box(conn, knights, stages, count, stage='On sprue',
+                army_id=None, committed_to=None, flexible=False):
+    kit_id = col.create_kit(conn, 'Armiger box')
+    for name in ('Armiger Helverin', 'Armiger Warglaive'):
+        conn.execute('INSERT OR IGNORE INTO kit_datasheets (kit_id, '
+                     'datasheet_id) VALUES (?, ?)', (kit_id, knights[name]))
+    added = col.add_or_extend_unit(
+        conn, committed_to or knights['Armiger Helverin'], count,
+        army_id=army_id, kit_id=kit_id, stage_id=stages[stage])
+    marks = ','.join('?' * len(added['model_ids']))
+    conn.execute(f'UPDATE models SET datasheet_id = ?, is_flexible = ? '
+                 f'WHERE id IN ({marks})',
+                 (committed_to, 1 if flexible else 0, *added['model_ids']))
+    return kit_id
+
+
+def rows_by_name(export):
+    return {d['name']: d for d in export['datasheets']}
+
+
+def test_the_export_has_the_shape_the_optimiser_expects(conn, sheets, stages):
+    army = col.create_army(conn, 'Da Boyz')
+    col.add_or_extend_unit(conn, sheets['Boyz'], 10, army_id=army,
+                           stage_id=stages['Battle ready'])
+    export = col.export_inventory(conn, army_id=army)
+
+    assert set(export) == {'generated_at', 'army', 'stages', 'datasheets'}
+    datetime.datetime.fromisoformat(export['generated_at'])
+    assert export['army']['name'] == 'Da Boyz'
+    assert export['stages'][0]['name'] == 'Wishlist'
+    assert export['stages'][0]['is_owned'] is False
+    row = rows_by_name(export)['Boyz']
+    for key in ('bsdata_id', 'name', 'faction', 'min_models', 'max_models',
+                'effort', 'owned', 'battle_ready', 'assembled', 'wishlist',
+                'by_stage', 'flexible', 'buildable_from_spare', 'points'):
+        assert key in row, key
+    assert row['bsdata_id'] == 'boyz', 'the join key, not the local integer id'
+
+
+def test_the_army_filter_keeps_another_army_out(conn, sheets, stages):
+    """"Ork inventory must not leak into a Knights list.\""""
+    speed = col.create_army(conn, 'Speed Freeks')
+    goffs = col.create_army(conn, 'Goffs')
+    col.add_or_extend_unit(conn, sheets['Boyz'], 10, army_id=speed,
+                           stage_id=stages['Battle ready'])
+    col.add_or_extend_unit(conn, sheets['Nobz'], 5, army_id=goffs,
+                           stage_id=stages['Battle ready'])
+
+    assert set(rows_by_name(col.export_inventory(conn, army_id=speed))) == {'Boyz'}
+    assert set(rows_by_name(col.export_inventory(conn, army_id=goffs))) == {'Nobz'}
+
+
+def test_unassigned_models_are_off_by_default_and_reachable(conn, sheets, stages):
+    """"A sealed box not yet committed to an army is real plastic." Off by
+    default so an army query is clean, but "what could I field if I committed
+    the unassigned stuff" is a question worth being able to ask."""
+    speed = col.create_army(conn, 'Speed Freeks')
+    col.add_or_extend_unit(conn, sheets['Boyz'], 10, army_id=speed,
+                           stage_id=stages['Battle ready'])
+    col.add_or_extend_unit(conn, sheets['Nobz'], 5, stage_id=stages['On sprue'])
+
+    assert set(rows_by_name(col.export_inventory(conn, army_id=speed))) == {'Boyz'}
+    both = col.export_inventory(conn, army_id=speed, include_unassigned=True)
+    assert set(rows_by_name(both)) == {'Boyz', 'Nobz'}
+
+
+def test_a_disposed_kit_is_not_in_the_export(conn, sheets, stages):
+    """The invariant: a sold box keeps its rows and stops counting."""
+    kit_id = col.create_kit(conn, 'Boyz box')
+    col.add_or_extend_unit(conn, sheets['Boyz'], 10, kit_id=kit_id,
+                           stage_id=stages['Battle ready'])
+    assert rows_by_name(col.export_inventory(conn,
+                                             include_unassigned=True))['Boyz']['owned'] == 10
+    col.dispose_kit(conn, kit_id, 'sold', price_cents=2500)
+    assert col.export_inventory(conn, include_unassigned=True)['datasheets'] == []
+
+
+def test_wishlist_models_never_count_as_owned(conn, sheets, stages):
+    """"A model Clay wants is not a model he has.\""""
+    col.add_or_extend_unit(conn, sheets['Boyz'], 10,
+                           stage_id=stages['Battle ready'])
+    col.add_or_extend_unit(conn, sheets['Boyz'], 7, stage_id=stages['Wishlist'])
+
+    row = rows_by_name(col.export_inventory(conn,
+                                            include_unassigned=True))['Boyz']
+    assert row['owned'] == 10 and row['wishlist'] == 7
+    assert row['by_stage']['Wishlist'] == 7
+
+
+def test_assembled_is_everything_past_the_sprue(conn, sheets, stages):
+    """"The gap between assembled and battle_ready is the paint queue, and it's
+    the whole reason both are exposed.\""""
+    col.add_or_extend_unit(conn, sheets['Boyz'], 3, stage_id=stages['On sprue'])
+    col.add_or_extend_unit(conn, sheets['Nobz'], 2, stage_id=stages['Primed'])
+    col.add_or_extend_unit(conn, sheets['Gretchin'], 1,
+                           stage_id=stages['Battle ready'])
+
+    rows = rows_by_name(col.export_inventory(conn, include_unassigned=True))
+    assert rows['Boyz']['assembled'] == 0
+    assert rows['Nobz']['assembled'] == 2 and rows['Nobz']['battle_ready'] == 0
+    assert rows['Gretchin']['assembled'] == 1
+    assert rows['Gretchin']['battle_ready'] == 1
+
+
+def test_the_counts_reconcile_for_every_row(conn, sheets, knights, stages):
+    """THE ASSERTION THAT CATCHES A DOUBLE COUNT.
+
+    "If it ever fails, something is being double-counted through the flexible
+    or capability joins, and the optimizer would silently produce lists Clay
+    can't field."
+    """
+    col.add_or_extend_unit(conn, sheets['Boyz'], 10, stage_id=stages['Primed'])
+    col.add_or_extend_unit(conn, sheets['Boyz'], 4, stage_id=stages['Wishlist'])
+    col.add_or_extend_unit(conn, sheets['Nobz'], 5,
+                           stage_id=stages['Battle ready'])
+    armiger_box(conn, knights, stages, 2)
+    armiger_box(conn, knights, stages, 1, stage='Battle ready',
+                committed_to=knights['Armiger Warglaive'], flexible=True)
+
+    export = col.export_inventory(conn, include_unassigned=True)
+    assert export['datasheets'], 'nothing to reconcile is not a pass'
+    for row in export['datasheets']:
+        assert sum(row['by_stage'].values()) == row['owned'] + row['wishlist'], \
+            f"{row['name']} does not reconcile: {row}"
+
+
+def test_a_magnetised_model_shows_against_every_datasheet_it_could_be(
+        conn, knights, stages):
+    """One magnetised Armiger built as a Warglaive is a Helverin Clay can field
+    in two minutes. It appears against both, and the consumer deduplicates by
+    model — the spec is explicit that silently picking one is the wrong fix."""
+    armiger_box(conn, knights, stages, 1, stage='Battle ready',
+                committed_to=knights['Armiger Warglaive'], flexible=True)
+    rows = rows_by_name(col.export_inventory(conn, include_unassigned=True))
+    assert rows['Armiger Warglaive']['flexible'] >= 1
+    assert rows['Armiger Helverin']['flexible'] >= 1
+    assert rows['Armiger Warglaive']['owned'] == 1
+    assert rows['Armiger Helverin']['owned'] == 0, 'it is not one right now'
+
+
+def test_spare_plastic_is_reported_apart_from_ownership(conn, knights, stages):
+    """"This is what makes 'you already have the plastic' possible." Distinct
+    from owned, because it is not one yet."""
+    armiger_box(conn, knights, stages, 3)
+    rows = rows_by_name(col.export_inventory(conn, include_unassigned=True))
+    assert rows['Armiger Helverin']['owned'] == 0
+    assert rows['Armiger Helverin']['buildable_from_spare'] == 3
+    assert rows['Armiger Warglaive']['buildable_from_spare'] == 3
+
+
+def test_capability_can_be_turned_off(conn, knights, stages):
+    armiger_box(conn, knights, stages, 3)
+    export = col.export_inventory(conn, include_unassigned=True,
+                                  include_capability=False)
+    for row in export['datasheets']:
+        assert 'buildable_from_spare' not in row
+
+
+def test_a_datasheet_with_nothing_at_all_is_omitted(conn, sheets, stages):
+    """"This is an inventory, not a catalogue dump.\""""
+    col.add_or_extend_unit(conn, sheets['Boyz'], 1, stage_id=stages['On sprue'])
+    names = set(rows_by_name(col.export_inventory(conn, include_unassigned=True)))
+    assert names == {'Boyz'}
+    assert 'Gretchin' not in names
+
+
+def test_every_tier_is_emitted_uncollapsed(conn, sheets, stages):
+    """"Requisition Thresholds are exactly the thing a list optimizer has to
+    reason about, and flattening here would hide the third-copy surcharge.\""""
+    col.add_or_extend_unit(conn, sheets['Boyz'], 10, stage_id=stages['On sprue'])
+    for model_count, points, lo, hi in ((10, 90, 1, 2), (10, 100, 3, None),
+                                        (20, 180, 1, 2)):
+        conn.execute('INSERT INTO datasheet_points (datasheet_id, model_count, '
+                     'points, tier_min, tier_max, effective_from) '
+                     'VALUES (?, ?, ?, ?, ?, ?)',
+                     (sheets['Boyz'], model_count, points, lo, hi, '2026-01-01'))
+
+    points = rows_by_name(col.export_inventory(
+        conn, include_unassigned=True))['Boyz']['points']
+    assert len(points) == 3
+    assert {(p['model_count'], p['points'], p['tier_min'], p['tier_max'])
+            for p in points} == {(10, 90, 1, 2), (10, 100, 3, None),
+                                 (20, 180, 1, 2)}
+
+
+def test_a_faction_priced_datasheet_follows_the_army(conn, sheets, stages):
+    """One Repulsor Executioner datasheet costs a Black Templar 255 and a Blood
+    Angel 230. With an army naming a faction, only that price goes out."""
+    orks = conn.execute("SELECT id FROM factions WHERE slug = 'orks'").fetchone()[0]
+    other = db.upsert_faction(conn, 'Blood Angels', 'blood-angels')
+    army = col.create_army(conn, 'Da Boyz', primary_faction_id=orks)
+    col.add_or_extend_unit(conn, sheets['Boyz'], 10, army_id=army,
+                           stage_id=stages['On sprue'])
+    for faction_id, points in ((orks, 90), (other, 120), (None, 80)):
+        conn.execute('INSERT INTO datasheet_points (datasheet_id, faction_id, '
+                     'model_count, points, tier_min, effective_from) '
+                     'VALUES (?, ?, 10, ?, 1, ?)',
+                     (sheets['Boyz'], faction_id, points, '2026-01-01'))
+
+    scoped = rows_by_name(col.export_inventory(conn, army_id=army))['Boyz']
+    assert sorted(p['points'] for p in scoped['points']) == [80, 90], \
+        'the other faction\'s price is not this army\'s'
+
+    everything = rows_by_name(col.export_inventory(
+        conn, include_unassigned=True))['Boyz']
+    labelled = {p.get('faction') for p in everything['points']}
+    assert 'Blood Angels' in labelled and 'Orks' in labelled, \
+        'with no army to scope by, every price goes out labelled'

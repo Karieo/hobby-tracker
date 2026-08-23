@@ -11,6 +11,9 @@ before_request allowlist, per-IP failed-login throttling, and ProxyFix so the
 tunnel's forwarded headers are trusted.
 """
 
+import csv
+import hashlib
+import io
 import json
 import logging
 import os
@@ -45,7 +48,7 @@ def apply_timezone():
 apply_timezone()
 
 import bcrypt  # noqa: E402
-from flask import (Flask, abort, jsonify, redirect,  # noqa: E402
+from flask import (Flask, Response, abort, jsonify, redirect,  # noqa: E402
                    render_template, request, session)
 from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 
@@ -143,6 +146,35 @@ def _record_auth_failure(ip):
     log.warning('Failed login attempt from %s', ip)
 
 
+# Paths a bearer token may reach. Deliberately not "every /api/ route": this
+# is the first consumer `api_tokens` has ever had, and a token that can read
+# the inventory is a very different thing to leave in a script's config file
+# than one that can delete a kit. Widening it is one entry in this tuple, and
+# should be a decision rather than a side effect.
+TOKEN_PATHS = ('/api/export/',)
+
+
+def _bearer_token():
+    header = request.headers.get('Authorization', '')
+    scheme, _, value = header.partition(' ')
+    return value.strip() if scheme.lower() == 'bearer' and value.strip() else None
+
+
+def _user_for_token(token):
+    """SHA-256, not bcrypt.
+
+    Passwords get bcrypt because they are low-entropy and a fast hash makes
+    them guessable offline. An API token is 256 bits of `secrets` output, so
+    there is nothing to guess — and a salted hash could not be looked up by
+    index at all, forcing a scan of every token on every request.
+
+    `database.get_user_by_token_hash` stamps `last_used_at` on the way through,
+    which is the only way to tell a live token from a forgotten one later.
+    """
+    digest = hashlib.sha256(token.encode()).hexdigest()
+    return db.get_user_by_token_hash(digest)
+
+
 @app.before_request
 def require_login():
     path = request.path
@@ -150,6 +182,17 @@ def require_login():
         return None
     if session.get('user_id'):
         return None
+    if any(path.startswith(p) for p in TOKEN_PATHS):
+        token = _bearer_token()
+        if token and _user_for_token(token):
+            return None
+        # Not throttled: a 256-bit random token is not brute-forceable, and
+        # throttling by IP would lock out the one script that is meant to be
+        # calling this. Logged, because a stream of these means a stale token
+        # in something Clay forgot he set up.
+        if token:
+            log.warning('Rejected API token from %s', request.remote_addr)
+        return jsonify({'error': 'Unauthorized'}), 401
     if path.startswith('/api/'):
         return jsonify({'error': 'Unauthorized'}), 401
     return redirect('/login')
@@ -1232,6 +1275,63 @@ def api_link_barcode(template_id):
 
 
 # ── Pickers ──────────────────────────────────────────────
+
+@app.route('/api/export/inventory')
+def api_export_inventory():
+    """What Clay owns, for a program rather than a screen.
+
+    Bearer token or a live session — the session so it stays clickable in a
+    browser while developing, which is how the shape gets checked without
+    writing a client first.
+
+    Read-only by construction: it is a GET that touches nothing.
+    """
+    army_id = _int(request.args.get('army_id'))
+    include_unassigned = _flag(request.args.get('include_unassigned'), False)
+    include_capability = _flag(request.args.get('include_capability'), True)
+    fmt = (request.args.get('format') or 'json').lower()
+    if fmt not in ('json', 'csv'):
+        return jsonify({'error': "format must be 'json' or 'csv'"}), 400
+
+    with _read() as conn:
+        if army_id and not conn.execute('SELECT 1 FROM armies WHERE id = ?',
+                                        (army_id,)).fetchone():
+            return jsonify({'error': f'no army {army_id}'}), 404
+        data = col.export_inventory(conn, army_id=army_id,
+                                    include_unassigned=include_unassigned,
+                                    include_capability=include_capability)
+    if fmt == 'csv':
+        return Response(_export_csv(data), mimetype='text/csv', headers={
+            'Content-Disposition': 'attachment; filename="inventory.csv"'})
+    return jsonify(data)
+
+
+def _flag(value, default):
+    if value is None or value == '':
+        return default
+    return value.lower() not in ('0', 'false', 'no', 'off')
+
+
+def _export_csv(data):
+    """The same rows, flattened.
+
+    `by_stage` and `points` are dropped rather than squashed into a cell: a
+    nested structure encoded inside CSV is a thing every consumer parses
+    slightly differently, and the JSON form is right there for anyone who
+    needs it. The scalars that answer the common questions all survive.
+    """
+    buffer = io.StringIO()
+    columns = ['bsdata_id', 'name', 'faction', 'game_system', 'min_models',
+               'max_models', 'effort', 'owned', 'assembled', 'battle_ready',
+               'wishlist', 'flexible']
+    if data['datasheets'] and 'buildable_from_spare' in data['datasheets'][0]:
+        columns.append('buildable_from_spare')
+    writer = csv.DictWriter(buffer, fieldnames=columns, extrasaction='ignore')
+    writer.writeheader()
+    for row in data['datasheets']:
+        writer.writerow(row)
+    return buffer.getvalue()
+
 
 @app.route('/api/datasheets')
 def api_datasheets():

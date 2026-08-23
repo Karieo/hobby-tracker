@@ -1232,3 +1232,137 @@ def test_a_list_without_a_name_is_refused(client):
     res = client.post('/api/lists/import', json={'rows': [], 'name': '  '})
     assert res.status_code == 400
     assert 'name' in res.get_json()['error'].lower()
+
+
+# ── The export endpoint's auth ───────────────────────────────────────────────
+#
+# `api_tokens` was created by migration 001 and had no consumer until this
+# endpoint. The consumer is a script, so a session cookie is no use to it.
+
+def _mint(db_path, device='test optimiser'):
+    """A token, and the plaintext to present. Only the hash is stored."""
+    import hashlib
+    import secrets
+    token = secrets.token_urlsafe(32)
+    with db.connect(db_path) as conn:
+        user = conn.execute('SELECT id FROM users LIMIT 1').fetchone()
+    original, db.DB_PATH = db.DB_PATH, db_path
+    try:
+        db.create_api_token(user['id'],
+                            hashlib.sha256(token.encode()).hexdigest(), device)
+    finally:
+        db.DB_PATH = original
+    return token
+
+
+@pytest.fixture
+def anon(db_path, monkeypatch):
+    """A client with no session — the state a script is in."""
+    import app as appmod
+    monkeypatch.setattr(appmod.db, 'DB_PATH', db_path)
+    appmod.app.config['TESTING'] = True
+    with db.connect(db_path) as conn:
+        if not conn.execute('SELECT 1 FROM users LIMIT 1').fetchone():
+            import bcrypt
+            conn.execute(
+                'INSERT INTO users (id, name, password_hash, role, created_at) '
+                'VALUES (?, ?, ?, ?, ?)',
+                ('u1', 'Clay',
+                 bcrypt.hashpw(b'pw', bcrypt.gensalt()).decode(), 'owner',
+                 db.now()))
+    return appmod.app.test_client()
+
+
+def test_the_export_refuses_an_anonymous_caller(anon):
+    assert anon.get('/api/export/inventory').status_code == 401
+
+
+def test_the_export_refuses_a_token_it_does_not_know(anon):
+    got = anon.get('/api/export/inventory',
+                   headers={'Authorization': 'Bearer not-a-real-token'})
+    assert got.status_code == 401
+
+
+def test_the_export_refuses_a_malformed_authorization_header(anon):
+    for header in ('Bearer', 'Bearer   ', 'Basic abc123', 'nonsense'):
+        got = anon.get('/api/export/inventory',
+                       headers={'Authorization': header})
+        assert got.status_code == 401, header
+
+
+def test_a_minted_token_opens_the_export(anon, db_path):
+    token = _mint(db_path)
+    got = anon.get('/api/export/inventory',
+                   headers={'Authorization': f'Bearer {token}'})
+    assert got.status_code == 200
+    assert 'datasheets' in got.get_json()
+
+
+def test_using_a_token_records_that_it_was_used(anon, db_path):
+    """The only way to tell a live token from one Clay forgot he minted."""
+    token = _mint(db_path)
+    with db.connect(db_path) as conn:
+        assert conn.execute(
+            'SELECT last_used_at FROM api_tokens').fetchone()['last_used_at'] is None
+    anon.get('/api/export/inventory',
+             headers={'Authorization': f'Bearer {token}'})
+    with db.connect(db_path) as conn:
+        assert conn.execute(
+            'SELECT last_used_at FROM api_tokens').fetchone()['last_used_at']
+
+
+def test_a_revoked_token_stops_working(anon, db_path):
+    import hashlib
+    token = _mint(db_path)
+    header = {'Authorization': f'Bearer {token}'}
+    assert anon.get('/api/export/inventory', headers=header).status_code == 200
+    original, db.DB_PATH = db.DB_PATH, db_path
+    try:
+        db.delete_api_token_by_hash(hashlib.sha256(token.encode()).hexdigest())
+    finally:
+        db.DB_PATH = original
+    assert anon.get('/api/export/inventory', headers=header).status_code == 401
+
+
+def test_a_session_opens_the_export_too(client):
+    """So it stays clickable in a browser while developing, which is how the
+    shape gets checked without writing a client first."""
+    assert client.get('/api/export/inventory').status_code == 200
+
+
+def test_a_token_does_not_open_the_rest_of_the_api(anon, db_path):
+    """Deliberately narrower than the spec's "use api_tokens". A token that can
+    read the inventory is a very different thing to leave in a script's config
+    than one that can delete a kit, and widening it should be a decision rather
+    than a side effect."""
+    token = _mint(db_path)
+    header = {'Authorization': f'Bearer {token}'}
+    assert anon.get('/api/collection/1', headers=header).status_code == 401
+    assert anon.post('/api/units', json={}, headers=header).status_code == 401
+
+
+def test_the_export_takes_its_parameters_from_the_query(client, army_with_unit):
+    got = client.get('/api/export/inventory?include_unassigned=true'
+                     '&include_capability=false').get_json()
+    assert got['datasheets']
+    assert all('buildable_from_spare' not in d for d in got['datasheets'])
+
+
+def test_the_export_refuses_a_format_it_cannot_write(client):
+    assert client.get('/api/export/inventory?format=xml').status_code == 400
+
+
+def test_an_army_that_does_not_exist_is_a_404(client):
+    assert client.get('/api/export/inventory?army_id=9999').status_code == 404
+
+
+def test_the_csv_form_flattens(client, army_with_unit):
+    """"csv flattens, dropping by_stage and points." A nested structure encoded
+    inside a CSV cell is a thing every consumer parses slightly differently."""
+    got = client.get('/api/export/inventory?format=csv&include_unassigned=true')
+    assert got.status_code == 200
+    assert got.mimetype == 'text/csv'
+    body = got.get_data(as_text=True)
+    header = body.splitlines()[0]
+    assert 'bsdata_id' in header and 'owned' in header
+    assert 'by_stage' not in header and 'points' not in header
