@@ -1507,10 +1507,15 @@ def test_photos_are_behind_the_login(db_path, monkeypatch):
     assert anon.get('/photos/anything.jpg').status_code in (302, 401)
 
 
-def test_the_upload_form_is_on_the_unit_page(client, army_with_unit):
+def test_the_upload_dialog_is_on_the_unit_page(client, army_with_unit):
+    """Behind a button now, not sitting open under the log."""
     body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
-    assert 'id="add-photo"' in body
+
+    assert 'id="open-photo"' in body
+    assert '<dialog id="photo-dialog"' in body
     assert 'name="taken_on"' in body, 'the date is the point of the log'
+    assert 'multiple' in body.split('name="photo"')[1][:80], \
+        'a session produces several and one at a time is the friction'
 
 
 # ── The ramp as a summary ────────────────────────────────
@@ -1608,3 +1613,92 @@ def test_css_shows_exactly_one_icon_in_every_state(client):
         ':root[data-ground="blueprint"] #ground .moon { display: block; }',
     ):
         assert rule in css, rule
+
+
+# ── Editing a picture, and the journey ───────────────────
+
+def test_patching_a_caption_over_http(client, army_with_unit, tmp_path, monkeypatch):
+    import photos as photomod
+    monkeypatch.setattr(photomod, 'PHOTO_DIR', str(tmp_path / 'shots'))
+    unit_id = army_with_unit['unit_id']
+    saved = client.post(f'/api/units/{unit_id}/photos',
+                        data={'photo': _jpeg(), 'taken_on': '2026-08-18'},
+                        content_type='multipart/form-data').get_json()
+
+    res = client.patch(f'/api/photos/{saved["id"]}',
+                       json={'caption': 'first ten done'})
+
+    assert res.status_code == 200
+    body = client.get(f'/units/{unit_id}').get_data(as_text=True)
+    assert 'first ten done' in body
+    assert '2026-08-18' in body, 'and the date did not move'
+
+
+def test_patching_nothing_is_refused(client, army_with_unit, tmp_path, monkeypatch):
+    import photos as photomod
+    monkeypatch.setattr(photomod, 'PHOTO_DIR', str(tmp_path / 'shots'))
+    saved = client.post(f'/api/units/{army_with_unit["unit_id"]}/photos',
+                        data={'photo': _jpeg()},
+                        content_type='multipart/form-data').get_json()
+
+    assert client.patch(f'/api/photos/{saved["id"]}', json={}).status_code == 400
+
+
+def test_patching_a_photo_that_is_not_there(client):
+    assert client.patch('/api/photos/9999',
+                        json={'caption': 'x'}).status_code == 404
+
+
+def test_the_unit_page_offers_a_note_on_every_picture(client, army_with_unit,
+                                                      tmp_path, monkeypatch):
+    """The button says which it is: a picture with no note offers to add one."""
+    import photos as photomod
+    monkeypatch.setattr(photomod, 'PHOTO_DIR', str(tmp_path / 'shots'))
+    unit_id = army_with_unit['unit_id']
+    client.post(f'/api/units/{unit_id}/photos', data={'photo': _jpeg()},
+                content_type='multipart/form-data')
+
+    body = client.get(f'/units/{unit_id}').get_data(as_text=True)
+
+    assert 'shot-edit' in body and 'Add a note' in body
+
+
+def test_the_journey_is_empty_and_says_so(client):
+    body = client.get('/gallery').get_data(as_text=True)
+    assert 'Nothing photographed yet' in body
+    assert 'id="scrub"' not in body, 'nothing to scrub through'
+
+
+def test_the_journey_scrubs_once_there_are_two(client, army_with_unit,
+                                               tmp_path, monkeypatch):
+    import photos as photomod
+    monkeypatch.setattr(photomod, 'PHOTO_DIR', str(tmp_path / 'shots'))
+    unit_id = army_with_unit['unit_id']
+    for day in ('2026-08-20', '2026-08-01'):
+        client.post(f'/api/units/{unit_id}/photos',
+                    data={'photo': _jpeg(), 'taken_on': day},
+                    content_type='multipart/form-data')
+
+    body = client.get('/gallery').get_data(as_text=True)
+
+    assert 'id="scrub"' in body and 'max="1"' in body
+    # Oldest first: the first frame is the earliest date.
+    assert body.index('2026-08-01') < body.index('2026-08-20')
+
+
+def test_one_picture_needs_no_scrubber(client, army_with_unit, tmp_path,
+                                       monkeypatch):
+    """A slider with one position is a control that cannot do anything."""
+    import photos as photomod
+    monkeypatch.setattr(photomod, 'PHOTO_DIR', str(tmp_path / 'shots'))
+    client.post(f'/api/units/{army_with_unit["unit_id"]}/photos',
+                data={'photo': _jpeg()}, content_type='multipart/form-data')
+
+    body = client.get('/gallery').get_data(as_text=True)
+
+    assert 'class="frame on"' in body
+    assert 'id="scrub"' not in body
+
+
+def test_the_journey_is_in_the_nav(client):
+    assert 'href="/gallery"' in client.get('/collection').get_data(as_text=True)

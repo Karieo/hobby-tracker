@@ -832,3 +832,51 @@ a.go {
 @media (min-width: 58rem) {
   .statgrid { grid-template-columns: repeat(4, 1fr); }
 }
+
+/* ── The photo dialog ────────────────────────────────────
+   <dialog> for the browser's Escape, focus trapping and backdrop — this app
+   has no framework to borrow them from. */
+#photo-dialog {
+  border: 1px solid var(--rule); background: var(--panel); color: var(--ink);
+  padding: 0; width: min(30rem, calc(100vw - 2rem));
+}
+#photo-dialog::backdrop { background: rgba(0, 0, 0, .55); }
+.dialoghead { display: flex; align-items: center; justify-content: space-between;
+              gap: 1rem; padding: .8rem 1rem; border-bottom: 1px solid var(--rule); }
+.dialoghead h2 { margin: 0; }
+#photo-form { padding: 1rem; margin: 0; }
+#photo-form .hint { margin: .2rem 0 0; }
+
+/* The note sits between the date and the buttons and takes the slack, so a
+   long one wraps rather than pushing Remove off the row. */
+.shotnote { flex: 1 1 8rem; }
+.shotmeta .shot-edit { margin-left: auto; }
+.shotmeta .shot-delete { margin-left: 0; }
+
+/* ── The journey ─────────────────────────────────────────
+   One frame visible, all of them in the document. */
+.scrubber { margin: 0 0 1.5rem; }
+.frames { position: relative; border: 1px solid var(--rule);
+          background: var(--panel); }
+.frame { display: none; margin: 0; }
+.frame.on { display: block; }
+.frame img { display: block; width: 100%; height: auto;
+             max-height: 60vh; object-fit: contain; background: var(--bg); }
+.frame .gone { padding: 2rem 1rem; }
+.frame figcaption { display: flex; flex-wrap: wrap; gap: .4rem;
+                    align-items: baseline; padding: .6rem .8rem;
+                    font-size: .85rem; border-top: 1px solid var(--rule); }
+.frame figcaption .note { flex: 1 1 100%; color: var(--muted); }
+
+.scrubrow { margin-top: .7rem; }
+/* Full width and a tall thumb: this is dragged with a thumb on a phone, and a
+   default range input is about half the target it needs to be. */
+.scrubrow input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent);
+                                min-height: 44px; }
+.scrubends { display: flex; justify-content: space-between; gap: .5rem;
+             margin: 0; font-size: .75rem; color: var(--muted);
+             font-variant-numeric: tabular-nums; }
+.gallerygrid { grid-template-columns: 1fr 1fr; }
+@media (min-width: 46rem) {
+  .gallerygrid { grid-template-columns: repeat(4, 1fr); }
+}

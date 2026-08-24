@@ -195,3 +195,105 @@ def test_path_for_finds_a_real_one(conn, unit):
 
 def test_path_for_a_name_that_is_not_there(conn, unit):
     assert photos.path_for('deadbeef.jpg') is None
+
+
+# ── A note after the fact ────────────────────────────────
+#
+# Clay: "Allow me to add a note after a photo is added." The picture gets taken
+# and uploaded in one motion; what it was worth saying about it turns up later.
+
+def test_a_caption_can_arrive_later(conn, unit):
+    saved = photos.add(conn, unit, JPEG)
+    assert photos.for_unit(conn, unit)[0]['caption'] is None
+
+    photos.update(conn, saved['id'], caption='first ten done')
+
+    assert photos.for_unit(conn, unit)[0]['caption'] == 'first ten done'
+
+
+def test_a_caption_can_be_cleared(conn, unit):
+    """A note you want gone is a real thing to want."""
+    saved = photos.add(conn, unit, JPEG, caption='wrong squad')
+
+    photos.update(conn, saved['id'], caption='   ')
+
+    assert photos.for_unit(conn, unit)[0]['caption'] is None
+
+
+def test_editing_the_caption_leaves_the_date(conn, unit):
+    """Same hazard as update_unit's: a form sending one field must not blank
+    the other. Here it would move a picture in the timeline."""
+    saved = photos.add(conn, unit, JPEG, taken_on='2026-08-18')
+
+    photos.update(conn, saved['id'], caption='a note')
+
+    assert photos.for_unit(conn, unit)[0]['taken_on'] == '2026-08-18'
+
+
+def test_the_date_can_be_corrected(conn, unit):
+    saved = photos.add(conn, unit, JPEG, taken_on='2026-08-18')
+
+    photos.update(conn, saved['id'], taken_on='2026-08-01')
+
+    assert photos.for_unit(conn, unit)[0]['taken_on'] == '2026-08-01'
+
+
+def test_a_blank_date_is_ignored_not_honoured(conn, unit):
+    """Unlike the caption. A photo with no date at all has no place in a log
+    whose only axis is dates."""
+    saved = photos.add(conn, unit, JPEG, taken_on='2026-08-18')
+
+    photos.update(conn, saved['id'], taken_on='')
+
+    assert photos.for_unit(conn, unit)[0]['taken_on'] == '2026-08-18'
+
+
+def test_update_refuses_a_column_it_was_not_given(conn, unit):
+    """The field names reach an f-string. A whitelist is why that is safe."""
+    saved = photos.add(conn, unit, JPEG)
+    with pytest.raises(AssertionError):
+        photos.update(conn, saved['id'], filename='../../etc/passwd')
+
+
+# ── The journey ──────────────────────────────────────────
+#
+# Clay: "make a gallant page with a timeline that I can scrub through to see my
+# progress and journey."
+
+def test_the_timeline_runs_oldest_first(conn, unit):
+    """The opposite of for_unit, and the whole point. A unit page asks what
+    this looks like now; a journey reads forwards."""
+    for day in ('2026-08-20', '2026-08-01', '2026-08-10'):
+        photos.add(conn, unit, JPEG, taken_on=day)
+
+    assert [s['taken_on'] for s in photos.timeline(conn)] == \
+        ['2026-08-01', '2026-08-10', '2026-08-20']
+    assert [s['taken_on'] for s in photos.for_unit(conn, unit)][0] == '2026-08-20'
+
+
+def test_the_timeline_crosses_units(conn, unit):
+    """One journey, not one per squad."""
+    other = col.create_unit(
+        conn, conn.execute('SELECT datasheet_id FROM units WHERE id = ?',
+                           (unit,)).fetchone()['datasheet_id'], 5)
+    photos.add(conn, unit, JPEG, taken_on='2026-08-01')
+    photos.add(conn, other, JPEG, taken_on='2026-08-02')
+
+    assert {s['unit_id'] for s in photos.timeline(conn)} == {unit, other}
+
+
+def test_the_timeline_names_what_is_in_the_picture(conn, unit):
+    """A date and a photo with no name is a puzzle, not a journey."""
+    photos.add(conn, unit, JPEG)
+    shot = photos.timeline(conn)[0]
+    assert shot['unit_name'] == 'Boyz' and shot['faction_name'] == 'Orks'
+
+
+def test_a_missing_file_stays_in_the_sequence(conn, unit):
+    """A gap in a journey is information. Dropping it would silently rewrite
+    the story as though the picture had never been taken."""
+    saved = photos.add(conn, unit, JPEG)
+    os.unlink(os.path.join(photos.PHOTO_DIR, saved['filename']))
+
+    shots = photos.timeline(conn)
+    assert len(shots) == 1 and shots[0]['missing'] is True

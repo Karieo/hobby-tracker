@@ -221,34 +221,95 @@ if (moveForm) {
 }
 
 /* ── The hobby log ───────────────────────────────────────
- * A multipart POST through fetch rather than a plain form submit: the endpoint
- * answers in JSON like every other one here, and letting the browser navigate
- * to it would leave Clay looking at `{"id": 4}` on a white page. */
-const photoForm = $('#add-photo');
-if (photoForm) {
+ * One dialog for adding pictures and for editing what one says, because they
+ * ask for the same three things. `mode` is the only difference and it lives
+ * here rather than in two copies of the markup. */
+const photoDialog = $('#photo-dialog');
+const photoForm = $('#photo-form');
+
+function openPhotoDialog(mode, shot) {
+  const title = $('#photo-dialog-title');
+  const fileRow = $('#photo-file-row');
+  const file = $('input[name="photo"]', photoForm);
+  const save = $('#photo-save');
+  photoForm.dataset.mode = mode;
+  photoForm.dataset.photo = shot ? shot.id : '';
+
+  const editing = mode === 'edit';
+  title.textContent = editing ? 'Edit this picture' : 'Add photo';
+  save.textContent = editing ? 'Save' : 'Add picture';
+  // Hidden *and* disabled: a hidden `required` file input blocks submission
+  // with a validation message pointing at something nobody can see.
+  fileRow.hidden = editing;
+  file.disabled = editing;
+  file.required = !editing;
+  if (!editing) file.value = '';
+
+  $('input[name="taken_on"]', photoForm).value =
+    (shot && shot.date) || photoForm.dataset.today || $('input[name="taken_on"]', photoForm).value;
+  $('input[name="caption"]', photoForm).value = (shot && shot.caption) || '';
+  photoDialog.showModal();
+  // The note is what an edit is almost always for.
+  if (editing) $('input[name="caption"]', photoForm).focus();
+}
+
+if (photoDialog && photoForm) {
+  // Remember the default date before anything overwrites it.
+  photoForm.dataset.today = $('input[name="taken_on"]', photoForm).value;
+
+  const opener = $('#open-photo');
+  if (opener) opener.addEventListener('click', () => openPhotoDialog('add'));
+
   photoForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const button = $('button[type="submit"]', photoForm);
-    // A phone photo over a tunnel is not instant, and a button that does
-    // nothing visible for four seconds gets pressed again.
-    button.disabled = true;
-    const said = button.textContent;
-    button.textContent = 'Uploading…';
+    const save = $('#photo-save');
+    const said = save.textContent;
+    save.disabled = true;
     try {
-      const res = await fetch(photoForm.action,
-                              {method: 'POST', body: new FormData(photoForm)});
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error((data && data.error) || `${res.status}`);
+      if (photoForm.dataset.mode === 'edit') {
+        save.textContent = 'Saving…';
+        await post(`/api/photos/${photoForm.dataset.photo}`, {
+          taken_on: $('input[name="taken_on"]', photoForm).value,
+          caption: $('input[name="caption"]', photoForm).value,
+        }, 'PATCH');
+      } else {
+        const files = [...$('input[name="photo"]', photoForm).files];
+        if (!files.length) throw new Error('Pick a picture first');
+        // One request each rather than one multi-file endpoint: a phone photo
+        // over a tunnel is slow enough that a failure halfway through should
+        // keep the ones that already landed.
+        for (let i = 0; i < files.length; i += 1) {
+          save.textContent = files.length > 1
+            ? `Uploading ${i + 1} of ${files.length}…` : 'Uploading…';
+          const body = new FormData();
+          body.append('photo', files[i]);
+          body.append('taken_on', $('input[name="taken_on"]', photoForm).value);
+          body.append('caption', $('input[name="caption"]', photoForm).value);
+          const res = await fetch(`/api/units/${photoForm.dataset.unit}/photos`,
+                                  {method: 'POST', body});
+          const data = await res.json().catch(() => null);
+          if (!res.ok) throw new Error((data && data.error) || `${res.status}`);
+        }
+      }
       location.reload();
     } catch (err) {
-      button.disabled = false;
-      button.textContent = said;
+      save.disabled = false;
+      save.textContent = said;
       toast(err.message, 'error');
     }
   });
 }
 
 document.addEventListener('click', async (e) => {
+  const edit = e.target.closest('.shot-edit');
+  if (edit) {
+    const row = edit.closest('li');
+    openPhotoDialog('edit', {id: edit.dataset.photo,
+                             date: row.dataset.date,
+                             caption: row.dataset.caption});
+    return;
+  }
+
   const remove = e.target.closest('.shot-delete');
   if (!remove) return;
   if (!window.confirm('Remove this picture? This cannot be undone.')) return;

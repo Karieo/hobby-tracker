@@ -116,11 +116,16 @@
      question asked far more often than "what did I finish in March" — and the
      one worth a tap is the one at the top. #}
   <h2>Photos {% if unit_photos %}<span class="muted">{{ unit_photos|length }}</span>{% endif %}</h2>
+  <div class="actions">
+    <button class="go" id="open-photo">Add photo</button>
+  </div>
 
   {% if unit_photos %}
     <ul class="shots">
       {% for shot in unit_photos %}
-        <li>
+        <li data-photo="{{ shot.id }}"
+            data-date="{{ shot.taken_on }}"
+            data-caption="{{ shot.caption or '' }}">
           {% if shot.missing %}
             {# The row is here and the file is not. A restore that carried the
                database and not data/photos/, most likely — and a caption
@@ -140,38 +145,56 @@
           {% endif %}
           <p class="shotmeta">
             <b>{{ shot.taken_on }}</b>
-            {% if shot.caption %} · {{ shot.caption }}{% endif %}
+            <span class="shotnote">{% if shot.caption %}{{ shot.caption }}{% endif %}</span>
+            <button class="ghost shot-edit" data-photo="{{ shot.id }}">
+              {{ 'Edit' if shot.caption else 'Add a note' }}</button>
             <button class="ghost shot-delete" data-photo="{{ shot.id }}">Remove</button>
           </p>
         </li>
       {% endfor %}
     </ul>
+  {% else %}
+    <p class="hint">
+      No pictures yet. They are the only backward-looking thing this app keeps
+      — everything else answers about now.
+    </p>
   {% endif %}
 
-  {# A plain multipart form, no JavaScript: `capture` is missing on purpose so
-     iOS offers the camera roll as well as the camera, and most of these are
-     pictures taken earlier at the desk rather than in the moment. #}
-  <form class="panel stack" id="add-photo" method="post"
-        enctype="multipart/form-data"
-        action="/api/units/{{ unit.id }}/photos">
-    <label>Picture
-      <input type="file" name="photo" accept="image/*" required>
-    </label>
-    <label>Finished on
-      <input type="date" name="taken_on" value="{{ today }}">
-    </label>
-    <label>Caption
-      <input name="caption" autocomplete="off"
-             placeholder="Optional — first ten done, new basing…">
-    </label>
-    <div class="actions"><button class="go" type="submit">Add picture</button></div>
-  </form>
+  {# One dialog, two jobs: adding pictures and editing what one says. They ask
+     for the same three things, and a second dialog would be the same markup
+     with a different heading and one more place for the date field to drift.
 
-  {# The Unit panel is gone, nickname and notes crossed out together. The
-     columns stay and so does everything already in them: `display_name` still
-     prefers a nickname, and PATCH /api/units/<id> still writes either field.
-     Only the box on this screen has left, because neither is the summary nor
-     the count. #}
+     <dialog> rather than a div: Escape, focus trapping and the backdrop come
+     from the browser, and this app has no framework to borrow them from. #}
+  <dialog id="photo-dialog">
+    <form method="dialog" class="dialoghead">
+      <h2 id="photo-dialog-title">Add photo</h2>
+      <button class="ghost" value="cancel" aria-label="Close">Close</button>
+    </form>
+
+    <form class="stack" id="photo-form" enctype="multipart/form-data"
+          data-unit="{{ unit.id }}">
+      {# Hidden while editing: the picture is not the thing being changed. #}
+      <label id="photo-file-row">Picture
+        {# `multiple` because a session produces several and uploading them one
+           at a time is the friction that stops the log being kept. No
+           `capture`: iOS then offers only the camera, and most of these are
+           taken earlier at the desk. #}
+        <input type="file" name="photo" accept="image/*" multiple required>
+        <span class="hint">Several at once is fine — they share the date and note.</span>
+      </label>
+      <label>Finished on
+        <input type="date" name="taken_on" value="{{ today }}">
+      </label>
+      <label>Note
+        <input name="caption" autocomplete="off"
+               placeholder="Optional — first ten done, new basing…">
+      </label>
+      <div class="actions">
+        <button class="go" type="submit" id="photo-save">Add picture</button>
+      </div>
+    </form>
+  </dialog>
 
   <h2>How many</h2>
   {# The two halves of what this screen is now for. Adding wires up

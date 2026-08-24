@@ -139,6 +139,69 @@ def for_unit(conn, unit_id):
     return rows
 
 
+_EDITABLE = ('taken_on', 'caption')
+
+
+def update(conn, photo_id, **fields):
+    """Change what a picture says about itself, after the fact.
+
+    The caption is the part most likely to arrive late: the picture gets taken
+    and uploaded in the same breath, and what it was worth saying about turns
+    up a day later. Making it a field on the upload form and nowhere else meant
+    a photo's note had exactly one moment to exist in.
+
+    Only supplied keys are written, for the same reason `collection.update_unit`
+    does it: a form that sends one field must not blank the other. An empty
+    caption still clears — a caption you want gone is a real thing to want.
+    `taken_on` is different: blank would leave a photo with no date at all in a
+    log whose whole axis is dates, so it is ignored rather than honoured.
+    """
+    unknown = set(fields) - set(_EDITABLE)
+    assert not unknown, f'update cannot write {sorted(unknown)}'
+    fields = {k: v for k, v in fields.items()
+              if not (k == 'taken_on' and not (v or '').strip())}
+    if not fields:
+        return False
+    values = [(v or '').strip() or None if k == 'caption' else v
+              for k, v in fields.items()]
+    sets = ', '.join(f'{name} = ?' for name in fields)
+    cur = conn.execute(f'UPDATE unit_photos SET {sets} WHERE id = ?',
+                       [*values, photo_id])
+    return cur.rowcount > 0
+
+
+def timeline(conn, limit=500):
+    """Every picture, oldest first — the journey rather than the log.
+
+    Oldest first is the whole point and the opposite of `for_unit`. A unit page
+    answers "what does this look like now", so the newest picture belongs at
+    the top; a timeline answers "how did this get here", and that reads
+    forwards.
+
+    Missing files are flagged the same way and kept in the sequence rather than
+    dropped, because a gap in a journey is information too.
+    """
+    rows = [dict(r) for r in conn.execute("""
+        SELECT p.id, p.unit_id, p.filename, p.taken_on, p.caption,
+               p.created_at,
+               COALESCE(u.nickname, d.name) AS unit_name,
+               d.name  AS datasheet_name,
+               f.name  AS faction_name,
+               a.name  AS army_name
+          FROM unit_photos p
+          JOIN units u          ON u.id = p.unit_id
+          JOIN datasheets d     ON d.id = u.datasheet_id
+          LEFT JOIN factions f  ON f.id = d.faction_id
+          LEFT JOIN armies a    ON a.id = u.army_id
+         ORDER BY p.taken_on, p.id
+         LIMIT ?
+    """, (limit,))]
+    for row in rows:
+        row['missing'] = not os.path.exists(
+            os.path.join(PHOTO_DIR, row['filename']))
+    return rows
+
+
 def get(conn, photo_id):
     row = conn.execute('SELECT * FROM unit_photos WHERE id = ?',
                        (photo_id,)).fetchone()
