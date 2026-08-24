@@ -364,6 +364,70 @@ def test_a_template_with_no_contents_is_refused(conn, orks):
         col.instantiate_template(conn, cur.lastrowid)
 
 
+def test_recording_a_kit_by_name_invents_no_models(conn, orks):
+    """Ownership now, contents whenever. Guessing what is inside a box from
+    its name is the one thing this app will not do — a plausible guess is
+    wrong in places with no signal about which.
+
+    Moved down from the route tests with the Kits screens; `create_kit` is
+    still what the magazine seed and `instantiate_template` call."""
+    kit_id = col.create_kit(conn, 'Nobz Mob 2019')
+
+    assert col.get_kit(conn, kit_id)['name'] == 'Nobz Mob 2019'
+    assert conn.execute('SELECT COUNT(*) FROM units WHERE kit_id = ?',
+                        (kit_id,)).fetchone()[0] == 0
+    assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 0
+
+
+# ── Correcting a kit ─────────────────────────────────────
+#
+# These three moved down from tests/test_routes.py when the Kits screens were
+# removed. The screens are gone; `update_kit` and `delete_kit` are not — the
+# magazine seed and `instantiate_template` still write kits, and the journey
+# still reads them. Deleting the route tests would have taken the only cover
+# these two functions had with them.
+
+
+def test_editing_a_kit_only_touches_the_fields_given(conn, orks):
+    """A caller passing three fields must not blank the other seven.
+
+    The same bug `update_unit` actually shipped: writing every column every
+    time, so saving a note silently erased the name."""
+    kit_id = col.create_kit(conn, 'Wrecka Krew', notes='keep me',
+                            acquired_on='2026-01-02')
+
+    col.update_kit(conn, kit_id, name='Wrecka Krew 2024')
+
+    kit = col.get_kit(conn, kit_id)
+    assert kit['name'] == 'Wrecka Krew 2024'
+    assert kit['notes'] == 'keep me'
+    assert kit['acquired_on'] == '2026-01-02'
+
+
+def test_a_kit_cannot_be_renamed_to_nothing(conn, orks):
+    """A nameless row is unfindable and unfixable."""
+    kit_id = col.create_kit(conn, 'Killa Kans')
+
+    with pytest.raises(ValueError):
+        col.update_kit(conn, kit_id, name='   ')
+
+    assert col.get_kit(conn, kit_id)['name'] == 'Killa Kans'
+
+
+def test_deleting_a_kit_takes_its_units_and_models_with_it(conn, orks):
+    """Deleting is the *correction* — plastic that was never there. Selling is
+    `dispose_kit`, which keeps every row. Both exist because the cheap control
+    must not be the one that empties the spend history."""
+    kit_id = col.create_kit(conn, 'Wrecka Krew')
+    col.create_unit(conn, orks['Boyz'], 10, kit_id=kit_id)
+
+    col.delete_kit(conn, kit_id)
+
+    assert conn.execute('SELECT COUNT(*) FROM kits').fetchone()[0] == 0
+    assert conn.execute('SELECT COUNT(*) FROM units').fetchone()[0] == 0
+    assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 0
+
+
 def test_a_sold_kit_leaves_the_counts_but_keeps_its_rows(conn, orks):
     kit_id = col.create_kit(conn, 'Wrecka Krew', cost_cents=5500)
     army_id = col.create_army(conn, 'Da Boyz')
