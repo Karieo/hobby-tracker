@@ -1,108 +1,137 @@
 {% extends "base.html" %}
+{% from "_macros.html" import stage_icon %}
 {% block title %}Journey · Collection Tracker{% endblock %}
 {% block body %}
 {# The only backward-looking screen in the app.
 
-   Everything else answers a question about now — what is owned, what is short,
-   what is half-painted. This one is the reward for having kept the log: grey
-   plastic in March and the same squad based in August, one drag apart.
+   Clay: "I want it to be a journey of my whole hobby life across all models."
+   So it is not the photo log — it is four things merged on date: pictures
+   taken, models moving forward, boxes bought, boxes gone. `stage_events` has
+   been append-only since the first commit for exactly this and nothing read it
+   until now.
 
-   Oldest first, deliberately, and the opposite of the unit page. A unit page
-   asks "what does this look like now" so the newest picture leads; a journey
-   reads forwards. #}
+   Oldest first, deliberately, and the opposite of every other screen. The rest
+   of the app answers a question about now and leads with the newest thing;
+   this one is read forwards, because the point is the distance travelled. #}
 
   <header class="page">
     <div>
       <h1>Journey</h1>
       <p class="muted">
-        {% if shots %}
-          {{ shots|length }} picture{{ '' if shots|length == 1 else 's' }},
-          {{ shots[0].taken_on }} to {{ shots[-1].taken_on }}
+        {% if span %}
+          {{ entries|length }} thing{{ '' if entries|length == 1 else 's' }}
+          happened, {{ span[0] }} to {{ span[1] }}
         {% else %}
-          Every picture you have taken, in the order you took them.
+          Everything you have done, in the order you did it.
         {% endif %}
       </p>
     </div>
   </header>
 
-  {% if not shots %}
+  {% if not entries %}
     <div class="panel empty">
-      <p>Nothing photographed yet.</p>
+      <p>Nothing has happened yet.</p>
       <p class="muted">
-        Add a picture from any unit's page and it appears here, in date order.
-        The point of this screen is what it looks like after a year.
+        Add some models, move them along, take a picture — it all lands here
+        with its date. The point of this screen is what it looks like after a
+        year.
       </p>
     </div>
   {% else %}
-    {# The scrubber. A range input rather than a bespoke drag: it is one
-       element, it is keyboard-operable and screen-reader-labelled for free,
-       and on a phone the thumb is already the right size for a thumb.
 
-       Every frame ships in the markup and CSS shows one. The alternative is
-       fetching per position, which turns a scrub into a hundred requests over
-       a tunnel — and these are the same pictures the grid below needs anyway. #}
-    <div class="scrubber" data-count="{{ shots|length }}">
-      <div class="frames">
-        {% for shot in shots %}
-          <figure class="frame{% if loop.first %} on{% endif %}"
-                  data-index="{{ loop.index0 }}">
-            {% if shot.missing %}
-              <div class="gone">
-                <p><b>The picture is missing.</b></p>
-                <p class="muted">
-                  The record is here but the file is not — most likely a
-                  restore that brought the database without
-                  <code>data/photos/</code>.
-                </p>
-              </div>
-            {% else %}
+    {% if shots %}
+      {# The visual half. Only photographs, and only ones whose file is still
+         there: a scrubber that lands on "the picture is missing" is a broken
+         control rather than an honest one, which is why this is its own query
+         and not a filter over the stream below. #}
+      <div class="scrubber" data-count="{{ shots|length }}">
+        <div class="frames">
+          {% for shot in shots %}
+            <figure class="frame{% if loop.first %} on{% endif %}"
+                    data-index="{{ loop.index0 }}">
               <img src="/photos/{{ shot.filename }}"
                    {% if not loop.first %}loading="lazy"{% endif %}
                    alt="{{ shot.unit_name }}{% if shot.caption %} — {{ shot.caption }}{% endif %}, {{ shot.taken_on }}">
-            {% endif %}
-            <figcaption>
-              <b>{{ shot.taken_on }}</b>
-              <a href="/units/{{ shot.unit_id }}">{{ shot.unit_name }}</a>
-              {% if shot.army_name %}<span class="muted">· {{ shot.army_name }}</span>{% endif %}
-              {% if shot.caption %}<span class="note">{{ shot.caption }}</span>{% endif %}
-            </figcaption>
-          </figure>
-        {% endfor %}
-      </div>
-
-      {% if shots|length > 1 %}
-        <div class="scrubrow">
-          <label class="sr-only" for="scrub">Scrub through the journey</label>
-          <input id="scrub" type="range" min="0" max="{{ shots|length - 1 }}"
-                 value="0" step="1">
-          <p class="scrubends">
-            <span>{{ shots[0].taken_on }}</span>
-            <span class="scrubat" aria-live="polite">1 / {{ shots|length }}</span>
-            <span>{{ shots[-1].taken_on }}</span>
-          </p>
+              <figcaption>
+                <b>{{ shot.taken_on }}</b>
+                <a href="/units/{{ shot.unit_id }}">{{ shot.unit_name }}</a>
+                {% if shot.army_name %}<span class="muted">· {{ shot.army_name }}</span>{% endif %}
+                {% if shot.caption %}<span class="note">{{ shot.caption }}</span>{% endif %}
+              </figcaption>
+            </figure>
+          {% endfor %}
         </div>
-      {% endif %}
-    </div>
 
-    {# The whole log underneath. The scrubber is for travelling through it; this
-       is for finding the one you remember. #}
-    <h2>Every picture</h2>
-    <ul class="shots gallerygrid">
-      {% for shot in shots %}
-        <li>
-          {% if not shot.missing %}
-            <a href="/photos/{{ shot.filename }}" target="_blank" rel="noopener">
-              <img src="/photos/{{ shot.filename }}" loading="lazy"
-                   alt="{{ shot.unit_name }}, {{ shot.taken_on }}">
-            </a>
+        {% if shots|length > 1 %}
+          <div class="scrubrow">
+            <label class="sr-only" for="scrub">Scrub through the pictures</label>
+            <input id="scrub" type="range" min="0" max="{{ shots|length - 1 }}"
+                   value="0" step="1">
+            <p class="scrubends">
+              <span>{{ shots[0].taken_on }}</span>
+              <span class="scrubat" aria-live="polite">1 / {{ shots|length }}</span>
+              <span>{{ shots[-1].taken_on }}</span>
+            </p>
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    {# The whole of it. Grouped by date so a day of hobby reads as one sitting
+       rather than as six unrelated lines. #}
+    <h2>Everything, in order</h2>
+    <ol class="timeline">
+      {% set ns = namespace(day='') %}
+      {% for e in entries %}
+        {% if e.on != ns.day %}
+          {% set ns.day = e.on %}
+          <li class="daymark"><span>{{ e.on }}</span></li>
+        {% endif %}
+        <li class="tl {{ e.kind }}{% if e.kind == 'stage' and e.is_terminal %} done{% endif %}">
+          {% if e.kind == 'stage' %}
+            {{ stage_icon(e.position, e.stage_name) }}
+            <span class="what">
+              <b>{{ e.count }} ×</b>
+              <a href="/units/{{ e.unit_id }}">{{ e.unit_name }}</a>
+              {% if e.arrived %}
+                <span class="muted">arrived, {{ e.stage_name|lower }}</span>
+              {% else %}
+                <span class="muted">→ {{ e.stage_name|lower }}</span>
+              {% endif %}
+              {% if e.army_name %}<span class="muted">· {{ e.army_name }}</span>{% endif %}
+            </span>
+          {% elif e.kind == 'photo' %}
+            {% if not e.missing %}
+              <a class="tlshot" href="/photos/{{ e.filename }}"
+                 target="_blank" rel="noopener">
+                <img src="/photos/{{ e.filename }}" loading="lazy"
+                     alt="{{ e.unit_name }}, {{ e.taken_on }}">
+              </a>
+            {% endif %}
+            <span class="what">
+              <b>Photographed</b>
+              <a href="/units/{{ e.unit_id }}">{{ e.unit_name }}</a>
+              {% if e.caption %}<span class="note">{{ e.caption }}</span>{% endif %}
+              {% if e.missing %}
+                <span class="muted">— the file is missing from data/photos/</span>
+              {% endif %}
+            </span>
+          {% elif e.kind == 'kit' %}
+            <span class="what">
+              <b>Bought</b>
+              <a href="/kits/{{ e.kit_id }}">{{ e.name }}</a>
+              {% if e.cost_cents %}<span class="muted">· {{ e.cost_cents|money }}</span>{% endif %}
+            </span>
+          {% else %}
+            <span class="what">
+              <b>{{ e.status|capitalize }}</b>
+              <a href="/kits/{{ e.kit_id }}">{{ e.name }}</a>
+              {% if e.cost_cents %}<span class="muted">· {{ e.cost_cents|money }}</span>{% endif %}
+            </span>
           {% endif %}
-          <p class="shotmeta">
-            <b>{{ shot.taken_on }}</b>
-            <a href="/units/{{ shot.unit_id }}">{{ shot.unit_name }}</a>
-          </p>
         </li>
       {% endfor %}
-    </ul>
+    </ol>
   {% endif %}
 {% endblock %}
 

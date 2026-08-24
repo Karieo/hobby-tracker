@@ -60,6 +60,7 @@ import collection as col
 import list_allocate
 import list_parse
 import list_resolve
+import journey
 import lists as army_lists
 import photos
 import rules_data  # noqa: E402
@@ -910,7 +911,10 @@ def gallery_page():
     grey plastic in March and the same squad based in August, in one gesture.
     """
     with _read() as conn:
-        return render_template('gallery.html', shots=photos.timeline(conn))
+        entries = journey.events(conn)
+        return render_template('gallery.html', entries=entries,
+                               shots=journey.pictures(conn),
+                               span=journey.span(entries))
 
 
 @app.route('/photos/<path:filename>')

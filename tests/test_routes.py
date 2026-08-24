@@ -1665,7 +1665,7 @@ def test_the_unit_page_offers_a_note_on_every_picture(client, army_with_unit,
 
 def test_the_journey_is_empty_and_says_so(client):
     body = client.get('/gallery').get_data(as_text=True)
-    assert 'Nothing photographed yet' in body
+    assert 'Nothing has happened yet' in body
     assert 'id="scrub"' not in body, 'nothing to scrub through'
 
 
