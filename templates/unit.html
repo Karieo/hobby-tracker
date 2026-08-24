@@ -67,14 +67,6 @@
        beats an empty box that looks like the page failed to load. #}
     <p class="hint">Nothing owned yet — every model here is still on the wishlist.</p>
   {% endif %}
-  {# A plain link, not a `.go` button: the header already carries one, and a
-     filled button dropped into the middle of a sentence makes the words wrap
-     around it and stops the sentence reading as a sentence. #}
-  <p class="hint">
-    <a href="/paint/{{ unit.id }}">Paint mode</a> is where these move — the
-    same ladder with the −1 and +1 on it, built for a phone propped against a
-    paint pot.
-  </p>
 
   {% if options %}
     {# Spec §8's assembly prompt, as a control rather than an interrupt.
@@ -83,14 +75,10 @@
        kits has already happened and there is nothing to stop Clay for. What
        auto-fill cannot answer is this: a box that builds several things, where
        the unit's datasheet is a default rather than a decision. #}
-    <h2>What did this get built as?</h2>
-    <p class="hint">
-      This box builds more than one thing, so what the app recorded is a
-      default rather than something you said. Getting it right is what lets the
-      gap report offer these models for the datasheet they actually are — and
-      magnetised means it counts as ready for any of them, because a swap costs
-      no hobby time.
-    </p>
+    {# The paragraph that used to sit here explained why the control exists.
+       That reasoning is above, in the comment, where it does not cost Clay a
+       screen of scrolling every time he opens a unit. #}
+    <h2>Built as</h2>
     <div class="panel builtas" data-unit="{{ unit.id }}">
       <div class="row">
         <label>Built as
@@ -130,13 +118,10 @@
             {# The row is here and the file is not. A restore that carried the
                database and not data/photos/, most likely — and a caption
                saying so beats a grey box that looks like a bug in the app. #}
-            <div class="gone">
-              <p><b>The picture is missing.</b></p>
-              <p class="muted">
-                The record is here but the file is not — most likely a restore
-                that brought the database without <code>data/photos/</code>.
-              </p>
-            </div>
+            {# Short because it renders inside a thumbnail now. The long
+               version — a restore that brought the database without
+               data/photos/ — is in photos.py where it is diagnosed. #}
+            <div class="gone"><p><b>File missing</b></p></div>
           {% else %}
             <a href="/photos/{{ shot.filename }}" target="_blank" rel="noopener">
               <img src="/photos/{{ shot.filename }}" loading="lazy"
@@ -147,17 +132,14 @@
             <b>{{ shot.taken_on }}</b>
             <span class="shotnote">{% if shot.caption %}{{ shot.caption }}{% endif %}</span>
             <button class="ghost shot-edit" data-photo="{{ shot.id }}">
-              {{ 'Edit' if shot.caption else 'Add a note' }}</button>
+              {{ 'Edit' if shot.caption else 'Note' }}</button>
             <button class="ghost shot-delete" data-photo="{{ shot.id }}">Remove</button>
           </p>
         </li>
       {% endfor %}
     </ul>
   {% else %}
-    <p class="hint">
-      No pictures yet. They are the only backward-looking thing this app keeps
-      — everything else answers about now.
-    </p>
+    <p class="hint">No pictures yet.</p>
   {% endif %}
 
   {# One dialog, two jobs: adding pictures and editing what one says. They ask
@@ -201,11 +183,8 @@
      POST /api/units/<id>/models, which shipped with the first commit and had
      never been called from anywhere — the same state the delete endpoint was
      in until yesterday. #}
-  <p class="hint">
-    A miscount either way. Models arrive at
-    <b>{{ (stages | selectattr('is_owned') | first).name }}</b> — the
-    ladder starts where the plastic does, and paint mode moves them from there.
-  </p>
+  <p class="hint">Arrive at
+    <b>{{ (stages | selectattr('is_owned') | first).name }}</b>.</p>
   <form class="panel row" id="add-models" data-unit="{{ unit.id }}">
     <label>Add
       <input type="number" name="count" min="1" value="1" autocomplete="off"
@@ -219,14 +198,8 @@
      its spend history, and confusing the two would quietly erase what Clay
      paid for something months before he went looking for it. #}
   <p class="hint">
-    Removing is for plastic that was never there — a mistyped count, or a bulk
-    add that ran twice. The least advanced go first, so anything you have
-    recorded work against is the last to leave.
-    {% if models|length %}
-      Removing all {{ models|length }} deletes the unit.
-    {% endif %}
-    <b>Sold or traded them instead?</b> Dispose of the kit — that keeps the
-    models and what you paid.
+    Deletes rows — for a miscount, not a sale. Least advanced go first.
+    {%- if models|length %} All {{ models|length }} removes the unit.{% endif %}
   </p>
   <form class="panel row" id="remove-models" data-unit="{{ unit.id }}">
     <label>Remove
@@ -235,6 +208,36 @@
              aria-label="how many models to remove">
     </label>
     <button class="danger" type="submit">Remove</button>
+  </form>
+
+  {# Gone, but not gone from the record. `remove-models` above deletes rows —
+     this keeps them, their stage and what they went for, which is what makes
+     "didn't I used to have one of those?" answerable. #}
+  {% if models|length %}
+    <form class="panel row" id="dispose-models" data-unit="{{ unit.id }}">
+      <label>Sold or gave away
+        <input type="number" name="count" min="1" max="{{ models|length }}"
+               value="1" autocomplete="off"
+               aria-label="how many models left the collection">
+      </label>
+      <label class="tight">For
+        <input type="text" name="price" inputmode="decimal"
+               placeholder="{{ currency_symbol }}" autocomplete="off"
+               aria-label="what they went for">
+      </label>
+      <button class="ghost" type="submit" data-status="sold">Sell</button>
+      <button class="ghost" type="submit" data-status="gifted">Trade / give</button>
+    </form>
+  {% endif %}
+
+  {# Wishlist is position 0 of the same ladder, so wanting more of something is
+     the same operation as owning more of it, one rung lower. #}
+  <form class="panel row" id="wishlist-models" data-unit="{{ unit.id }}">
+    <label>Wishlist more
+      <input type="number" name="count" min="1" value="1" autocomplete="off"
+             aria-label="how many more to want">
+    </label>
+    <button class="ghost" type="submit">Add to wishlist</button>
   </form>
 
   <form class="panel row" id="move-form" data-unit="{{ unit.id }}">

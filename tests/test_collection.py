@@ -379,6 +379,134 @@ def test_recording_a_kit_by_name_invents_no_models(conn, orks):
     assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 0
 
 
+# ── Selling some of them ─────────────────────────────────
+#
+# Clay: "sell, trade/giveaway, wishlist more". Disposal existed per kit only —
+# sell a box and the whole box went — so "I sold five of my twenty Boyz" had no
+# answer, and once the Kits screens came out there was no way to record a sale
+# at all.
+
+
+def test_selling_some_leaves_the_rest_owned(conn, orks):
+    unit = col.create_unit(conn, orks['Boyz'], 10)
+
+    col.dispose_models(conn, unit, 4, 'sold', price_cents=2000)
+
+    assert col.inventory(conn)[0]['owned_count'] == 6
+
+
+def test_a_disposal_keeps_every_row(conn, orks):
+    """The invariant, one level down from kits: a status change, never a
+    deletion. `remove_models` deletes because plastic that was never there has
+    no history worth keeping; this has."""
+    unit = col.create_unit(conn, orks['Boyz'], 10)
+
+    col.dispose_models(conn, unit, 4, 'sold', price_cents=2000)
+
+    assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 10
+    gone = conn.execute(
+        'SELECT COUNT(*) FROM models WHERE disposed_on IS NOT NULL'
+    ).fetchone()[0]
+    assert gone == 4
+
+
+def test_a_sold_model_keeps_the_stage_it_was_at(conn, orks):
+    """The whole reason this is not a "Sold" stage. "I sold five *painted*
+    Boyz" is the fact worth recording, and moving them along the ladder would
+    have overwritten it."""
+    unit = col.create_unit(conn, orks['Boyz'], 10)
+    col.advance_unit(conn, unit)                      # all ten to Assembled
+
+    col.dispose_models(conn, unit, 4, 'sold')
+
+    stages = {r['name'] for r in conn.execute("""
+        SELECT s.name FROM models m JOIN stages s ON s.id = m.stage_id
+         WHERE m.disposed_on IS NOT NULL""")}
+    assert stages == {'Assembled'}
+
+
+def test_what_it_went_for_is_kept(conn, orks):
+    unit = col.create_unit(conn, orks['Boyz'], 2)
+
+    col.dispose_models(conn, unit, 2, 'sold', price_cents=4500)
+
+    rows = conn.execute('SELECT disposed_as, disposed_price_cents FROM models '
+                        'WHERE disposed_on IS NOT NULL').fetchall()
+    assert all(r['disposed_as'] == 'sold' for r in rows)
+    assert all(r['disposed_price_cents'] == 4500 for r in rows)
+
+
+def test_the_least_advanced_go_first(conn, orks):
+    """Same order `remove_models` uses. The app cannot know whether Clay sold
+    the painted ones or the spares, and of the two guesses this is the one that
+    leaves recorded work alone."""
+    unit = col.create_unit(conn, orks['Boyz'], 10)
+    col.advance_unit(conn, unit, count=4)             # four to Assembled
+
+    col.dispose_models(conn, unit, 3, 'sold')
+
+    gone = [r['name'] for r in conn.execute("""
+        SELECT s.name FROM models m JOIN stages s ON s.id = m.stage_id
+         WHERE m.disposed_on IS NOT NULL""")]
+    assert gone == ['On sprue'] * 3
+
+
+def test_a_disposed_model_cannot_be_advanced(conn, orks):
+    """It is not on the shelf, so paint mode must not offer it."""
+    unit = col.create_unit(conn, orks['Boyz'], 10)
+    col.dispose_models(conn, unit, 4, 'sold')
+
+    moved = col.advance_unit(conn, unit)
+
+    assert moved == 6
+
+
+def test_selling_more_than_you_have_sells_what_you_have(conn, orks):
+    unit = col.create_unit(conn, orks['Boyz'], 3)
+
+    result = col.dispose_models(conn, unit, 99, 'sold')
+
+    assert result == {'disposed': 3, 'remaining': 0}
+
+
+def test_only_the_three_disposals_are_disposals(conn, orks):
+    unit = col.create_unit(conn, orks['Boyz'], 3)
+
+    for status in ('sold', 'traded', 'gifted'):
+        col.dispose_models(conn, unit, 1, status)
+    with pytest.raises(ValueError):
+        col.dispose_models(conn, unit, 1, 'incinerated')
+
+
+def test_wishlisting_more_wants_without_owning(conn, orks):
+    """Wishlist has been position 0 of the ladder since the first migration, so
+    this needs no storage of its own."""
+    unit = col.create_unit(conn, orks['Boyz'], 10)
+
+    col.wishlist_models(conn, unit, 5)
+
+    row = col.inventory(conn)[0]
+    assert row['owned_count'] == 10 and row['wanted_count'] == 5
+
+
+def test_every_ownership_surface_drops_a_disposed_model(conn, orks):
+    """The one that matters. Ownership is read in about thirty places, and a
+    disposal column that half of them ignore is a collection that over-counts
+    quietly for months. This walks the surfaces rather than trusting that the
+    filter reached them all."""
+    army = col.create_army(conn, 'Da Boyz')
+    unit = col.create_unit(conn, orks['Boyz'], 10, army_id=army)
+
+    col.dispose_models(conn, unit, 4, 'sold')
+
+    assert col.inventory(conn)[0]['owned_count'] == 6, 'collection screen'
+    assert col.list_units(conn)[0]['model_count'] == 6, 'unit lists'
+    assert [a for a in col.list_armies(conn)
+            if a['id'] == army][0]['model_count'] == 6, 'army cards'
+    assert col.export_inventory(conn)['datasheets'][0]['owned'] == 6, 'export'
+    assert len(col.unit_models(conn, unit)) == 6, 'the unit page'
+
+
 # ── Correcting a kit ─────────────────────────────────────
 #
 # These three moved down from tests/test_routes.py when the Kits screens were

@@ -52,8 +52,27 @@ def _migrate_to_007(tmp_path):
 
 
 def _apply_008(path):
+    """008 onto a 007-era database, then every migration after it.
+
+    The later ones are applied for the same reason the fixture's docstring
+    gives for not using `collection` helpers to build rows: application code
+    always runs against a *fully* migrated database, because `init_db()`
+    migrates on boot. A test that calls `advance_unit` against a database
+    frozen at 008 is testing a shape that cannot exist.
+
+    This has now broken three times, each time one migration later — first
+    `position`, then `models.datasheet_id`, now `models.disposed_on`. Applying
+    the tail rather than naming a version means there is no fourth.
+
+    The migration-008 assertions are unaffected: nothing after it touches what
+    it created.
+    """
     conn = db.connect(path)
     conn.executescript(open(EIGHT, encoding='utf-8').read())
+    for name in sorted(os.listdir(MIGRATIONS)):
+        if name.endswith('.sql') and '008' < name[:3]:
+            conn.executescript(
+                open(os.path.join(MIGRATIONS, name), encoding='utf-8').read())
     conn.commit()
     conn.close()
 

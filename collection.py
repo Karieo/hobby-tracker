@@ -15,6 +15,7 @@ alongside rather than instead.
 """
 
 import json
+from datetime import date
 
 import database as db
 
@@ -29,6 +30,19 @@ UNIDENTIFIED_PREFIX = 'Unidentified box'
 ACTIVE_KIT_STATUSES = ('owned', 'listed')
 
 # Units whose kit is disposed of, or which have no kit at all (manual adds).
+#: A model still on the shelf. Sits beside `_ACTIVE_UNIT` and does the same
+#: job one level down: that one excludes models inside a kit Clay sold, this
+#: one excludes models he sold out of a kit he kept.
+#:
+#: Ownership is read in about thirty places. Adding a disposal column and then
+#: hand-editing thirty queries is how one gets missed and the collection
+#: over-counts quietly for months, so both rules live as fragments that
+#: queries interpolate rather than as conditions each query remembers.
+#:
+#: The disposed row is never removed and keeps its stage: "sold five painted
+#: Boyz" stays answerable, which is the only reason to record it.
+_LIVE_MODEL = ' m.disposed_on IS NULL '
+
 _ACTIVE_UNIT = """
     (u.kit_id IS NULL OR EXISTS (
         SELECT 1 FROM kits k WHERE k.id = u.kit_id
@@ -126,7 +140,7 @@ def list_armies(conn):
           FROM armies a
           LEFT JOIN units u      ON u.army_id = a.id AND {_ACTIVE_UNIT}
           LEFT JOIN datasheets d ON d.id = u.datasheet_id
-          LEFT JOIN models m     ON m.unit_id = u.id
+          LEFT JOIN models m     ON m.unit_id = u.id AND m.disposed_on IS NULL
           LEFT JOIN stages st    ON st.id = m.stage_id
           LEFT JOIN factions f   ON f.id = a.primary_faction_id
          GROUP BY a.id
@@ -144,7 +158,7 @@ def list_armies(conn):
                MAX(m.stage_changed_at)                             AS last_activity
           FROM units u
           JOIN datasheets d      ON d.id = u.datasheet_id
-          LEFT JOIN models m     ON m.unit_id = u.id
+          LEFT JOIN models m     ON m.unit_id = u.id AND m.disposed_on IS NULL
           LEFT JOIN stages st    ON st.id = m.stage_id
          WHERE u.army_id IS NULL AND {_ACTIVE_UNIT}
     """).fetchone())
@@ -153,7 +167,7 @@ def list_armies(conn):
     spread = {}
     for r in conn.execute(f"""
         SELECT u.army_id, m.stage_id, COUNT(*) AS n
-          FROM units u JOIN models m ON m.unit_id = u.id
+          FROM units u JOIN models m ON m.unit_id = u.id AND m.disposed_on IS NULL
          WHERE {_ACTIVE_UNIT}
          GROUP BY u.army_id, m.stage_id
     """):
@@ -223,7 +237,7 @@ def army_stats(conn, army_id):
                MAX(m.stage_changed_at)                           AS last_activity
           FROM units u
           JOIN datasheets d   ON d.id = u.datasheet_id
-          LEFT JOIN models m  ON m.unit_id = u.id
+          LEFT JOIN models m  ON m.unit_id = u.id AND m.disposed_on IS NULL
           LEFT JOIN stages st ON st.id = m.stage_id
          WHERE {where} AND {_ACTIVE_UNIT}
     """, args).fetchone())
@@ -273,7 +287,7 @@ def list_units(conn, army_id=None, unassigned=False, include_disposed=False,
           LEFT JOIN factions f ON f.id = d.faction_id
           LEFT JOIN armies a   ON a.id = u.army_id
           LEFT JOIN kits k     ON k.id = u.kit_id
-          LEFT JOIN models m   ON m.unit_id = u.id
+          LEFT JOIN models m   ON m.unit_id = u.id AND m.disposed_on IS NULL
           LEFT JOIN stages st  ON st.id = m.stage_id
           {where}
          GROUP BY u.id
@@ -356,7 +370,7 @@ def unit_models(conn, unit_id):
     return [dict(r) for r in conn.execute("""
         SELECT m.*, s.name AS stage_name, s.position, s.is_terminal, s.is_owned
           FROM models m JOIN stages s ON s.id = m.stage_id
-         WHERE m.unit_id = ?
+         WHERE m.unit_id = ? AND m.disposed_on IS NULL
          ORDER BY s.position, m.id
     """, (unit_id,))]
 
@@ -431,7 +445,7 @@ def add_or_extend_unit(conn, datasheet_id, model_count, army_id=None,
         SELECT u.id,
                COALESCE(SUM(CASE WHEN st.is_owned THEN 1 ELSE 0 END), 0) AS owned
           FROM units u
-          LEFT JOIN models m  ON m.unit_id = u.id
+          LEFT JOIN models m  ON m.unit_id = u.id AND m.disposed_on IS NULL
           LEFT JOIN stages st ON st.id = m.stage_id
          WHERE u.datasheet_id = ?
            AND u.army_id IS ? AND u.kit_id IS ? AND u.nickname IS ?
@@ -593,6 +607,69 @@ def update_unit(conn, unit_id, **fields):
                   db.now(), unit_id])
 
 
+def dispose_models(conn, unit_id, count, status='sold', price_cents=None,
+                   note=None, on=None):
+    """Sell, trade or give away some of a unit's models.
+
+    Clay: *"sell, trade/giveaway"*. Disposal existed only per kit — sell a box,
+    the whole box went — so "I sold five of my twenty Boyz" had no answer, and
+    once the Kits screens came out there was no way to record a sale at all.
+
+    **A status change, never a deletion.** The rows stay, keep their stage and
+    keep their history; they simply stop being owned. That is the difference
+    between this and `remove_models`, which deletes outright because plastic
+    that was never there has no history worth keeping. Every screen offering
+    both has to say which is which, or the cheap one becomes the one Clay
+    reaches for and the spend history quietly empties.
+
+    Keeping `stage_id` is the point: "sold five *painted* Boyz" is the fact
+    worth recording, and a Sold stage would have overwritten it.
+
+    Which ones go: least advanced first, the same order `remove_models` uses.
+    The app cannot know whether Clay sold the painted ones or the spares, and
+    of the two guesses this is the one that leaves recorded work alone.
+    """
+    if status not in ('sold', 'traded', 'gifted'):
+        raise ValueError(f'{status!r} is not a disposal')
+
+    live = [row['id'] for row in conn.execute(f"""
+        SELECT m.id FROM models m
+          JOIN stages s ON s.id = m.stage_id
+         WHERE m.unit_id = ? AND {_LIVE_MODEL} AND s.is_owned = 1
+         ORDER BY s.position, m.id DESC
+    """, (unit_id,))]
+    going = live[:max(0, count)]
+    if not going:
+        return {'disposed': 0, 'remaining': len(live)}
+
+    marks = ','.join('?' * len(going))
+    conn.execute(f"""
+        UPDATE models SET disposed_on = ?, disposed_as = ?,
+                          disposed_price_cents = ?, notes = COALESCE(?, notes)
+         WHERE id IN ({marks})
+    """, (on or date.today().isoformat(), status, price_cents, note, *going))
+    _touch_unit(conn, unit_id)
+    return {'disposed': len(going), 'remaining': len(live) - len(going)}
+
+
+def wishlist_models(conn, unit_id, count):
+    """Put more of this on the wishlist.
+
+    Clay: *"wishlist more"*. Needs no new storage — Wishlist has been position
+    0 of the ladder since the first migration, with `is_owned = 0`, so wanting
+    more of something is the same operation as owning more of it aimed one rung
+    lower. `/collection?own=wanted` already lists them.
+    """
+    if count < 1:
+        return 0
+    wishlist = conn.execute(
+        'SELECT id FROM stages WHERE is_owned = 0 ORDER BY position LIMIT 1'
+    ).fetchone()
+    # A count, not the ids `add_models` hands back: this is the same shape as
+    # `dispose_models` returns, and it is what the caller renders.
+    return len(add_models(conn, unit_id, count, stage_id=wishlist['id']))
+
+
 def remove_models(conn, unit_id, count):
     """Take models off a unit. The undo for adding too many.
 
@@ -677,7 +754,7 @@ def advance_unit(conn, unit_id, count=None, from_stage_id=None):
     sql = """
         SELECT m.id, m.stage_id FROM models m
           JOIN stages s ON s.id = m.stage_id
-         WHERE m.unit_id = ? AND s.is_terminal = 0
+         WHERE m.unit_id = ? AND m.disposed_on IS NULL AND s.is_terminal = 0
     """
     args = [unit_id]
     if from_stage_id is not None:
@@ -727,7 +804,7 @@ def retreat_unit(conn, unit_id, count=None, from_stage_id=None):
     sql = """
         SELECT m.id, m.stage_id FROM models m
           JOIN stages s ON s.id = m.stage_id
-         WHERE m.unit_id = ? AND s.is_owned = 1
+         WHERE m.unit_id = ? AND m.disposed_on IS NULL AND s.is_owned = 1
     """
     args = [unit_id]
     if from_stage_id is not None:
@@ -803,7 +880,7 @@ def set_unit_stage_counts(conn, unit_id, stage_id, target_count):
         'SELECT position FROM stages WHERE id = ?', (stage_id,)).fetchone()['position']
     candidates = [r['id'] for r in conn.execute("""
         SELECT m.id FROM models m JOIN stages s ON s.id = m.stage_id
-         WHERE m.unit_id = ? AND m.stage_id != ?
+         WHERE m.unit_id = ? AND m.disposed_on IS NULL AND m.stage_id != ?
          ORDER BY CASE WHEN s.position < ? THEN 0 ELSE 1 END, s.position, m.id
     """, (unit_id, stage_id, target_position))]
     return set_models_stage(conn, candidates[:need], stage_id)
@@ -836,7 +913,7 @@ def list_kits(conn, include_disposed=True):
           FROM kits k
           LEFT JOIN factions f ON f.id = k.faction_id
           LEFT JOIN units u    ON u.kit_id = k.id
-          LEFT JOIN models m   ON m.unit_id = u.id
+          LEFT JOIN models m   ON m.unit_id = u.id AND m.disposed_on IS NULL
     """
     if not include_disposed:
         sql += " WHERE k.status IN ('owned', 'listed')"
@@ -1183,7 +1260,8 @@ def export_inventory(conn, army_id=None, include_unassigned=False,
           JOIN datasheets d   ON d.id = m.datasheet_id
           JOIN stages st      ON st.id = m.stage_id
           LEFT JOIN factions f ON f.id = d.faction_id
-         WHERE {_ACTIVE_UNIT} AND (d.variant IS NULL OR d.game_system <> 'wh40k')
+         WHERE {_ACTIVE_UNIT} AND m.disposed_on IS NULL
+               AND (d.variant IS NULL OR d.game_system <> 'wh40k')
                {where}
          GROUP BY d.id
     """, [first_owned['position'], *args])}
@@ -1198,7 +1276,8 @@ def export_inventory(conn, army_id=None, include_unassigned=False,
           FROM models m
           JOIN units u  ON u.id = m.unit_id
           JOIN stages s ON s.id = m.stage_id
-         WHERE m.datasheet_id IS NOT NULL AND {_ACTIVE_UNIT} {where}
+         WHERE m.datasheet_id IS NOT NULL AND {_ACTIVE_UNIT}
+               AND m.disposed_on IS NULL {where}
          GROUP BY m.datasheet_id, s.id
     """, args):
         if r['datasheet_id'] in rows:
@@ -1301,7 +1380,9 @@ def _export_capability(conn, rows, where, args, include_capability):
           FROM models m
           JOIN units u ON u.id = m.unit_id
           JOIN kit_datasheets kd ON kd.kit_id = u.kit_id
+          -- a sold sprue builds nothing
           JOIN stages s ON s.id = m.stage_id AND s.is_owned = 1
+                       AND m.disposed_on IS NULL
          WHERE m.datasheet_id IS NULL AND {_ACTIVE_UNIT} {where}
          GROUP BY kd.datasheet_id
     """, args):
@@ -1322,7 +1403,8 @@ def _export_flexible(conn, rows, where, args):
           FROM models m
           JOIN units u ON u.id = m.unit_id
           JOIN kit_datasheets kd ON kd.kit_id = u.kit_id
-         WHERE m.is_flexible = 1 AND {_ACTIVE_UNIT} {where}
+         WHERE m.is_flexible = 1 AND {_ACTIVE_UNIT}
+               AND m.disposed_on IS NULL {where}
          GROUP BY kd.datasheet_id
     """, args):
         row = _ensure_row(conn, rows, r['datasheet_id'])
@@ -1529,7 +1611,7 @@ def inventory(conn, query=None, faction_id=None, game_system=None,
           LEFT JOIN factions f ON f.id = d.faction_id
           LEFT JOIN units u    ON u.datasheet_id = d.id AND {_ACTIVE_UNIT}
           LEFT JOIN kits k     ON k.id = u.kit_id
-          LEFT JOIN models m   ON m.unit_id = u.id
+          LEFT JOIN models m   ON m.unit_id = u.id AND m.disposed_on IS NULL
           LEFT JOIN stages st  ON st.id = m.stage_id
           {where}
          GROUP BY d.id
@@ -1546,7 +1628,7 @@ def inventory(conn, query=None, faction_id=None, game_system=None,
     spread = {}
     for r in conn.execute(f"""
         SELECT u.datasheet_id, m.stage_id, COUNT(*) AS n
-          FROM units u JOIN models m ON m.unit_id = u.id
+          FROM units u JOIN models m ON m.unit_id = u.id AND m.disposed_on IS NULL
          WHERE u.datasheet_id IN ({marks}) AND {_ACTIVE_UNIT}
          GROUP BY u.datasheet_id, m.stage_id
     """, ids):
@@ -1611,7 +1693,7 @@ def home_summary(conn):
 
     counts = {r['stage_id']: r['n'] for r in conn.execute(f"""
         SELECT m.stage_id, COUNT(*) AS n
-          FROM units u JOIN models m ON m.unit_id = u.id
+          FROM units u JOIN models m ON m.unit_id = u.id AND m.disposed_on IS NULL
          WHERE {_ACTIVE_UNIT}
          GROUP BY m.stage_id
     """)}
