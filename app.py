@@ -786,8 +786,11 @@ def api_update_unit(unit_id):
     with _write() as conn:
         if not col.get_unit(conn, unit_id):
             abort(404)
-        col.update_unit(conn, unit_id, nickname=data.get('nickname'),
-                        notes=data.get('notes'))
+        # Only what the form actually sent. A PATCH that names one field must
+        # not blank the other — see collection.update_unit.
+        col.update_unit(conn, unit_id,
+                        **{k: data[k] for k in ('nickname', 'notes')
+                           if k in data})
     return jsonify({'success': True})
 
 

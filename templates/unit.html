@@ -87,36 +87,16 @@
     </div>
   {% endif %}
 
-  <h2>Individual models <span class="muted">{{ models|length }}</span></h2>
-  <p class="hint">Available, never required. Most updates never come down here.</p>
-  <form id="bulk" data-unit="{{ unit.id }}">
-    <div class="bulk-bar">
-      <label class="check"><input type="checkbox" id="all"> All</label>
-      <button type="button" class="ghost" id="first-n">First…</button>
-      <select name="stage_id">
-        {% for s in stages %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
-      </select>
-      <button type="submit" id="apply" disabled>Apply to <span id="n">0</span></button>
-    </div>
-    <ul class="models">
-      {% for m in models %}
-        <li>
-          <label class="check">
-            <input type="checkbox" name="model_ids" value="{{ m.id }}">
-            <span class="dot s{{ m.position }}"></span>
-            <span>{{ m.name or 'Model %d'|format(loop.index) }}</span>
-            <span class="muted">{{ m.stage_name }}</span>
-            {{ staleness(m.stage_changed_at) }}
-          </label>
-        </li>
-      {% endfor %}
-    </ul>
-  </form>
-
-  <h2>Unit</h2>
+  {# The nickname field is gone at Clay's word. The column stays and so does
+     any nickname already on a unit — `display_name` still prefers it, so
+     nothing that was named loses its name. Only the way to type a new one has
+     left, because naming a squad is neither the summary nor the count and this
+     screen is now those two things. #}
+  <h2>Notes</h2>
   <form class="panel stack" data-patch="/api/units/{{ unit.id }}">
-    <label>Nickname<input name="nickname" value="{{ unit.nickname or '' }}"></label>
-    <label>Notes<input name="notes" value="{{ unit.notes or '' }}"></label>
+    <label class="sr-only" for="unit-notes">Notes</label>
+    <input id="unit-notes" name="notes" value="{{ unit.notes or '' }}"
+           placeholder="Anything worth remembering about this unit">
     <button type="submit">Save</button>
   </form>
 

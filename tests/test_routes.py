@@ -1847,3 +1847,48 @@ def test_the_filters_reach_the_query(client, army_with_unit, db_path):
     assert 'Boyz' in client.get('/collection').get_data(as_text=True)
     assert 'Boyz' not in client.get(
         f'/collection?faction_id={other}').get_data(as_text=True)
+
+
+# ── Pruning the unit page ────────────────────────────────
+#
+# Clay: "Collection should just be a summary and add or remove. Drop the unit
+# nickname."
+
+def test_the_unit_page_is_a_summary_and_a_count(client, army_with_unit):
+    body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    assert 'count-at' in body, 'the summary stays'
+    assert 'id="add-models"' in body and 'id="remove-models"' in body
+    assert 'id="bulk"' not in body, 'the per-model stage picker went with the ramp'
+    assert 'name="model_ids"' not in body
+    assert 'name="nickname"' not in body
+
+
+def test_saving_notes_never_blanks_a_nickname(client, army_with_unit, db_path):
+    """The form no longer sends a nickname, and update_unit used to write both
+    columns every time. Without this, naming a squad and then editing its notes
+    would silently lose the name — and nothing would say so, because
+    display_name just falls back to the datasheet."""
+    unit_id = army_with_unit['unit_id']
+    client.patch(f'/api/units/{unit_id}', json={'nickname': 'Da Hard Boyz'})
+
+    client.patch(f'/api/units/{unit_id}', json={'notes': 'second squad'})
+
+    with db.connect(db_path) as conn:
+        row = conn.execute('SELECT nickname, notes FROM units WHERE id = ?',
+                           (unit_id,)).fetchone()
+    assert row['nickname'] == 'Da Hard Boyz', 'the name survived a notes save'
+    assert row['notes'] == 'second squad'
+
+
+def test_an_empty_value_still_clears(client, army_with_unit, db_path):
+    """Absent means "leave it"; empty means "clear it". A cleared input has to
+    be able to clear."""
+    unit_id = army_with_unit['unit_id']
+    client.patch(f'/api/units/{unit_id}', json={'notes': 'temporary'})
+
+    client.patch(f'/api/units/{unit_id}', json={'notes': ''})
+
+    with db.connect(db_path) as conn:
+        assert conn.execute('SELECT notes FROM units WHERE id = ?',
+                            (unit_id,)).fetchone()['notes'] is None
