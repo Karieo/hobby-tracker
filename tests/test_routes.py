@@ -1319,7 +1319,8 @@ def armiger(db_path):
 
 def test_a_multi_option_kit_asks_what_it_was_built_as(client, armiger):
     body = client.get(f'/units/{armiger["unit_id"]}').get_data(as_text=True)
-    assert 'What did this get built as' in body
+    assert 'id="built-as"' in body, 'the picker itself, not the prose round it'
+    assert 'Built as' in body
     assert 'Armiger Helverin' in body and 'Magnetised' in body
 
 
@@ -1451,8 +1452,12 @@ def test_the_unit_page_offers_the_control(client, army_with_unit):
     body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
 
     assert 'id="remove-models"' in body
-    assert 'Dispose of the kit' in body, \
-        'the panel has to say what this is not, or it becomes the disposal path'
+    # CLAUDE.md: every screen offering one has to say which it is, or the cheap
+    # control becomes the one Clay reaches for and the spend history empties.
+    # The wording has changed twice; what it has to do has not. It used to say
+    # "dispose of the kit", which is now a page that does not exist.
+    assert 'not a sale' in body, \
+        'the panel has to say it deletes rather than sells'
 
 
 # ── The ramp's bottom rung ───────────────────────────────
@@ -1837,7 +1842,7 @@ def test_the_unit_page_offers_a_note_on_every_picture(client, army_with_unit,
 
     body = client.get(f'/units/{unit_id}').get_data(as_text=True)
 
-    assert 'shot-edit' in body and 'Add a note' in body
+    assert 'shot-edit' in body and 'Note</button>' in body
 
 
 def test_the_journey_is_empty_and_says_so(client):

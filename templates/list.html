@@ -171,9 +171,8 @@
   {% if gap.short %}
     <h2>Take it to the shop</h2>
     <p class="hint">
-      Puts the {{ gap.short }} model{{ '' if gap.short == 1 else 's' }} nothing
-      you own can cover on the wishlist, tagged with this list. Runs again
-      safely — it tops up to the shortfall rather than adding a second copy.
+      Wishlists the {{ gap.short }} model{{ '' if gap.short == 1 else 's' }} you
+      cannot cover. Safe to re-run.
     </p>
     <div class="actions">
       <button class="go" id="raise-wishlist" data-list="{{ list.id }}">
@@ -185,10 +184,8 @@
   {% if list.raw_text %}
     <h2>The paste this came from</h2>
     <p class="hint">
-      Kept so the parser getting better does not mean pasting it again. Reading
-      it afresh replaces every row — safe, because a datasheet you picked by
-      hand taught the alias table, and that is the first thing resolution
-      consults.
+      Re-reads the pasted text, replacing every row. Names you picked by hand
+      are remembered.
     </p>
     <div class="actions">
       <button class="ghost" id="reparse" data-list="{{ list.id }}">Read it again</button>

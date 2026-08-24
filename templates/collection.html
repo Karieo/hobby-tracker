@@ -108,12 +108,9 @@
   </form>
 
   {% if own == 'all' %}
-    <p class="hint">
-      Showing everything in the game, owned or not — so a nil answer is still
-      an answer.
-    </p>
+    <p class="hint">Everything in the game, owned or not.</p>
   {% elif own == 'wanted' %}
-    <p class="hint">The wishlist: things you have said you want, not things on the shelf.</p>
+    <p class="hint">Wishlist — wanted, not owned.</p>
   {% endif %}
 
   {# Chip rail, §3b. Direction 1a won because the query stays readable: you can
@@ -172,8 +169,7 @@
       {% if query %}
         <p><b>Nothing matches "{{ query }}".</b></p>
         <p class="hint">
-          No datasheet by that name in either system. Check the spelling, or
-          it may be a kit name rather than a unit name.
+          No datasheet by that name — it may be a box name rather than a unit.
         </p>
       {% else %}
         <p><b>Nothing recorded yet.</b></p>
@@ -285,10 +281,7 @@
       {% endfor %}
     </ul>
     {% if rows|length >= 200 %}
-      <p class="hint">
-        Showing the first 200. Narrow the search to see the rest — nothing has
-        been dropped, it is just not all on screen.
-      </p>
+      <p class="hint">First 200. Narrow the search for the rest.</p>
     {% endif %}
   {% endif %}
 {% endblock %}

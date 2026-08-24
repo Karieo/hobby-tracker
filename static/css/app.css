@@ -143,10 +143,10 @@ main { max-width: 60rem; margin: 0 auto; }
 
 a { color: inherit; }
 h1 { font-size: 1.4rem; margin: 0 0 .2rem; }
-h2 { font-size: 1rem; margin: 2rem 0 .6rem; text-transform: uppercase;
+h2 { font-size: 1rem; margin: 1.3rem 0 .5rem; text-transform: uppercase;
      letter-spacing: .06em; color: var(--muted); }
 .muted { color: var(--muted); font-size: .85rem; }
-.hint { color: var(--muted); font-size: .85rem; margin: .3rem 0 1rem; }
+.hint { color: var(--muted); font-size: .85rem; margin: .2rem 0 .6rem; }
 .centre { text-align: center; }
 .crumb { margin: 0 0 .3rem; font-size: .85rem; }
 .crumb a { color: var(--muted); text-decoration: none; }
@@ -185,7 +185,7 @@ footer { max-width: 60rem; margin: 3rem auto 0; color: var(--muted);
 
 /* ── Panels, stats ──────────────────────────────────── */
 .panel { background: var(--panel); border: 1px solid var(--line);
-         border-radius: 0; padding: 1rem; }
+         border-radius: 0; padding: .8rem; }
 .panel.empty { text-align: center; color: var(--muted); }
 .panel.empty p:first-child { color: var(--ink); margin-top: 0; }
 .panel.warn { border-color: var(--warn); }
@@ -781,21 +781,37 @@ a.go {
    Pictures of finished models, newest first. Wide enough to see the paint at
    arm's length and narrow enough that two dates fit on one phone screen — the
    point is scanning back through them, not admiring one. */
-.shots { list-style: none; padding: 0; margin: .6rem 0 1rem;
-         display: grid; gap: .9rem; }
-.shots > li { border: 1px solid var(--rule); background: var(--panel); }
-.shots img { display: block; width: 100%; height: auto; max-height: 22rem;
+/* Thumbnails, not a stack. Three full-width photographs were most of the
+   unit page's height and pushed every control below the fold — and this is
+   not where you look at a picture, it is where you check there is one. The
+   journey scrubs them full size, and a tap here opens the original. */
+.shots { list-style: none; padding: 0; margin: .5rem 0 .8rem;
+         display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+.shots > li { border: 1px solid var(--rule); background: var(--panel);
+              display: flex; flex-direction: column; }
+.shots img { display: block; width: 100%; aspect-ratio: 1; height: auto;
              object-fit: cover; }
-.shots .gone { padding: 1rem; }
-.shots .gone p { margin: 0 0 .3rem; }
-.shotmeta { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap;
-            margin: 0; padding: .5rem .7rem; font-size: .85rem; }
-/* The remove button sits at the far end so it is never the thing a thumb
-   lands on while scrolling the log. */
-.shotmeta .shot-delete { margin-left: auto; }
+.shots .gone { padding: .5rem; font-size: .72rem; }
+.shots .gone p { margin: 0; }
+/* Date and note take a full row each; the two actions share the last one,
+   pushed apart so a thumb reaching for Note never lands on Remove. `auto`
+   top margin pins the block to the bottom, so tiles with a long caption and
+   tiles with none still line their buttons up. */
+.shotmeta { display: flex; flex-wrap: wrap; align-items: baseline;
+            gap: .1rem .5rem; margin: auto 0 0; padding: .35rem .4rem;
+            font-size: .68rem; line-height: 1.3; }
+.shotmeta b { flex: 1 1 100%; font-weight: 400; letter-spacing: .02em; }
+.shotmeta .shotnote { flex: 1 1 100%; color: var(--muted);
+                      display: -webkit-box; -webkit-line-clamp: 2;
+                      -webkit-box-orient: vertical; overflow: hidden; }
+.shotmeta .shotnote:empty { display: none; }
+.shotmeta button { padding: .15rem 0 0; border: 0; background: none;
+                   font-size: .68rem; min-height: 0; text-decoration: underline; }
+.shotmeta .shot-edit { margin-right: auto; }
+.shotmeta .shot-delete { color: var(--rust); }
 #add-photo input[type="file"] { font-size: .85rem; }
 @media (min-width: 46rem) {
-  .shots { grid-template-columns: 1fr 1fr; }
+  .shots { grid-template-columns: repeat(4, 1fr); }
 }
 
 /* ── Stage cards ─────────────────────────────────────────
@@ -919,3 +935,19 @@ a.go {
    belongs with the count of them. */
 .download { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap;
             margin: 0 0 1.2rem; font-size: .85rem; }
+
+/* Tightening, 2026-08-24. Clay, on the unit page: "So much text and wasted
+   space."
+
+   The text was mine — a paragraph under every heading explaining why the
+   control below it exists. That reasoning belongs in the Jinja comments and
+   the spec, where it costs nothing to read once, rather than on a screen he
+   opens several times an evening. What survived is what changes what he would
+   do: where models land, that removing deletes rather than sells, which
+   spellings the parser takes.
+
+   The space was the display face. A 1.4rem blackletter h2 with 2rem above it
+   is right for a page you read and wrong for a page you operate — four of them
+   is most of a phone screen before any control appears. */
+h2 + .panel, h2 + form, h2 + .hint { margin-top: 0; }
+.stack label:last-of-type { margin-bottom: .6rem; }
