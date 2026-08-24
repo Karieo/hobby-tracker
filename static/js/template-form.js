@@ -81,12 +81,9 @@ if (create) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
-      // Back where the definition was asked for: the box page Clay scanned
-      // from if there is one, otherwise the queue whose codes this resolved.
+      // Back where the definition was asked for, or to the template itself.
       const next = create.querySelector('[name=next]');
-      location.href = (next && next.value)
-        || (create.querySelector('[name=code]').value
-            ? '/scan/review' : `/templates/${data.id}`);
+      location.href = (next && next.value) || `/templates/${data.id}`;
     } catch (err) { toast(err.message, 'error'); }
   });
 }
@@ -112,23 +109,5 @@ if (edit) {
   });
 }
 
-const link = $('#link-code');
-if (link) {
-  link.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const input = link.querySelector('input[name=code]');
-    try {
-      const res = await fetch(`/api/templates/${link.dataset.template}/barcodes`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({code: input.value}),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed');
-      if (data.notes && data.notes.length) toast(data.notes[0], 'warn');
-      location.reload();
-    } catch (err) { toast(err.message, 'error'); }
-  });
-}
 
 })();

@@ -364,7 +364,7 @@ def wishlist(conn):
 def want_template(conn, template_id):
     """Put a box's contents on the wishlist, and remember which box.
 
-    The catalogue's payback. Browsing "what exists" is only half useful if
+    A template's payback. Saying what is in a box once is only half useful if
     finding something you want leaves you to type its contents in by hand.
 
     Idempotent per box, the same bargain `raise_wishlist` makes per list:

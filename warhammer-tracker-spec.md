@@ -44,22 +44,26 @@ individually is how a tracker dies.
 
 Every model arrives labelled, pointed at a real datasheet, at "On sprue".
 
-**Onboarding a shelf is one sprint, not a hundred forms.** Scan the pile
-without stopping; then one *Onboard all* confirms every known box and records
-every unknown one as owned, honestly, contents deferred.
+**Contents are typed at the till, not scanned off the box.** This was a
+barcode scanner with a sprint queue, a review screen, a box page per code and a
+researched catalogue of box contents behind all of it — built, used, and
+removed on 2026-08-24. Clay: *"The scanning doesn't work well and I would just
+rather look up the contents at the time of purchase and add them in manually.
+Must faster."*
 
-**A recorded box identifies itself.** A hundred boxes called `Unidentified box
-5011921…` are indistinguishable on a screen, so the box is its own index: the
-scanner's identify mode opens `/box/<code>`, where its contents get said once.
+The reason it failed is the reason not to rebuild it: a barcode is only a key,
+and nobody publishes the table it opens. Scanning paid off only for a box the
+app already had contents for, so the catalogue had to keep ahead of what Clay
+was buying, and it never could — most scans ended in typing the contents
+anyway, one screen later than typing them directly.
 
-**Saying it once pays for every copy.** Contents defined against a barcode
-reach every box already recorded with that code, and every one scanned after.
+**Saying it once still pays for every copy.** A template names a box and what
+is in it; owning another copy is one action. That half was always hand-made and
+it survives.
 
-**Contents come from a catalogue that is derived, never authored.**
-`seed/data/derived_kits.yaml` holds researched box contents with their sources;
-the importer refuses an entry that cannot be traced back to something a person
-can read, and holds barcodes to a higher bar than contents — two independent
-sources, or the entry ships without one.
+**Contents are never authored from recall.** The rule outlived the catalogue
+that motivated it: what goes into a template is Clay reading a box, or a source
+a person can read — never a plausible guess.
 
 > **Hands off to:** the inventory, and from there the building phase.
 
@@ -75,9 +79,9 @@ Clay said "new in box, sealed, built" as one scale. They are two, and keeping
 them apart is what makes both "what can I sell" and "what can I play"
 answerable.
 
-**Models with no barcode left to scan need their own door.** Everything already
-built, painted, or split out of a box years ago has nothing to scan, and those
-are the models most likely to be missing. So: paste a list, one line per unit
+**Everything already on the shelf needs its own door.** Models built, painted,
+or split out of a box years ago are the ones most likely to be missing. So:
+paste a list, one line per unit
 (`20 Boyz built`, `Trukk primed`, `5 Nobz`), confirm what matched, decide about
 what did not. Forgiving about shape, unforgiving about names — a line either
 resolves to a real datasheet or comes back for a decision.
@@ -173,9 +177,9 @@ Measured 2026-08-22, from the code rather than memory.
 
 | Loop step | State |
 |---|---|
-| 2.1 Own-it check | **Built.** Searching the collection walks the whole catalogue, so "you own none" is an answer. |
-| 2.2 Box → collection | **Built.** One scan inserts every model; *Onboard all* clears the queue in one action; a box page per barcode with identify-mode scanning; contents defined once reach every recorded copy. The catalogue is a derived seed that grows as codes are looked up. |
-| 2.3 Inventory | **Built.** One row per datasheet: owned, built, battle ready, sealed boxes, wanted. Paste-import is the door for models with no barcode. |
+| 2.1 Own-it check | **Built.** Searching the collection walks the whole of BSData, so "you own none" is an answer. Filterable by faction, points, stage and ownership. |
+| 2.2 Box → collection | **Built, by hand.** A template names a box and its contents; owning a copy inserts every model in one action. The barcode scanner and the researched catalogue behind it were built and removed on 2026-08-24 — see §2.2 for why not to rebuild them. |
+| 2.3 Inventory | **Built.** One row per datasheet: owned, built, battle ready, sealed boxes, wanted. Paste-import is the door for what is already on the shelf. |
 | 2.4 Building | **Built.** The ladder's first half, moved a whole unit at a time. Not a separate mode — building and painting are one pipeline. |
 | 2.5 Painting | **Built.** Paint mode, session mode, per-unit pipeline, and basing applicability. |
 | 2.6 List → gap → wishlist | **Built.** The gap splits buy from paint; the shortfall raises a wishlist tagged with the list that wanted it. |
@@ -204,8 +208,10 @@ The loop's own order, not the old step numbers:
 3. ~~**Basing applicability** (2.5)~~ — done. Keywords are stored now; they are
    a hint, not a classifier, because they cannot actually decide it.
 4. ~~**List builder, gap, wishlist** (2.6)~~ — done.
-5. ~~**Onboarding at shelf scale** (2.2, 2.3)~~ — done. The sweep, the box
-   page, identify mode, adopt-all, the derived catalogue, and paste-import.
+5. ~~**Onboarding at shelf scale** (2.2, 2.3)~~ — done, then halved. The
+   scanning half was removed on 2026-08-24 as slower than typing; paste-import
+   and hand-defined templates are what remain, and they are the parts that
+   never needed a lookup to answer.
 6. ~~**List import** (2.7)~~ — done, by paste. The blocker was on fetching a
    list, not on receiving one.
 
@@ -215,13 +221,12 @@ its own if building ever wants one.
 
 ## 7 · Known blockers
 
-- **The kit catalogue is grown, not imported.** No open dataset of GW box
-  contents or EANs exists, and direct fetches of retailer and publisher pages
-  are refused by egress policy (`403 to CONNECT`). Search *does* answer, which
-  is enough to resolve codes one product at a time — so the catalogue is a
-  reviewed seed file that grows as Clay's own unknown codes get looked up, not
-  an enumeration of everything GW has published. Each product costs one lookup,
-  ever, and every copy on the shelf resolves behind it.
+- ~~**The kit catalogue is grown, not imported.**~~ Resolved by removing it.
+  No open dataset of GW box contents or EANs exists and direct fetches are
+  refused by egress policy, so the catalogue could only ever grow one lookup at
+  a time — and it could not keep ahead of what Clay was buying, which made the
+  scanner it existed to serve slower than typing. Both are gone. The blocker
+  was real; the answer was that the feature was not worth what it cost.
 - **`BACKUP_DEST` unset.** Snapshots live on the same machine as the database.
 
 ---

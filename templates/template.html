@@ -69,32 +69,6 @@
     <button type="submit">Save</button>
   </form>
 
-  <h2>Barcodes <span class="muted">{{ template.barcodes|length }}</span></h2>
-  <p class="hint">
-    Every code here resolves to this box instantly, forever. This local table is
-    the only part of barcode scanning guaranteed to still work in five years.
-  </p>
-  {% if template.barcodes %}
-    <div class="panel wrap">
-      <table>
-        <tr><th>Code</th><th>First scanned</th><th>Times seen</th></tr>
-        {% for b in template.barcodes %}
-          <tr>
-            <td><span class="code">{{ b.code }}</span></td>
-            <td class="muted">{{ b.first_scanned_at }}</td>
-            <td>{{ b.scan_count }}</td>
-          </tr>
-        {% endfor %}
-      </table>
-    </div>
-  {% endif %}
-  <form class="panel row" id="link-code" data-template="{{ template.id }}">
-    <label>Link another barcode
-      <input name="code" inputmode="numeric" autocomplete="off"
-             placeholder="5011921204021">
-    </label>
-    <button type="submit">Link</button>
-  </form>
 {% endblock %}
 
 {% block scripts %}<script src="/static/js/template-form.js?v={{ asset_version }}"></script>{% endblock %}
