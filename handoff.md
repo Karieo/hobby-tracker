@@ -2,129 +2,112 @@
 
 ## 1 · Goal
 
-Clay is using the app on his phone for the first time, and every session since
-has been driven by what he found when he did. The run this file covers took it
-from "the pipeline is on every screen" to a shape he described himself:
+Clay is using the app on his phone, and every session since has been driven by
+what he finds when he does. This run covers three things he asked for and one
+he asked to be rid of:
 
-> "Collection should just be a summary and add or remove... Paint mode has the
-> ramp."
+> "Can you go find better flat icons from the web, do not draw them."
 
-> "I want it to be a journey of my whole hobby life across all models."
+> "I would like to pull a list of models, how many I have, then how many
+> battle ready."
 
-Plus one removal he asked for outright: the barcode scanner and the box
-catalogue behind it are gone.
+> "Do a csv that I can download from the site. I also want to filter by
+> faction."
+
+> "Drop the kits page, it's not helpful."
 
 ## 2 · Current state
 
-`main` is green — 635 tests, ShellCheck clean, CI passing on 3.11 and 3.12.
-Everything below is committed on `claude/new-session-8l17p6` and stacked onto
-**PR #39**.
+`main` is green — 654 tests, ShellCheck clean, CI passing on 3.11 and 3.12.
+PRs #40, #41 and #42 are merged. **None of it is deployed**; bastion is
+running the build from before #40.
 
-**The screens split by job.** The unit page is a summary and a count: a stat
-card per stage, photos, "How many", and move-to-army. The ramp — advance,
-advance all, per-stage ±1 — lives only in paint mode now, on every screen that
-used to carry it. Nickname and notes are gone from the unit page; `update_unit`
-writes only the keys it is given, so nothing else blanks them.
+**Stage icons are Lucide**, ISC licensed, vendored inline and pinned to a SHA
+in `static/icons/LUCIDE.md` — the same bargain `rules_data.py` makes with
+BSData, because an icon set that moves under the app changes a screen with no
+commit to point at. Seven of the eight; **On sprue stays hand-drawn** because
+Clay preferred it and no icon set has a sprue. Stroke width went 1.6 → 2, which
+is what Lucide is drawn for.
 
-**Removing models is possible.** `DELETE /api/units/<id>/models` had shipped
-long ago with nothing calling it; the count control now does, and the bottom
-rung's `−1` un-owns rather than dead-ends. Removing every model deletes the
-unit — a correction, not a disposal, and the screen says which.
+**The export narrows two ways.** `?fields=name,owned,battle_ready` and
+`?faction=orks` (name or slug, any case). Both refuse rather than shrug: an
+unknown field is a 400 listing the valid ones, an unknown faction is a 404
+rather than a cheerful empty list.
 
-**The collection filters.** Faction, stage, points range, owned/wanted, free
-text, and seven sorts, all in the query string via a `filter_url` template
-global that strips empty values in both directions.
+**`GET /collection.csv`** is the collection screen, downloadable, carrying
+exactly the filters the page shows. The link under the tiles says how many rows
+it will contain, and the filename says what is in it.
 
-**Photos are a dated log per unit**, added and edited through one `<dialog>`,
-with the caption editable after the fact. `backup.sh` and `restore.sh` carry
-`data/photos/` in a shared directory beside the snapshots — shared because the
-filenames are random and immutable, so thirty snapshots are not thirty copies,
-and never rotated.
-
-**`/gallery` is the journey.** Four dated streams merged — pictures taken,
-models moving forward, boxes bought, boxes gone — oldest first, grouped by day,
-with a photo scrubber above. It is the first thing ever to read `stage_events`,
-which has been append-only since the first commit for exactly this.
-
-**The scanner and the catalogue are gone.** See CLAUDE.md's "Scanning
-(removed)" for why and for what would have to be true before rebuilding it.
-`barcodes` and `scan_queue` survive with no readers, deliberately: dropping a
-table destroys the codes already linked to templates, which is Clay's decision
-rather than a side effect of deleting a screen.
+**The Kits screens are gone**, the `kits` table is not. See CLAUDE.md's "The
+Kits screens (removed)".
 
 ## 3 · Active files
 
-- `journey.py` — new. Merges the four streams; aggregates stage events per
-  day/unit/stage; nets same-day corrections out.
-- `photos.py` — `update()` and `timeline()` added.
-- `kit_templates.py` — new, extracted from the deleted `scanning.py`.
-- `collection.py` — `remove_models`, partial-write `update_unit`, the
-  `inventory()` filters and sorts.
-- `app.py` — `/gallery`, `PATCH /api/photos/<id>`, `DELETE
-  /api/units/<id>/models`, `filter_url`; all `/scan*`, `/box/<code>`,
-  `/catalogue` routes removed.
-- `templates/` — `unit.html`, `gallery.html`, `_macros.html` (stage icons).
-- `static/js/` — `app.js` (the photo dialog), `gallery.js` (new, the scrubber).
-- `backup.sh`, `restore.sh` — the photo directory.
+- `templates/_macros.html`, `static/icons/LUCIDE.md` — the icon set and its pin.
+- `app.py` — `_export_fields`, `_collection_filters`, `_collection_rows`,
+  `/collection.csv`, `faction=` on the export; all `/kits*` routes removed.
+- `collection.py` — `EXPORT_FIELDS`. Kit functions untouched and still called.
+- `tests/test_suite_hygiene.py` — new; see below.
+- `tests/test_routes.py`, `tests/test_collection.py` — the fixture fix and the
+  four tests that moved down.
 
 ## 4 · Changes made
 
-Eight commits, `c5ec3fd` through `4e4fce2`. Each answers one message from Clay,
-in the order he sent them.
+Six commits across three PRs, `31753b9` through `c5fdb03`.
 
 ## 5 · Failed attempts
 
-**Every request Clay made this run found something already built and
-unreachable, with green tests throughout.** `DELETE /api/units/<id>` had
-shipped in the first commit and nothing ever called it, so "I have no way to
-remove models" was true while the route sat there answering. The bottom-rung
-`−1` was rendered and dead. `faction_id` was on the datasheet and nothing
-filtered by it. `POST /api/units/<id>/models` is *still* in that state. The
-tests called the functions; not one asserted that a screen offered the control.
-This is now an invariant in CLAUDE.md: grep the templates and `static/js/`
-before believing a capability exists.
+**Two tests had never run.** Removing the scanner deleted two fixtures and left
+their `@pytest.fixture` decorators attached to the tests below them, so pytest
+collected `test_a_template_with_no_contents_is_refused` and
+`test_home_leads_with_the_effort_weighted_percentage` as *fixtures*. Green
+suite, rising count, two unguarded behaviours. Both passed once reconnected —
+the assertions were fine, the wiring was not. `tests/test_suite_hygiene.py`
+now fails if any `test_*` wears a fixture decorator.
 
-**`update_unit` would have silently eaten nicknames.** It wrote both columns
-every time, so dropping the nickname input meant any notes save blanked the
-name. Caught by reading the writer while removing the field, not by a test —
-there was no test. Fixed to partial writes; restoring write-both now fails.
+**A test that only passed in company.** `app.py` runs `seed_owner()` at import
+time and the `client` fixture imports `app` *inside itself*, so whichever test
+imported it first — and only that one — seeded an owner into its own temp
+database with the wrong password, and its login failed. Invisible in file
+order, reproducible alone. Worse: the fixture **discarded the login response**,
+so a failed login degraded ~130 tests into redirect-checkers where every
+`assert x not in body` passed vacuously. The fixture now asserts the login
+returned 200.
 
-**A `<details>` inside the nowrap `.search` flex row crushed the search box to
-"Sear".** Found by looking at a screenshot. No test could have caught it and
-none was added; the browser pass is the test.
+**`-k` silently deselected the test being teeth-checked. Twice.** Both times
+the tell was that the *restored* run printed nothing either. A test whose name
+contains no word anyone would filter on got renamed. Do not teeth-check with
+`-k`; run the file.
 
-**Removing the scanner swept up `/add` and `/lists/import`.** The route slice I
-cut was wider than intended. Caught by my own assertion that `/api/scan` was
-gone *and* the paste doors were still there, then restored precisely.
+**A "restarted" scratch server that had not restarted.** The old process still
+held port 3199, so `boot=200` was the stale build answering and a template
+change looked like it had not applied. Now the served HTML is asserted to
+contain the change before any screenshot is trusted.
 
-**`AS on` is a syntax error in SQLite** — `ON` is reserved by `JOIN ... ON`.
-The column is `happened_on` and mapped to `'on'` in Python.
+**`data-theme` is not the attribute.** It is `data-ground`, values `nuln` and
+`blueprint`. Setting the wrong one silently returns the light palette twice and
+calls one of them dark.
 
-**Hiding retreats was not enough.** The journey dropped backward moves as
-corrections, which left eight Boyz advanced-and-walked-back showing "8 × Boyz —
-Base prepared" forever: the mis-tap visible, the fix hidden. Found in the
-seeded browser pass, not in the fifteen tests that were already green. Same-day
-retreats now cancel the advance they undid.
-
-**A test that passes either way is not a test.** Teeth-checking the netting
-found the arrival guard untestable in the obvious fixture, because
-`retreat_unit` cannot leave the first owned stage. The real case is a unit that
-*arrives* at Painted, which paste-import does — that test bites.
+**The Kits removal nearly took the gap checker with it.** Clay first chose to
+drop the data too. `kit_datasheets` is keyed on `kits.id` and is what matches an
+unbuilt sprue to a datasheet, so dropping the table would have left
+`buildable_from_spare` reading 0 forever with nothing saying why. Put back with
+that included, he kept the data. **The destructive migration was written and
+then discarded** — check what reads a table before dropping it, not after.
 
 ## 6 · Next steps
 
-1. **Deploy to bastion**: `./backup.sh` → `git pull` → `./deploy.sh`. Note
-   bastion runs standalone `docker-compose` (v1), hyphenated. Picks up
-   migration 009, the nav without Scan and Catalogue, the reworked unit page
-   and the journey.
-2. **`BACKUP_DEST` is unset** — photos would exist only on the Jetson. This is
-   the one thing on this list that loses data if left.
-3. **Two rules pins have moved** — BSData `13f3c4e5 → 04c62fcd` (cheap), MFM
-   `06754e2f → 3c1efe0d` (moves points under existing lists). Clay's call;
-   nothing bumps a pin automatically by design.
-4. **`barcodes` and `scan_queue` have no readers.** Dropping them is a one-line
-   migration and a decision, not a tidy-up.
+1. **Deploy to bastion** — `./backup.sh` → `git pull` → `./deploy.sh`, with
+   hyphenated `docker-compose`. Picks up all three PRs.
+2. **`BACKUP_DEST` is unset.** The photo log is live, so every picture exists
+   on the Jetson and nowhere else. The only item here that loses data if left.
+3. **An API token was pasted into a chat** and should be revoked and re-minted:
+   `docker-compose exec tracker python3 scripts/api_token.py --list|--revoke`.
+   Note the *exec* — the host user cannot write the container-owned database,
+   which fails as "attempt to write a readonly database".
+4. **Two rules pins have moved** — BSData is cheap, the MFM one changes points
+   under lists already built. Nothing bumps automatically by design.
 5. **The weekly sweep fires at `0 14 * * 1`** — becomes 15:00 local after the
    1 November DST shift.
-6. **Spec §9's remaining dropped requirements** — nine still owed a decision
-   after export.
+6. **Spec §9's remaining dropped requirements** — several still owed a
+   decision, and §10 still owes list export as text and JSON.
