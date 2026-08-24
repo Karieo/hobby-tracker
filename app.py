@@ -1,9 +1,11 @@
 """Warhammer Collection Tracker — Flask server.
 
-Build steps 1-4: reference data, the collection and stage pipeline, and the
-scanner with its sprint queue and review screen. Routes live here and delegate
-to ``collection.py`` and ``scanning.py``; the collection search view (step 5) is
-not built yet.
+Reference data, the collection and its stage pipeline, lists and the gap
+report. Routes live here and delegate to the flat modules beside it —
+``collection.py``, ``lists.py``, ``kit_templates.py``, ``photos.py``.
+
+The barcode scanner used to live here too and is gone: Clay measured it slower
+than typing what is in a box he is holding.
 
 Auth posture matches Remndrs, because the Cloudflare Tunnel makes this publicly
 reachable and obscurity is not a plan: bcrypt password, session cookie, a
@@ -62,7 +64,7 @@ import lists as army_lists
 import photos
 import rules_data  # noqa: E402
 import database as db  # noqa: E402
-import scanning as scan  # noqa: E402
+import kit_templates as templates  # noqa: E402
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s %(name)s: %(message)s')
@@ -355,11 +357,7 @@ def inject_globals():
     return {'owner': os.getenv('OWNER_NAME', 'Clay'), 'version': VERSION,
             'filter_url': filter_url,
             'asset_version': _ASSET_VERSION, 'currency': CURRENCY,
-            'currency_symbol': CURRENCY_SYMBOL,
-            # Where this app answers over HTTPS. The scan page needs it: the
-            # camera refuses to run outside a secure context, and "use the
-            # tunnel address" is a poor answer to give someone holding a box.
-            'public_url': (os.getenv('PUBLIC_URL') or '').strip().rstrip('/')}
+            'currency_symbol': CURRENCY_SYMBOL}
 
 
 # ── Armies ───────────────────────────────────────────────
@@ -1012,131 +1010,6 @@ def paint(unit_id=None):
                                stages=col.stage_ladder(conn))
 
 
-# ── Scanning: capture ────────────────────────────────────
-
-@app.route('/scan')
-def scan_page():
-    """Sprint capture. The camera stays open and nothing interrupts it.
-
-    Needs a secure context for getUserMedia — the Cloudflare Tunnel supplies
-    that, a plain-http Tailscale IP does not, and the page says so rather than
-    failing silently.
-    """
-    with _read() as conn:
-        return render_template('scan.html', summary=scan.queue_summary(conn),
-                               recent=scan.queue_rows(conn)[:8])
-
-
-@app.route('/api/scan', methods=['POST'])
-def api_scan():
-    """One decode. Written to the server at once — a dead battery must not cost
-    Clay the shelf he just worked through."""
-    data = _payload()
-    try:
-        with _write() as conn:
-            result = scan.enqueue_scan(conn, data.get('code') or '')
-            result['summary'] = scan.queue_summary(conn)
-            return jsonify(result), 201
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
-
-
-@app.route('/api/scan/check')
-def api_scan_check():
-    """Sanity notes for a typed code, before it is committed to the queue."""
-    code = scan.normalise_code(request.args.get('code') or '')
-    with _read() as conn:
-        template = scan.template_for_code(conn, code) if code else None
-    return jsonify({**scan.describe_code(code), 'known': template is not None,
-                    'name': template['name'] if template else None})
-
-
-# ── Scanning: enrichment ─────────────────────────────────
-
-@app.route('/scan/review')
-def scan_review():
-    """The keyboard half, done later. Known codes need a tap; unknown ones need
-    contents defined once each."""
-    with _read() as conn:
-        return render_template(
-            'scan_review.html',
-            rows=scan.queue_rows(conn, include_resolved=True),
-            summary=scan.queue_summary(conn),
-            stages=col.stage_ladder(conn),
-            armies=[a for a in col.list_armies(conn) if a['id']],
-            factions=col.list_factions(conn),
-            awaiting=col.kits_awaiting_contents(conn),
-            templates=col.list_templates_with_contents(conn))
-
-
-@app.route('/api/scan/<int:queue_id>/resolve', methods=['POST'])
-def api_resolve_scan(queue_id):
-    data = _payload()
-    cost = data.get('cost')
-    try:
-        with _write() as conn:
-            kit_ids = scan.resolve_queue_row(
-                conn, queue_id,
-                army_id=_int(data.get('army_id')),
-                stage_id=_int(data.get('stage_id')),
-                source=(data.get('source') or None),
-                acquired_on=(data.get('acquired_on') or '').strip() or None,
-                cost_cents=round(float(cost) * 100) if cost else None,
-                box_state=(data.get('box_state') or 'opened'))
-            return jsonify({'kits': kit_ids, 'summary': scan.queue_summary(conn)})
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
-
-
-@app.route('/api/scan/<int:queue_id>/shelve', methods=['POST'])
-def api_shelve_scan(queue_id):
-    """Record the box, not its contents. One tap, nothing invented."""
-    data = _payload()
-    cost = data.get('cost')
-    try:
-        with _write() as conn:
-            kit_ids = scan.shelve_queue_row(
-                conn, queue_id,
-                name=data.get('name'),
-                faction_id=_int(data.get('faction_id')),
-                source=(data.get('source') or None),
-                acquired_on=(data.get('acquired_on') or '').strip() or None,
-                cost_cents=round(float(cost) * 100) if cost else None,
-                box_state=(data.get('box_state') or 'sealed'))
-            return jsonify({'kits': kit_ids, 'summary': scan.queue_summary(conn)})
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
-
-
-@app.route('/api/kits/<int:kit_id>/adopt', methods=['POST'])
-def api_adopt_template(kit_id):
-    """Fill in a shelved box's contents once its template exists."""
-    data = _payload()
-    try:
-        with _write() as conn:
-            unit_ids = col.adopt_template(
-                conn, kit_id, _int(data.get('kit_template_id')),
-                army_id=_int(data.get('army_id')),
-                stage_id=_int(data.get('stage_id')))
-            return jsonify({'units': unit_ids})
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
-
-
-@app.route('/api/scan/<int:queue_id>/quantity', methods=['POST'])
-def api_scan_quantity(queue_id):
-    with _write() as conn:
-        scan.set_queue_quantity(conn, queue_id, _int(_payload().get('quantity'), 1))
-    return jsonify({'success': True})
-
-
-@app.route('/api/scan/<int:queue_id>', methods=['DELETE'])
-def api_discard_scan(queue_id):
-    with _write() as conn:
-        scan.discard_queue_row(conn, queue_id)
-    return jsonify({'success': True})
-
-
 @app.route('/add')
 def add_page():
     """Paste a shelf in. The door for everything with no barcode left to scan.
@@ -1250,118 +1123,12 @@ def api_import_list():
         return jsonify({'error': str(exc)}), 400
 
 
-@app.route('/box/<code>')
-def box_page(code):
-    """Everything known about one barcode, reached by scanning the box itself.
-
-    The couch half of onboarding. A hundred shelved boxes are named
-    `Unidentified box 5011921…` and nothing but thirteen digits says which is
-    which — so instead of reading digits off a screen, Clay picks the box up,
-    scans it, and lands here to say what is in it. The box is its own index.
-    """
-    code = scan.normalise_code(code)
-    with _read() as conn:
-        template = scan.template_for_code(conn, code)
-        return render_template(
-            'box.html', code=code, notes=scan.describe_code(code)['notes'],
-            template=scan.get_template(conn, template['id']) if template else None,
-            awaiting=[k for k in col.kits_awaiting_contents(conn)
-                      if k['code'] == code],
-            kits=[dict(r) for r in conn.execute(
-                'SELECT k.*, t.name AS template_name FROM kits k '
-                'LEFT JOIN kit_templates t ON t.id = k.kit_template_id '
-                'WHERE k.source_ref = ? ORDER BY k.id', (code,))],
-            open_rows=[r for r in scan.queue_rows(conn) if r['code'] == code],
-            stages=col.stage_ladder(conn),
-            armies=[a for a in col.list_armies(conn) if a['id']])
-
-
-@app.route('/api/box/<code>/adopt-all', methods=['POST'])
-def api_adopt_all_for_code(code):
-    """Define contents once, fill in every copy already on the shelf."""
-    data = _payload()
-    try:
-        with _write() as conn:
-            kit_ids = col.adopt_all_for_code(
-                conn, scan.normalise_code(code),
-                kit_template_id=_int(data.get('kit_template_id')),
-                army_id=_int(data.get('army_id')),
-                stage_id=_int(data.get('stage_id')))
-            return jsonify({'kits': kit_ids})
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
-
-
-@app.route('/api/scan/sweep', methods=['POST'])
-def api_scan_sweep():
-    """The whole queue in one tap: known boxes confirmed, unknown ones
-    recorded. A hundred rows must not cost a hundred taps."""
-    data = _payload()
-    cost = data.get('cost')
-    try:
-        with _write() as conn:
-            result = scan.sweep_queue(
-                conn,
-                army_id=_int(data.get('army_id')),
-                stage_id=_int(data.get('stage_id')),
-                source=(data.get('source') or None),
-                acquired_on=(data.get('acquired_on') or '').strip() or None,
-                cost_cents=round(float(cost) * 100) if cost else None,
-                box_state=(data.get('box_state') or 'sealed'))
-            return jsonify({'confirmed': len(result['confirmed']),
-                            'shelved': len(result['shelved']),
-                            'summary': scan.queue_summary(conn)})
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
-
-
 # ── Kit templates ────────────────────────────────────────
 #
-# Built by hand first, deliberately: onboarding must never depend on an EAN
-# lookup answering or a vision model being right.
-
-@app.route('/sets/new')
-def add_set_page():
-    """Add a set, three ways in.
-
-    By name is the door: most of the time Clay knows what the box is called,
-    and typing it beats hunting for a barcode on a shelf or waiting for a
-    camera to focus. Scanning and typing a code stay as the other two doors —
-    they are better when the box is in his hand and the name is a mouthful.
-
-    All three end in the same place: a kit, with its contents if the app knows
-    them and honestly without if it does not.
-    """
-    with _read() as conn:
-        return render_template(
-            'add_set.html',
-            recent=scan.list_templates(conn, with_contents=True)[:8],
-            factions=col.list_factions(conn))
-
-
-@app.route('/catalogue')
-def catalogue_page():
-    """What exists, and whether Clay has it.
-
-    `/templates` is bookkeeping — the boxes he has defined. This asks the
-    question a catalogue is for, and is where researched contents stop being a
-    dropdown entry and start being useful: browse, see what you own, and put
-    what you don't on the wishlist.
-    """
-    owned = request.args.get('owned')
-    with _read() as conn:
-        return render_template(
-            'catalogue.html',
-            templates=scan.list_templates(
-                conn, request.args.get('q'),
-                faction_id=_int(request.args.get('faction_id')),
-                owned=owned if owned in ('yes', 'no') else None,
-                with_contents=True),
-            factions=col.list_factions(conn),
-            query=request.args.get('q') or '',
-            owned=owned or '',
-            faction_id=_int(request.args.get('faction_id')))
-
+# What is inside a box, defined by hand. This was onboarding's back half —
+# scanning found the box, a template said what was in it — and with scanning
+# gone it is the whole of it: Clay looks the contents up at the till and types
+# them, which he measured as faster than pointing a camera at a shelf.
 
 @app.route('/api/templates/<int:template_id>/want', methods=['POST'])
 def api_want_template(template_id):
@@ -1403,7 +1170,7 @@ def api_own_template(template_id):
 def templates_page():
     with _read() as conn:
         return render_template('templates.html',
-                               templates=scan.list_templates(
+                               templates=templates.list_templates(
                                    conn, request.args.get('q')),
                                factions=col.list_factions(conn),
                                query=request.args.get('q') or '')
@@ -1412,7 +1179,7 @@ def templates_page():
 @app.route('/templates/<int:template_id>')
 def template_detail(template_id):
     with _read() as conn:
-        template = scan.get_template(conn, template_id)
+        template = templates.get_template(conn, template_id)
         if not template:
             abort(404)
         return render_template('template.html', template=template,
@@ -1441,7 +1208,7 @@ def api_search_templates():
     if len(query) < 2:
         return jsonify({'results': []})
     with _read() as conn:
-        rows = scan.list_templates(conn, query, with_contents=True)[:20]
+        rows = templates.list_templates(conn, query, with_contents=True)[:20]
     return jsonify({'results': [{
         'id': r['id'], 'name': r['name'], 'year': r['year'],
         'faction_name': r['faction_name'], 'model_count': r['model_count'],
@@ -1457,15 +1224,12 @@ def api_create_template():
     rrp = data.get('rrp')
     try:
         with _write() as conn:
-            template_id = scan.create_template(
+            template_id = templates.create_template(
                 conn, data.get('name') or '', _contents_from(data),
                 faction_id=_int(data.get('faction_id')),
                 year=_int(data.get('year')),
                 rrp_cents=round(float(rrp) * 100) if rrp else None,
                 notes=(data.get('notes') or '').strip() or None)
-            code = scan.normalise_code(data.get('code') or '')
-            if code:
-                scan.link_barcode(conn, code, template_id)
             return jsonify({'id': template_id}), 201
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
@@ -1478,7 +1242,7 @@ def api_update_template(template_id):
     contents = _contents_from(data) if 'contents' in data else None
     try:
         with _write() as conn:
-            scan.update_template(
+            templates.update_template(
                 conn, template_id, name=data.get('name'),
                 faction_id=_int(data.get('faction_id')),
                 year=_int(data.get('year')),
@@ -1487,20 +1251,6 @@ def api_update_template(template_id):
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     return jsonify({'success': True})
-
-
-@app.route('/api/templates/<int:template_id>/barcodes', methods=['POST'])
-def api_link_barcode(template_id):
-    """Teach the local table what a code is — the step that makes every future
-    scan of that box instant."""
-    code = scan.normalise_code(_payload().get('code') or '')
-    if not code:
-        return jsonify({'error': 'No digits in that code'}), 400
-    with _write() as conn:
-        if not scan.get_template(conn, template_id):
-            abort(404)
-        scan.link_barcode(conn, code, template_id)
-    return jsonify({'success': True, **scan.describe_code(code)}), 201
 
 
 # ── Pickers ──────────────────────────────────────────────

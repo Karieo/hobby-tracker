@@ -1078,20 +1078,6 @@ def adopt_template(conn, kit_id, kit_template_id, army_id=None, stage_id=None):
                  'WHERE id = ?',
                  (kit_template_id, name, template['faction_id'], db.now(), kit_id))
 
-    # The code this box was scanned with now has a meaning, so bank it. This
-    # is the only way most barcodes will ever be learned: contents can be
-    # researched from published sources, EANs essentially cannot, and the
-    # person holding the box is the one with the number. Saying "this is a
-    # Combat Patrol" once must teach the scanner, or the next copy of the same
-    # box comes up unknown again and the answer is retyped forever.
-    #
-    # Not a guess: Clay picked this template for this physical box. That is the
-    # same confirmation the review form asks for everywhere else.
-    code = (kit['source_ref'] or '').strip()
-    if code:
-        import scanning as scan          # local: scanning imports this module
-        if scan.normalise_code(code) == code:
-            scan.link_barcode(conn, code, kit_template_id, link_source='scanned')
     return unit_ids
 
 

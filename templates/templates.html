@@ -5,24 +5,16 @@
     <div>
       <h1>Kit templates</h1>
       <p class="hint">
-        What's inside a box, defined once. Scanning a known barcode turns one
+        What's inside a box, defined once. Recording that you own the box turns one
         into a kit and all its models in a single action.
       </p>
     </div>
     <button class="ghost" data-toggle="#new-template">+ Template</button>
   </header>
 
-  {# Opened automatically when arriving from an unknown scan, with the code
-     pre-filled so linking it is not a second step Clay has to remember. #}
-  <form class="panel stack {% if not request.args.get('code')
-                              and not request.args.get('name') %}hidden{% endif %}"
+  {# Opened automatically when arriving with a name already in hand. #}
+  <form class="panel stack {% if not request.args.get('name') %}hidden{% endif %}"
         id="new-template">
-    {% if request.args.get('code') %}
-      <p class="hint">
-        Defining <span class="code">{{ request.args.get('code') }}</span>. Every
-        other copy of this box on the shelf resolves behind it.
-      </p>
-    {% endif %}
     <label>Name<input name="name" required placeholder="Combat Patrol: Orks"
                       value="{{ request.args.get('name') or '' }}"></label>
     <div class="row">
@@ -39,16 +31,9 @@
     </div>
     <p class="hint">
       Year is not cosmetic. Combat Patrol: Orks is both a 2021 and a 2024 box
-      with entirely different contents — the year and the barcode are what tell
-      them apart.
+      with entirely different contents, and with the barcode gone the year is
+      the only thing that tells them apart.
     </p>
-    <label>Barcode
-      <input name="code" inputmode="numeric" autocomplete="off"
-             value="{{ request.args.get('code') or '' }}"
-             placeholder="5011921204021">
-    </label>
-    {# Where to land after saving. Arriving from a box page means Clay is
-       holding that box, so send him back to it rather than to the queue. #}
     <input type="hidden" name="next" value="{{ request.args.get('next') or '' }}">
 
     <h2>What's in the box</h2>
@@ -80,15 +65,14 @@
     <div class="panel empty">
       <p>No templates yet.</p>
       <p class="muted">
-        The catalogue seed job lands in step 5. Until then they're defined here,
-        once per box.
+        Define one when you buy a box: its name, and what is inside it.
       </p>
     </div>
   {% endif %}
 
   <div class="wrap">
     <table>
-      <tr><th>Kit</th><th>Year</th><th>Contents</th><th>Barcodes</th><th>RRP</th></tr>
+      <tr><th>Kit</th><th>Year</th><th>Contents</th><th>RRP</th></tr>
       {% for t in templates %}
         <tr>
           <td><a href="/templates/{{ t.id }}"><b>{{ t.name }}</b></a>
@@ -97,7 +81,6 @@
           <td>{{ t.year or '—' }}</td>
           <td>{{ t.unit_count }} unit{{ '' if t.unit_count == 1 else 's' }},
               {{ t.model_count }} model{{ '' if t.model_count == 1 else 's' }}</td>
-          <td>{{ t.barcode_count or '—' }}</td>
           <td>{{ t.rrp_cents | money }}</td>
         </tr>
       {% endfor %}

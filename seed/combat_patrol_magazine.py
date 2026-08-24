@@ -18,7 +18,7 @@ ships empty — see the README beside it for why, and for how to fill it in.
 
 Magazine sprues have no product barcode (the barcode on a cover identifies the
 issue, not the kit), so these templates are reached by name rather than by
-scanning. That is exactly why they are worth seeding.
+any box catalogue. That is exactly why they are worth seeding.
 """
 
 import argparse
@@ -33,7 +33,7 @@ import yaml
 
 import collection as col
 import database as db
-import scanning as scan
+import kit_templates as scan
 # The same fold the rules-data importer uses. One definition of "same name",
 # so a unit that matched there matches here.
 from import_bsdata import norm as normalise_name

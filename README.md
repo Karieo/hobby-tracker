@@ -1,17 +1,18 @@
 # Warhammer Collection Tracker
 
 Tracks every Warhammer 40,000 model in the collection individually — sprue to
-battle ready — across multiple armies, with barcode scanning for onboarding.
+battle ready — across multiple armies and game systems.
 
 Single user, Flask + SQLite, deployed in Docker on `bastion` behind the existing
 Cloudflare Tunnel. Conventions follow [Remndrs](https://github.com/Karieo/Remndrs):
 flat module layout, `python-dotenv` config read lazily, bcrypt + session-cookie
 auth, server-rendered Jinja with vanilla JS, no build step and no ORM.
 
-**Status: build steps 1–4 of 5.** Schema, migration runner, reference-data seed,
-the rules-data importer, the collection itself (armies, kits, units, models, the
-stage pipeline and painting session mode), and barcode scanning with its sprint
-queue and review screen. The collection search view (step 5) is not built yet.
+**Status: in use.** Schema and migrations, the rules-data importer, the
+collection itself (armies, kits, units, models, the stage pipeline and painting
+session mode), the filterable inventory and own-it check, lists with their gap
+report and wishlist, a dated photo log per unit, and an authenticated inventory
+export.
 
 ## Setup
 
@@ -55,7 +56,7 @@ and builds and boots the Docker image on every push and pull request
 | `data/mfm/` | Munitorum Field Manual snapshots (MIT, committed) |
 | `data/bsdata/` | BSData catalogues (fetched, gitignored — see `data/SOURCES.md`) |
 | `collection.py` | Armies, kits, units, models, stage movement |
-| `scanning.py` | Barcodes, the scan sprint queue, kit templates |
+| `kit_templates.py` | What is inside a box, defined by hand |
 | `seed/` | Combat Patrol magazine seed job and its contents file |
 | `static/vendor/` | ZXing-js, vendored (Apache-2.0) |
 | `templates/`, `static/` | Server-rendered Jinja + vanilla JS, no build step |
@@ -80,35 +81,17 @@ Every percentage is effort-weighted (`datasheets.effort` per model), because a
 Knight and a Termagant are both "1 model" and counting them equally makes
 progress bars lie. Raw counts show alongside.
 
-## Scanning
+## Getting things in
 
-`/scan` is sprint capture: the camera opens once and stays open, each decode
-posts to the server immediately, and scanning resumes. No modal, no navigation,
-no confirmation tap — a shelf gets worked through as fast as boxes can be turned
-over, and a flat battery never costs the work. Enrichment happens later at
-`/scan/review`.
+Two doors, both typed. `/add` takes a pasted list — "20 Boyz built", "Trukk
+primed" — and matches every line against a datasheet or asks which one it is.
+`/templates` says what is inside a box once, so owning another copy is a single
+action.
 
-**ZXing-js is the primary decoder, not a fallback.** The native `BarcodeDetector`
-API is Chrome/Android only; WebKit does not implement it, so it fails silently on
-every browser on iOS. Since an iPhone is the target, depending on it would mean
-the scanner never fires on the only phone that matters. It is feature-detected
-and used when present, and nothing relies on it.
-
-The camera needs a secure context, which any `https://` origin provides — the
-Cloudflare Tunnel or `tailscale serve` on a MagicDNS name — and a plain-http
-Tailscale IP does not; the page says so rather than failing quietly.
-**Typing the digits is always available**, because glare, damaged boxes and dim
-shop lighting defeat camera scanning regularly.
-
-Codes are sanity-checked and never rejected: an unexpected prefix or a bad check
-digit means *look at this*, not *invalid*. Codexes carry ISBNs and secondhand
-boxes carry other companies' codes, and a scanner that refuses a real box is
-worse than one that shrugs.
-
-The local `barcodes` table is the point of the whole design. Unknown code once,
-contents defined once, instant forever after — and unlike any external GTIN
-provider, it will still work in five years. Defining one unknown box resolves
-every other copy of it already sitting in the queue.
+There was a barcode scanner and a researched box catalogue behind it. Both are
+gone: scanning only paid off when the app already knew the box, and no one
+publishes what is in a Games Workshop box, so most scans ended in typing the
+contents anyway. See CLAUDE.md before rebuilding either.
 
 ## Seed data
 

@@ -7,8 +7,8 @@ Guidance for Claude Code working in this repository.
 A single-user tracker for **three hobbies in one — building, painting,
 playing**, with buying as the way in — and the handoffs between them. Every model is tracked
 individually from sprue to battle ready, across multiple armies and game
-systems. Barcode scanning is *onboarding*, not the point: you scan a box once
-and never again.
+systems. Getting things *in* is onboarding, not the point: you say what is in a
+box once and never again.
 
 Flask + SQLite, Docker on `bastion` behind the Cloudflare Tunnel. `OWNER_NAME`
 is `"Clay"`.
@@ -21,16 +21,18 @@ conventions and hard-won context.
 **The spec was re-scoped on 2026-08-22 around Clay's own description of the
 loop.** The old 13-step order described how to *construct* the app and was
 mistaken for what it is *about* — which is how barcode scanning ended up first
-in the navigation. "Do not build past step 5" is retired with it. Read
+in the navigation, years before it was removed for being slower than typing. "Do not build past step 5" is retired with it. Read
 `warhammer-tracker-spec.md` §2 for the loop and §6 for the order.
 
 Done: schema and migrations, the BSData + Munitorum importer, Kill Team
 operatives, the collection (armies, kits, units, models, stage pipeline,
-painting and session mode), the scanner with its queue and review screen, kit
-view/edit/delete, the inventory view, the own-it check, basing applicability,
-the list builder with its gap report and wishlist, shelf-scale onboarding
-(queue sweep, per-barcode box page, identify-mode scanning, adopt-all, the
-derived kit catalogue, and paste-import), and list import by paste.
+painting and session mode), kit view/edit/delete, the inventory view with its
+filters, the own-it check, basing applicability, the list builder with its gap
+report and wishlist, paste-import, list import by paste, and a dated photo log
+per unit.
+
+The scanner, the box catalogue and everything between them were built and then
+removed — see **Scanning (removed)** below before rebuilding any of it.
 
 All eleven checks of the loop pass end to end. What is unbuilt is the *other*
 doors onto §2.7 — importing a list from a file or a URL — and those stay gated
@@ -81,7 +83,6 @@ python3 scripts/fetch_killteam.py    # fetch Kill Team at its pinned SHA
 python3 scripts/import_killteam.py [--dry-run] # Kill Team operatives
 python3 app.py                       # http://localhost:3100
 python3 seed/combat_patrol_magazine.py --status   # magazine seed
-python3 seed/derived_kits.py --status            # researched box contents
 python3 scripts/report_kit_datasheets.py         # what migration 008 could not map
 python3 scripts/api_token.py --create "name"     # mint an export token (shown once)
 python3 scripts/api_token.py --list|--revoke ID  # ...and manage them
@@ -133,17 +134,16 @@ anyone notices.
   a manual picker. A silently dropped line is a shortfall Clay discovers at the
   till months later.
 - **Seed data is derived and reviewed, or it doesn't ship.** Never write a kit
-  catalogue *or a partwork contents list* from memory — it would be fluent,
+  box catalogue *or a partwork contents list* from memory — it would be fluent,
   plausible, and wrong in places with no signal about which. A missing template
   costs two minutes; a wrong one corrupts ownership and purchase advice for
   months. `seed/data/combat_patrol_issues.yaml` ships empty for this reason and
   the importer refuses to run without provenance. Filling it in from a model's
   recall, rather than from a source, is the one change to this repo that would
   do real damage — `tests/test_combat_patrol_seed.py` asserts it stays empty.
-  `seed/data/derived_kits.yaml` is the same bargain kept rather than deferred:
-  every entry carries its sources, and **a barcode needs two independent
-  sources agreeing** or the entry ships without one. Wrong contents under a
-  name show up when the box is opened; a wrong barcode is silent.
+  The researched box catalogue that once made the same bargain is gone with the
+  scanner, and the rule outlived it: anything typed into a template is Clay
+  looking at the box, never a model recalling one.
 - **No scraping** GW for prices, eBay for resale values, or any site for points.
 - **`box_state` is not a model stage.** A sealed box and an opened one both hold
   models "On sprue", but only one carries a resale premium. Keep it on the kit.
@@ -208,31 +208,29 @@ alone. Two columns exist because 11th edition outgrew the spec:
 costs more) and `datasheet_points.faction_id` (one Repulsor Executioner
 datasheet, 255 points for Black Templars and 230 for Blood Angels).
 
-## Scanning (built)
+## Scanning (removed)
 
-- **iPhone is the target.** WebKit does not implement `BarcodeDetector`, so it
-  fails silently on every iOS browser. Build against ZXing-js as the *primary*
-  decoder; feature-detect `BarcodeDetector` for desktop Chrome but never depend
-  on it.
-- `getUserMedia` needs a secure context — any `https://` origin provides it,
-  whether that is the Cloudflare Tunnel or `tailscale serve` on the MagicDNS
-  name. A plain-HTTP Tailscale **IP** does not, and neither does
-  `http://bastion.local:3100`. `PUBLIC_URL` is whichever one is live.
-- Manual digit entry is non-negotiable: glare, damaged boxes and dim shop
-  lighting defeat camera scanning regularly.
-- Split capture from enrichment. Camera stays open, decodes drop onto
-  `scan_queue` with a beep, scanning resumes immediately. Write each scan to the
-  server at once — a dead battery must not cost a shelf.
-- GW EANs start `5011921`; books use ISBN-derived `978`. The prefix check
-  **warns, never rejects** — and so does the check-digit test.
-- ZXing 0.23's `decodeFrom*` helpers either want to own the `<video>` element or
-  round-trip each frame through a data URL. The frame loop builds a
-  `BinaryBitmap` from a canvas and calls `decodeBitmap` directly instead.
-- `static/js/*.js` are classic scripts sharing one global scope with `app.js`.
-  A second top-level `const $` is a SyntaxError that kills the page, so every
-  file after `app.js` is wrapped in an IIFE.
-- `app.js` binds `button.advance` globally. Never borrow that class for styling
-  — use `.go`. The handlers now also require `data-unit` as a second guard.
+The barcode scanner is gone, and so is the browsable catalogue behind it. Clay:
+*"The scanning doesn't work well and I would just rather look up the contents
+at the time of purchase and add them in manually. Must faster."*
+
+He is right about why. Scanning only paid off when the app already knew the
+box, which meant researched contents behind every barcode — and that research
+could never keep up with what he was actually buying, so most scans landed on
+"unidentified box" and waited for him to type the contents anyway. Typing them
+once, at the till, skips the camera and the queue both.
+
+**Do not rebuild it without new information.** The failure was not the decoder
+or the review screen; it was that a barcode is only a key, and nobody publishes
+the table it opens.
+
+What replaced it: `/add` pastes a list of models, and `/templates` says what is
+in a box once so buying another copy is one action. Neither needs a lookup to
+answer.
+
+`barcodes` and `scan_queue` survive with nothing reading them. Dropping a table
+destroys the codes already linked to templates, which is a decision of its own
+rather than a side effect of deleting a screen.
 
 ## Backups
 

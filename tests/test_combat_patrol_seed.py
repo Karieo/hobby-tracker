@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 
 import combat_patrol_magazine as seeder  # noqa: E402
 import database as db  # noqa: E402
-import scanning as scan  # noqa: E402
+import kit_templates as scan  # noqa: E402
 
 
 @pytest.fixture

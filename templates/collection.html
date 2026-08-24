@@ -9,13 +9,13 @@
         What you own, how many, and what state they are in.
       </p>
     </div>
-    {# The door for models with no barcode left to scan. Not in the nav: it is
+    {# The door for putting models in. Not in the nav: it is
        something you do a few times, not somewhere you live. #}
     <a class="ghost" href="/add">Add models</a>
   </header>
 
   {# Search is the own-it check. With a query the walk starts at the whole
-     catalogue, so "you own none of these" is an answer this screen can give —
+     whole of BSData, so "you own none of these" is an answer it can give —
      which is the question you ask holding a box in a shop. #}
   {# One form, two rows. `.search` is a nowrap flex row — the field takes the
      room and the buttons stay beside it — so the disclosure cannot be a child
@@ -163,7 +163,7 @@
       {% else %}
         <p><b>Nothing recorded yet.</b></p>
         <p class="hint">
-          <a href="/scan">Scan a box</a> to put its models in, or
+          <a href="/add">Add models</a> to put some in, or
           <a href="/armies">add a unit by hand</a>.
         </p>
       {% endif %}

@@ -256,12 +256,12 @@ def test_list_summaries_carry_readiness(conn, sheets, stages):
 
 # ── Wanting a box from the catalogue ─────────────────────
 #
-# The catalogue's payback. Browsing "what exists" is only half useful if
-# finding something you want leaves you to type its contents in by hand.
+# A template's payback. Saying what is in a box once is only half useful if
+# wanting it later leaves you to type its contents in again.
 
 @pytest.fixture
 def box(conn, sheets, orks):
-    import scanning as scan
+    import kit_templates as scan
     return scan.create_template(
         conn, 'Orks: Trukk Boyz',
         [{'datasheet_id': sheets['Boyz'], 'model_count': 11},
@@ -297,7 +297,7 @@ def test_wanting_the_same_box_twice_does_not_stack(conn, box):
 def test_two_boxes_sharing_a_unit_are_both_wanted(conn, box, sheets, orks):
     """Wanting two boxes that both hold Boyz means wanting two boxes.
     Collapsing them by datasheet would silently under-order."""
-    import scanning as scan
+    import kit_templates as scan
     other = scan.create_template(conn, 'Orks: Boyz',
                                  [{'datasheet_id': sheets['Boyz'],
                                    'model_count': 11}],
