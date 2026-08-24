@@ -208,6 +208,10 @@
               {% if r.wanted_count %}
                 · <span class="muted">{{ r.wanted_count }} wanted</span>
               {% endif %}
+              {# Still owned, so it sits beside the counts rather than in them. #}
+              {% if r.for_sale_count %}
+                · <span class="wants-you">{{ r.for_sale_count }} to sell</span>
+              {% endif %}
             </p>
             {{ stage_bar(r) }}
 

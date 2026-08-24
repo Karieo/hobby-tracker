@@ -208,17 +208,16 @@
               aria-label="want one more">+</button>
     </li>
     <li>
-      <span class="pname">Sold or traded</span>
-      <button class="step" data-pile="gone" data-delta="-1"
-              aria-label="bring one back">−</button>
-      <b class="pcount" data-pile="gone">{{ piles.gone }}</b>
-      <button class="step" data-pile="gone" data-delta="1"
-              aria-label="one sold or traded">+</button>
+      <span class="pname">To sell</span>
+      <button class="step" data-pile="sell" data-delta="-1"
+              aria-label="keep one after all">−</button>
+      <b class="pcount" data-pile="sell">{{ piles.sell }}</b>
+      <button class="step" data-pile="sell" data-delta="1"
+              aria-label="list one to part with">+</button>
     </li>
   </ul>
   <p class="hint">
-    Owned − deletes a miscount. Sold or traded + keeps the model and takes it
-    out of the counts.
+    To sell is a shortlist — they stay yours until you take them off Owned.
   </p>
 
   <form class="panel row" id="move-form" data-unit="{{ unit.id }}">

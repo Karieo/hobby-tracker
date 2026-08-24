@@ -607,49 +607,50 @@ def update_unit(conn, unit_id, **fields):
                   db.now(), unit_id])
 
 
-def dispose_models(conn, unit_id, count, status='sold', price_cents=None,
-                   note=None, on=None):
-    """Sell, trade or give away some of a unit's models.
+def list_for_sale(conn, unit_id, count=1):
+    """Earmark some of a unit to part with.
 
-    Clay: *"sell, trade/giveaway"*. Disposal existed only per kit — sell a box,
-    the whole box went — so "I sold five of my twenty Boyz" had no answer, and
-    once the Kits screens came out there was no way to record a sale at all.
+    Clay: *"Not sold, sell a list of things to part with."*
 
-    **A status change, never a deletion.** The rows stay, keep their stage and
-    keep their history; they simply stop being owned. That is the difference
-    between this and `remove_models`, which deletes outright because plastic
-    that was never there has no history worth keeping. Every screen offering
-    both has to say which is which, or the cheap one becomes the one Clay
-    reaches for and the spend history quietly empties.
+    A flag, not a removal. These models are still on the shelf and still his:
+    they keep counting as owned, keep advancing through the stages, keep
+    showing in the collection. They just also appear on a list he can work
+    from when he next feels like clearing shelf space.
 
-    Keeping `stage_id` is the point: "sold five *painted* Boyz" is the fact
-    worth recording, and a Sold stage would have overwritten it.
-
-    Which ones go: least advanced first, the same order `remove_models` uses.
-    The app cannot know whether Clay sold the painted ones or the spares, and
-    of the two guesses this is the one that leaves recorded work alone.
+    The most advanced go first, which is the opposite of every other bulk
+    operation here. Removing and selling pick the least advanced because those
+    are the ones with no work in them; this one is a shortlist for parting
+    with, and a finished squad is what is actually worth listing.
     """
-    if status not in ('sold', 'traded', 'gifted'):
-        raise ValueError(f'{status!r} is not a disposal')
-
-    live = [row['id'] for row in conn.execute(f"""
+    listing = [r['id'] for r in conn.execute("""
         SELECT m.id FROM models m
           JOIN stages s ON s.id = m.stage_id
-         WHERE m.unit_id = ? AND {_LIVE_MODEL} AND s.is_owned = 1
-         ORDER BY s.position, m.id DESC
-    """, (unit_id,))]
-    going = live[:max(0, count)]
-    if not going:
-        return {'disposed': 0, 'remaining': len(live)}
-
-    marks = ','.join('?' * len(going))
-    conn.execute(f"""
-        UPDATE models SET disposed_on = ?, disposed_as = ?,
-                          disposed_price_cents = ?, notes = COALESCE(?, notes)
-         WHERE id IN ({marks})
-    """, (on or date.today().isoformat(), status, price_cents, note, *going))
+         WHERE m.unit_id = ? AND s.is_owned = 1 AND m.for_sale_on IS NULL
+         ORDER BY s.position DESC, m.id LIMIT ?
+    """, (unit_id, max(0, count)))]
+    if not listing:
+        return 0
+    marks = ','.join('?' * len(listing))
+    conn.execute(f'UPDATE models SET for_sale_on = ? WHERE id IN ({marks})',
+                 (date.today().isoformat(), *listing))
     _touch_unit(conn, unit_id)
-    return {'disposed': len(going), 'remaining': len(live) - len(going)}
+    return len(listing)
+
+
+def unlist_for_sale(conn, unit_id, count=1):
+    """Changed your mind. Clears the flag; nothing else ever moved."""
+    keeping = [r['id'] for r in conn.execute("""
+        SELECT id FROM models
+         WHERE unit_id = ? AND for_sale_on IS NOT NULL
+         ORDER BY for_sale_on DESC, id DESC LIMIT ?
+    """, (unit_id, max(0, count)))]
+    if not keeping:
+        return 0
+    marks = ','.join('?' * len(keeping))
+    conn.execute(f'UPDATE models SET for_sale_on = NULL WHERE id IN ({marks})',
+                 keeping)
+    _touch_unit(conn, unit_id)
+    return len(keeping)
 
 
 def pile_counts(conn, unit_id):
@@ -663,13 +664,15 @@ def pile_counts(conn, unit_id):
                                  THEN 1 ELSE 0 END), 0) AS owned,
                COALESCE(SUM(CASE WHEN m.disposed_on IS NULL AND NOT s.is_owned
                                  THEN 1 ELSE 0 END), 0) AS wishlist,
-               COALESCE(SUM(CASE WHEN m.disposed_on IS NOT NULL
-                                 THEN 1 ELSE 0 END), 0) AS gone
+               COALESCE(SUM(CASE WHEN m.for_sale_on IS NOT NULL
+                                 THEN 1 ELSE 0 END), 0) AS for_sale
           FROM models m JOIN stages s ON s.id = m.stage_id
-         WHERE m.unit_id = ?
+         WHERE m.unit_id = ? AND m.disposed_on IS NULL
     """, (unit_id,)).fetchone()
+    # `for_sale` overlaps `owned` deliberately: a model listed to part with is
+    # still on the shelf. It is a shortlist, not a fourth place to be.
     return {'owned': row['owned'], 'wishlist': row['wishlist'],
-            'gone': row['gone']}
+            'sell': row['for_sale']}
 
 
 def undispose_models(conn, unit_id, count=1):
@@ -1575,7 +1578,7 @@ INVENTORY_SORT_LABELS = [
 def inventory(conn, query=None, faction_id=None, game_system=None,
               include_unowned=False, limit=200, stage_id=None,
               points_min=None, points_max=None, only_wanted=False,
-              only_gone=False, sort='name'):
+              only_for_sale=False, sort='name'):
     """What Clay owns, one row per datasheet: how many, and what state.
 
     Grouped by datasheet rather than by army or by box, because the questions
@@ -1630,10 +1633,10 @@ def inventory(conn, query=None, faction_id=None, game_system=None,
     havings = [] if include_unowned else ['(owned_count > 0 OR wanted_count > 0)']
     if only_wanted:
         havings.append('wanted_count > 0')
-    # The pile Clay has moved out: sold, traded, given away. A list rather than
-    # a ledger — he said he does not care what any of it went for.
-    if only_gone:
-        havings = ['gone_count > 0']
+    # The shortlist of things to part with. Still owned — this narrows the
+    # collection to them rather than showing something outside it.
+    if only_for_sale:
+        havings.append('for_sale_count > 0')
     if stage_id:
         havings.append('at_stage > 0')
     # A datasheet with no points row has NULL for both, and NULL fails either
@@ -1666,10 +1669,8 @@ def inventory(conn, query=None, faction_id=None, game_system=None,
                d.basing, d.keywords,
                COALESCE(SUM(CASE WHEN st.id = ? THEN 1 ELSE 0 END), 0)
                                                             AS at_stage,
-               (SELECT COUNT(*) FROM models gm
-                  JOIN units gu ON gu.id = gm.unit_id
-                 WHERE gu.datasheet_id = d.id
-                   AND gm.disposed_on IS NOT NULL)           AS gone_count,
+               COALESCE(SUM(CASE WHEN m.for_sale_on IS NOT NULL
+                                 THEN 1 ELSE 0 END), 0)     AS for_sale_count,
                ({points_low})                               AS points_low,
                ({points_high})                              AS points_high,
                MAX(m.stage_changed_at)                      AS last_activity
@@ -1759,10 +1760,9 @@ def home_summary(conn):
         "SELECT COUNT(*) AS n FROM kits "
         " WHERE status = 'owned' AND box_state = 'sealed'").fetchone()['n']
 
-    # The gone pile, for the homepage's quick glance. Its own query because the
-    # aggregate above joins models with the disposed ones already excluded.
-    gone = conn.execute(
-        'SELECT COUNT(*) AS n FROM models WHERE disposed_on IS NOT NULL'
+    # The shortlist, for the homepage's quick glance.
+    for_sale = conn.execute(
+        'SELECT COUNT(*) AS n FROM models WHERE for_sale_on IS NOT NULL'
     ).fetchone()['n']
 
     counts = {r['stage_id']: r['n'] for r in conn.execute(f"""
@@ -1779,7 +1779,7 @@ def home_summary(conn):
         'completion': _pct(row['effort_done'], row['effort_total']),
         'sealed': sealed,
         'wanted': row['wanted'],
-        'gone': gone,
+        'for_sale': for_sale,
         'segments': _segments(ladder, counts, row['owned']),
     }
 

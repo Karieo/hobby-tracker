@@ -287,12 +287,19 @@ need.
 `POST /api/units/<id>/pile/<pile>` with a `delta` handles all six directions.
 `_PILES` in `app.py` is the whole mapping.
 
-**Sold, traded and given away are one pile.** The difference between them is a
-story rather than a number, and the models have gone either way. The
-`disposed_as` and `disposed_price_cents` columns still exist and still record
-`'sold'` — nothing collects a price any more, and re-introducing one means
-deciding it is worth a field, not just filling a column that happens to be
-there.
+**"To sell" is a shortlist, not a disposal.** Clay: *"Not sold, sell a list of
+things to part with."* The models are still on the shelf and still his — they
+keep counting as owned, keep advancing through the stages, keep showing in the
+collection. `models.for_sale_on` (migration 011) is a flag beside ownership,
+never a state inside it. Wishlist is want-and-do-not-have; this is
+have-and-would-rather-not.
+
+Migration 010's `disposed_*` columns were the first attempt, built on reading
+"sell" as past tense. Nothing writes them now. They are left in place rather
+than dropped because dropping a column rewrites the table, and an inert column
+costs nothing while a destructive migration for tidiness costs a restore if it
+goes wrong. The `m.disposed_on IS NULL` filters in the ownership queries stay
+with them, correct and currently inert.
 
 **Every button has its opposite beside it**, which is why nothing here asks for
 confirmation. `undispose_models` and `unwishlist_models` are those undos.

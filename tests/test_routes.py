@@ -871,7 +871,7 @@ def test_the_unit_page_offers_all_three_piles(client, army_with_unit):
     Clay asked for turned out to be built already and unreachable."""
     body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
 
-    for pile in ('owned', 'wishlist', 'gone'):
+    for pile in ('owned', 'wishlist', 'sell'):
         assert f'data-pile="{pile}"' in body, pile
     assert 'data-delta="1"' in body and 'data-delta="-1"' in body
 
@@ -889,10 +889,11 @@ def test_no_money_is_asked_for_anywhere(client, army_with_unit):
 def test_a_pile_moves_one_at_a_time(client, army_with_unit, db_path):
     unit = army_with_unit['unit_id']
 
-    got = client.post(f'/api/units/{unit}/pile/gone', json={'delta': 1})
+    got = client.post(f'/api/units/{unit}/pile/sell', json={'delta': 1})
 
     assert got.status_code == 200
-    assert got.get_json() == {'moved': 1, 'owned': 9, 'wishlist': 0, 'gone': 1}
+    # Owned is untouched: a model listed to part with is still on the shelf.
+    assert got.get_json() == {'moved': 1, 'owned': 10, 'wishlist': 0, 'sell': 1}
 
 
 def test_every_pile_has_an_undo(client, army_with_unit):
@@ -900,26 +901,13 @@ def test_every_pile_has_an_undo(client, army_with_unit):
     it — which is a better undo than a dialog."""
     unit = army_with_unit['unit_id']
 
-    for pile in ('owned', 'wishlist', 'gone'):
+    for pile in ('owned', 'wishlist', 'sell'):
         client.post(f'/api/units/{unit}/pile/{pile}', json={'delta': 1})
         back = client.post(f'/api/units/{unit}/pile/{pile}', json={'delta': -1})
         assert back.status_code == 200, pile
     counts = back.get_json()
     assert counts['owned'] == 10 and counts['wishlist'] == 0
-    assert counts['gone'] == 0
-
-
-def test_a_disposal_still_keeps_its_rows(client, army_with_unit, db_path):
-    """Simplifying the control did not change what it means: sold models keep
-    their row and their stage, and only stop being owned."""
-    unit = army_with_unit['unit_id']
-
-    client.post(f'/api/units/{unit}/pile/gone', json={'delta': 1})
-
-    with db.connect(db_path) as conn:
-        assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 10
-        assert conn.execute('SELECT COUNT(*) FROM models '
-                            'WHERE disposed_on IS NOT NULL').fetchone()[0] == 1
+    assert counts['sell'] == 0
 
 
 def test_an_unknown_pile_is_a_404(client, army_with_unit):
@@ -928,12 +916,12 @@ def test_an_unknown_pile_is_a_404(client, army_with_unit):
 
 
 def test_a_pile_needs_a_direction(client, army_with_unit):
-    assert client.post(f'/api/units/{army_with_unit["unit_id"]}/pile/gone',
+    assert client.post(f'/api/units/{army_with_unit["unit_id"]}/pile/sell',
                        json={'delta': 0}).status_code == 400
 
 
 def test_a_unit_that_is_not_there_is_a_404(client):
-    assert client.post('/api/units/9999/pile/gone',
+    assert client.post('/api/units/9999/pile/sell',
                        json={'delta': 1}).status_code == 404
 
 
@@ -1522,8 +1510,8 @@ def test_the_unit_page_offers_the_control(client, army_with_unit):
     # control becomes the one Clay reaches for and the spend history empties.
     # The wording has changed three times and the control twice — a paragraph,
     # then a sentence, now a row label. What it has to do has not changed.
-    assert 'deletes a miscount' in body and 'keeps the model' in body, \
-        'the page has to say which of the two minus buttons destroys anything'
+    assert 'shortlist' in body and 'stay yours' in body, \
+        'the page has to say the sell row does not remove anything'
 
 
 # ── The ramp's bottom rung ───────────────────────────────

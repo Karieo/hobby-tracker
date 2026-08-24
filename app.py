@@ -459,7 +459,8 @@ def _collection_rows(conn, f):
         conn, query=f['query'] or None, faction_id=f['faction_id'],
         game_system=f['system'], stage_id=f['stage_id'],
         points_min=f['points_min'], points_max=f['points_max'],
-        only_wanted=(f['own'] == 'wanted'), only_gone=(f['own'] == 'gone'),
+        only_wanted=(f['own'] == 'wanted'),
+        only_for_sale=(f['own'] == 'sell'),
         sort=f['sort'], include_unowned=(f['own'] == 'all'))
     keep = _COLLECTION_CHIPS.get(f['chip'])
     return [r for r in rows if keep(r)] if keep else rows
@@ -985,10 +986,9 @@ _PILES = {
             c, u, n, stage_id=db.first_owned_stage(c)['id'])),
         lambda c, u, n: col.remove_models(c, u, n)['removed']),
     'wishlist': (col.wishlist_models, col.unwishlist_models),
-    # Sold, traded and given away are one pile. The difference between them is
-    # a story rather than a number, and the models have gone either way.
-    'gone': (lambda c, u, n: col.dispose_models(c, u, n, 'sold')['disposed'],
-             col.undispose_models),
+    # Still owned — a shortlist of what to part with, not a record of what
+    # has gone. Clay: "Not sold, sell a list of things to part with."
+    'sell': (col.list_for_sale, col.unlist_for_sale),
 }
 
 
