@@ -1370,6 +1370,21 @@ def _export_points(conn, rows, army_id):
         rows[r['datasheet_id']]['points'].append(entry)
 
 
+#: Every key an export row can carry, in the order they are written. The one
+#: source of truth for `fields=`: the route validates against it, the CSV takes
+#: its columns from it, and the 400 message lists it. Three copies of this
+#: tuple would drift the first time a column was added.
+#:
+#: `buildable_from_spare` is last because it is the one that is conditional —
+#: `include_capability=0` means it was never computed, so asking for it then is
+#: refused rather than answered with a blank column.
+EXPORT_FIELDS = (
+    'bsdata_id', 'name', 'faction', 'game_system', 'min_models', 'max_models',
+    'effort', 'owned', 'battle_ready', 'assembled', 'wishlist', 'by_stage',
+    'flexible', 'points', 'buildable_from_spare',
+)
+
+
 def _export_row(row, include_capability):
     out = {
         'bsdata_id': row['bsdata_id'], 'name': row['name'],

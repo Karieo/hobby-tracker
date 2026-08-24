@@ -561,3 +561,13 @@ Built 2026-08-23 to its own spec. The parts worth carrying here:
 - Tokens are SHA-256, not bcrypt — 256 bits of `secrets` output has nothing to
   brute-force, and a salted hash could not be looked up by index at all.
   `scripts/api_token.py` mints, lists and revokes them.
+- **`fields=` narrows the rows, added 2026-08-24.** The full row is built for a
+  list optimiser; the question Clay actually asked from his phone was "a list
+  of models, how many I have, then how many battle ready", which was a curl
+  piped through python. `?fields=name,owned,battle_ready&format=csv` is now
+  three columns and nothing else. It narrows rows only — the envelope
+  (`army`, `stages`, `generated_at`) is unchanged, so adding it to a URL never
+  makes a consumer rewrite how it reads the reply. An unknown name is a 400
+  listing the valid ones, never a quietly missing column;
+  `collection.EXPORT_FIELDS` is the single list the route, the CSV header and
+  that message all read.

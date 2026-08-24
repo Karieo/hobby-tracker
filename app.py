@@ -1308,6 +1308,20 @@ def api_export_inventory():
     if fmt not in ('json', 'csv'):
         return jsonify({'error': "format must be 'json' or 'csv'"}), 400
 
+    # Validated before the query rather than after: a typo should cost a 400,
+    # not a full inventory aggregation thrown away.
+    fields = None
+    if request.args.get('fields') is not None:
+        fields, problem = _export_fields(request.args['fields'],
+                                         include_capability)
+        if problem:
+            return jsonify({'error': problem}), 400
+        nested = [f for f in fields if f in _EXPORT_NESTED]
+        if fmt == 'csv' and nested:
+            return jsonify({'error':
+                            f'{", ".join(nested)} cannot be a CSV column — '
+                            'use format=json'}), 400
+
     with _read() as conn:
         if army_id and not conn.execute('SELECT 1 FROM armies WHERE id = ?',
                                         (army_id,)).fetchone():
@@ -1315,9 +1329,16 @@ def api_export_inventory():
         data = col.export_inventory(conn, army_id=army_id,
                                     include_unassigned=include_unassigned,
                                     include_capability=include_capability)
+    if fields:
+        # The envelope is left alone. `fields` narrows the rows; it does not
+        # turn the response into a different shape, so a consumer can add it
+        # to a URL without rewriting how it reads the reply.
+        data['datasheets'] = [{k: row[k] for k in fields if k in row}
+                              for row in data['datasheets']]
     if fmt == 'csv':
-        return Response(_export_csv(data), mimetype='text/csv', headers={
-            'Content-Disposition': 'attachment; filename="inventory.csv"'})
+        return Response(_export_csv(data, fields), mimetype='text/csv',
+                        headers={'Content-Disposition':
+                                 'attachment; filename="inventory.csv"'})
     return jsonify(data)
 
 
@@ -1361,7 +1382,52 @@ def _flag(value, default):
     return value.lower() not in ('0', 'false', 'no', 'off')
 
 
-def _export_csv(data):
+#: Fields whose value is a list or a dict. Fine in JSON, meaningless in a CSV
+#: cell — `_export_csv` has always dropped them for that reason, and asking for
+#: one as a column is refused rather than silently omitted.
+_EXPORT_NESTED = ('by_stage', 'points')
+
+
+def _export_fields(raw, include_capability):
+    """Which columns the caller asked for, in their order. Returns (fields, error).
+
+    `fields=name,owned,battle_ready` exists because the full row is built for a
+    list optimiser — join keys, every points tier, the whole stage breakdown —
+    and the question actually asked at a phone on the sofa is "what do I have
+    and how much of it is finished". That was a curl piped through python; now
+    it is a URL.
+
+    Unknown names are refused rather than dropped. A typo that silently returns
+    fewer columns is a spreadsheet with a column missing and nothing saying
+    why, which is the same failure as a silently dropped import line.
+
+    Order is the caller's, because it is the CSV's column order. It does not
+    survive into JSON — Flask sorts object keys — and that is fine: nothing
+    reading JSON cares, and nothing should depend on key order there.
+    """
+    names, seen = [], set()
+    for name in (n.strip() for n in raw.split(',')):
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+    if not names:
+        return None, 'fields was empty'
+
+    available = [f for f in col.EXPORT_FIELDS
+                 if include_capability or f != 'buildable_from_spare']
+    # Named separately so "you turned it off" does not read as "no such field".
+    if not include_capability and 'buildable_from_spare' in names:
+        return None, ('buildable_from_spare is not computed when '
+                      'include_capability=0')
+    unknown = [n for n in names if n not in available]
+    if unknown:
+        return None, (f'unknown field{"s" if len(unknown) > 1 else ""}: '
+                      f'{", ".join(unknown)} — choose from '
+                      f'{", ".join(available)}')
+    return names, None
+
+
+def _export_csv(data, fields=None):
     """The same rows, flattened.
 
     `by_stage` and `points` are dropped rather than squashed into a cell: a
@@ -1370,11 +1436,16 @@ def _export_csv(data):
     needs it. The scalars that answer the common questions all survive.
     """
     buffer = io.StringIO()
-    columns = ['bsdata_id', 'name', 'faction', 'game_system', 'min_models',
-               'max_models', 'effort', 'owned', 'assembled', 'battle_ready',
-               'wishlist', 'flexible']
-    if data['datasheets'] and 'buildable_from_spare' in data['datasheets'][0]:
-        columns.append('buildable_from_spare')
+    if fields:
+        # Nested values have no honest CSV form, so asking for one in CSV is a
+        # 400 at the route rather than a cell nobody can parse.
+        columns = list(fields)
+    else:
+        columns = ['bsdata_id', 'name', 'faction', 'game_system', 'min_models',
+                   'max_models', 'effort', 'owned', 'assembled', 'battle_ready',
+                   'wishlist', 'flexible']
+        if data['datasheets'] and 'buildable_from_spare' in data['datasheets'][0]:
+            columns.append('buildable_from_spare')
     writer = csv.DictWriter(buffer, fieldnames=columns, extrasaction='ignore')
     writer.writeheader()
     for row in data['datasheets']:

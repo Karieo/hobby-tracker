@@ -980,6 +980,117 @@ def test_the_csv_form_flattens(client, army_with_unit):
     assert 'by_stage' not in header and 'points' not in header
 
 
+# ── `fields=` narrows the export ─────────────────────────────────────────────
+#
+# The full row is built for a list optimiser — join keys, every points tier,
+# the whole stage breakdown. The question actually asked at a phone on the sofa
+# is "what do I have and how much of it is finished", which was a curl piped
+# through python until this existed.
+
+def test_fields_returns_only_what_was_asked_for(client, army_with_unit):
+    got = client.get('/api/export/inventory'
+                     '?fields=name,owned,battle_ready').get_json()
+
+    assert got['datasheets']
+    for row in got['datasheets']:
+        assert set(row) == {'name', 'owned', 'battle_ready'}
+
+
+def test_fields_leaves_the_envelope_alone(client, army_with_unit):
+    """It narrows the rows; it does not turn the response into a different
+    shape. A consumer can add it to a URL without rewriting how it reads the
+    reply."""
+    got = client.get('/api/export/inventory?fields=name').get_json()
+
+    assert set(got) == {'army', 'stages', 'generated_at', 'datasheets'}
+
+
+def test_an_unknown_field_is_refused_rather_than_dropped(client, army_with_unit):
+    """A typo that silently returns fewer columns is a spreadsheet with a
+    column missing and nothing saying why — the same failure as a silently
+    dropped import line."""
+    got = client.get('/api/export/inventory?fields=name,batle_ready')
+
+    assert got.status_code == 400
+    assert 'batle_ready' in got.get_json()['error']
+
+
+def test_the_refusal_lists_what_it_could_have_been(client, army_with_unit):
+    """The point of the 400 is to end the guessing, not to start it."""
+    error = client.get(
+        '/api/export/inventory?fields=nonsense').get_json()['error']
+
+    for name in ('name', 'owned', 'battle_ready', 'by_stage'):
+        assert name in error
+
+
+def test_csv_columns_come_out_in_the_order_asked_for(client, army_with_unit):
+    got = client.get('/api/export/inventory'
+                     '?format=csv&fields=battle_ready,name,owned')
+
+    assert got.get_data(as_text=True).splitlines()[0] == \
+        'battle_ready,name,owned'
+
+
+def test_a_nested_field_cannot_be_a_csv_column(client, army_with_unit):
+    """csv has always dropped by_stage and points because a nested structure in
+    a cell is parsed slightly differently by everything. Asking for one as a
+    column says so rather than writing a repr nobody can read."""
+    got = client.get('/api/export/inventory?format=csv&fields=name,by_stage')
+
+    assert got.status_code == 400
+    assert 'by_stage' in got.get_json()['error']
+
+
+def test_a_nested_field_is_fine_in_json(client, army_with_unit):
+    rows = client.get(
+        '/api/export/inventory?fields=name,by_stage').get_json()['datasheets']
+
+    assert rows and isinstance(rows[0]['by_stage'], dict)
+
+
+def test_a_field_that_was_switched_off_says_so(client, army_with_unit):
+    """`include_capability=0` means buildable_from_spare was never computed.
+    "No such field" would send Clay looking for a typo that is not there."""
+    got = client.get('/api/export/inventory'
+                     '?include_capability=0&fields=name,buildable_from_spare')
+
+    assert got.status_code == 400
+    assert 'include_capability' in got.get_json()['error']
+
+
+def test_fields_tolerates_spacing_and_repeats(client, army_with_unit):
+    """Typed by hand on a phone, so `name, owned` and a duplicate are not
+    worth a 400."""
+    got = client.get('/api/export/inventory?format=csv&fields=name,%20owned%20,name')
+
+    assert got.status_code == 200
+    assert got.get_data(as_text=True).splitlines()[0] == 'name,owned'
+
+
+def test_an_empty_fields_is_refused(client, army_with_unit):
+    """`fields=` is a caller that meant to send something. Treating it as "all
+    of them" would answer a question that was not asked."""
+    assert client.get('/api/export/inventory?fields=').status_code == 400
+    assert client.get('/api/export/inventory?fields=,,').status_code == 400
+
+
+def test_no_fields_is_still_the_whole_row(client, army_with_unit):
+    """The parameter is additive: leaving it off changes nothing."""
+    rows = client.get('/api/export/inventory').get_json()['datasheets']
+
+    assert set(rows[0]) == set(col.EXPORT_FIELDS)
+
+
+def test_every_declared_field_can_actually_be_asked_for(client, army_with_unit):
+    """EXPORT_FIELDS is what the 400 offers, so a name in it that the row does
+    not carry would be advertising a column that comes back empty."""
+    got = client.get('/api/export/inventory?fields='
+                     + ','.join(col.EXPORT_FIELDS)).get_json()
+
+    assert set(got['datasheets'][0]) == set(col.EXPORT_FIELDS)
+
+
 # ── The reference screen says which rules revision this is ───────────────────
 
 def test_reference_names_the_manual_the_points_came_from(client):
