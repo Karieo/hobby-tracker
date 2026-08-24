@@ -26,56 +26,82 @@
 {% endmacro %}
 
 {# ── Stage icons ─────────────────────────────────────────
-   Clay: "use images to represent each ramp." Inline SVG rather than files:
-   there is no build step here and never will be, an <img> per rung is seven
-   more requests on a phone over a tunnel, and `currentColor` means each icon
-   takes the rung's own colour without a second copy per theme.
+   Clay: "use images to represent each ramp", then: "go find better flat icons
+   from the web, do not draw them."
+
+   These are **Lucide** (https://lucide.dev), ISC licensed, vendored inline at
+   the pinned revision in `static/icons/LUCIDE.md`. The ones that were here
+   before were drawn by hand and looked it — a wobbly brush and a lumpy shield
+   next to a typeface this careful.
+
+   Inline rather than files, still: there is no build step here and never will
+   be, an <img> per rung is eight more requests on a phone over a tunnel, and
+   `currentColor` means each icon takes the rung's own colour without a second
+   copy per theme.
+
+   Vendored rather than fetched, and pinned rather than tracking main, for the
+   same reason `rules_data.py` pins BSData: an icon set that changes under the
+   app is a screen that changes without a commit. Lucide redraws icons between
+   releases — `paintbrush` has been through three shapes — so the SHA is what
+   makes this reproducible.
 
    Keyed by `position`, which is what the swatch class already used and the one
-   thing about a stage that migration 002 fixed for good — names could be
-   renamed, ids could differ between a fresh database and Clay's.
+   thing about a stage that migration 002 fixed for good: names can be renamed,
+   ids differ between a fresh database and Clay's.
 
-   Drawn to read at 20px: strokes, no fills, nothing smaller than about a
-   quarter of the box. #}
+   Lucide is drawn on a 24px grid for stroke-width 2, so the width is left at
+   2 rather than the 1.6 the hand-drawn set used. Lighter strokes made the
+   corner radii read as wobble at 20px, which is the exact fault being fixed. #}
 {% macro stage_icon(position, name='') %}
   <svg class="stageicon s{{ position }}" viewBox="0 0 24 24" width="20" height="20"
-       fill="none" stroke="currentColor" stroke-width="1.6"
+       fill="none" stroke="currentColor" stroke-width="2"
        stroke-linecap="round" stroke-linejoin="round"
        role="img" aria-label="{{ name }}">
     {%- if position == 0 %}
-      {# Wishlist: a shop tag. #}
-      <path d="M13 3H5v8l8 8 8-8-8-8Z"/><circle cx="8.5" cy="7.5" r="1.2"/>
+      {# Wishlist: lucide/heart. Wanted, not owned. #}
+      <path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"/>
     {%- elif position == 1 %}
-      {# On sprue: a frame with parts still attached to it. #}
+      {# On sprue: the one hand-drawn icon left, kept because Clay asked for it
+         back. Lucide's `component` was four loose diamonds — tidier, and it
+         meant nothing. This is the actual object: a frame with parts still
+         attached by their gates, which is what "on sprue" *is*, and no icon
+         set has one because nobody outside this hobby needs it. #}
       <rect x="3" y="4" width="18" height="16" rx="1.5"/>
       <circle cx="9" cy="10" r="2"/><circle cx="15" cy="15" r="2"/>
       <path d="M9 4v4M15 20v-3M3 10h4M21 15h-4"/>
     {%- elif position == 2 %}
-      {# Assembled: it stands up now. #}
-      <circle cx="12" cy="5.5" r="2.5"/>
-      <path d="M12 8v7M8 11h8M9 21l3-6 3 6"/>
+      {# Assembled: lucide/person-standing. It stands up now. #}
+      <circle cx="12" cy="5" r="1"/>
+      <path d="m9 20 3-6 3 6"/>
+      <path d="m6 8 6 2 6-2"/>
+      <path d="M12 10v4"/>
     {%- elif position == 3 %}
-      {# Base prepared: the base, textured, nothing on it yet. #}
-      <ellipse cx="12" cy="17" rx="8.5" ry="3.5"/>
-      <path d="M7.5 16.5h1.5M11 15.8h2M15.5 16.5H17"/>
+      {# Base prepared: lucide/disc. A bare base, seen from above. #}
+      <circle cx="12" cy="12" r="10"/>
+      <circle cx="12" cy="12" r="2"/>
     {%- elif position == 4 %}
-      {# Primed: a spray can and what comes out of it. #}
-      <rect x="7" y="8" width="8" height="13" rx="1.5"/>
-      <path d="M9.5 8V5.5h3V8M19 5h.01M20.5 8.5h.01M18.5 11.5h.01"/>
+      {# Primed: lucide/spray-can. The dots need round caps to be dots. #}
+      <path d="M3 3h.01"/><path d="M7 5h.01"/><path d="M11 7h.01"/>
+      <path d="M3 7h.01"/><path d="M7 9h.01"/><path d="M3 11h.01"/>
+      <rect width="4" height="4" x="15" y="5"/>
+      <path d="m19 9 2 2v10c0 .6-.4 1-1 1h-6c-.6 0-1-.4-1-1V11l2-2"/>
+      <path d="m13 14 8-2"/>
+      <path d="m13 19 8-2"/>
     {%- elif position == 5 %}
-      {# Painted: a brush, loaded. #}
-      <path d="M20 3.5c-3 1-7.5 4.5-10 8"/>
-      <path d="M7.5 11l4.5 4.5-3 2.5-4-4 2.5-3Z"/>
-      <path d="M5 14.5C3.5 16 3.5 19 2.5 21c2-1 5-1 6.5-2.5"/>
+      {# Painted: lucide/paintbrush. #}
+      <path d="m14.622 17.897-10.68-2.913"/>
+      <path d="M18.376 2.622a1 1 0 1 1 3.002 3.002L17.36 9.643a.5.5 0 0 0 0 .707l.944.944a2.41 2.41 0 0 1 0 3.408l-.944.944a.5.5 0 0 1-.707 0L8.354 7.348a.5.5 0 0 1 0-.707l.944-.944a2.41 2.41 0 0 1 3.408 0l.944.944a.5.5 0 0 0 .707 0z"/>
+      <path d="M9 8c-1.804 2.71-3.97 3.46-6.583 3.948a.507.507 0 0 0-.302.819l7.32 8.883a1 1 0 0 0 1.185.204C12.735 20.405 16 16.792 16 15"/>
     {%- elif position == 6 %}
-      {# Based: the base again, now with something growing on it. #}
-      <ellipse cx="12" cy="18" rx="8.5" ry="3"/>
-      <path d="M7 15.5c.5-2 1-3 1.5-3.5M9.5 15.5c0-2.5.5-4 1-5
-               M13.5 15.5c.5-2.5 1.5-3.5 2-4M16.5 16c0-1.5.5-2.5 1-3"/>
+      {# Based: lucide/sprout. The base again, with something growing on it —
+         which is what flock and tufts are. #}
+      <path d="M14 9.536V7a4 4 0 0 1 4-4h1.5a.5.5 0 0 1 .5.5V5a4 4 0 0 1-4 4 4 4 0 0 0-4 4c0 2 1 3 1 5a5 5 0 0 1-1 3"/>
+      <path d="M4 9a5 5 0 0 1 8 4 5 5 0 0 1-8-4"/>
+      <path d="M5 21h14"/>
     {%- else %}
-      {# Battle ready: on the table. #}
-      <path d="M12 2.5 4 5.5v6c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10v-6l-8-3Z"/>
-      <path d="M8.5 11.5l2.5 2.5 4.5-5"/>
+      {# Battle ready: lucide/shield-check. On the table. #}
+      <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
+      <path d="m9 12 2 2 4-4"/>
     {%- endif %}
   </svg>
 {% endmacro %}

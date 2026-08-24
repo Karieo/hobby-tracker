@@ -9,6 +9,43 @@ import database as db
 import lists as lists_mod
 
 
+#: What the fixtures below log in with. Deliberately not `OWNER_PASSWORD` from
+#: conftest — see `_ensure_owner` for why the difference matters.
+LOGIN, PASSWORD = 'Clay', 'pw'
+
+
+def _ensure_owner(db_path):
+    """Put exactly one known user in the database, whatever was there before.
+
+    This used to be `if not (SELECT 1 FROM users): insert`, and that guard made
+    the suite order-dependent in a way that hid itself well.
+
+    `app.py` calls `seed_owner()` at import time, and these fixtures import
+    `app` *inside* themselves. So whichever test imports `app` first — and only
+    that one — gets an owner seeded into its own temp database, hashed from
+    conftest's `OWNER_PASSWORD` rather than the `PASSWORD` above. The guard
+    then found that row, skipped inserting its own, and the login failed.
+
+    Run the file in order and everything passes: `app` is imported and cached
+    by an early test, every later test gets an empty `users` table, and the
+    guard does the right thing. Run one test alone and it is the first
+    importer, so it seeds itself and then cannot log in.
+
+    Deleting first rather than guarding makes the state identical either way.
+    There are no rows referencing `users` at fixture time — the database is
+    freshly migrated — so the delete has nothing to cascade into.
+    """
+    import bcrypt
+    with db.connect(db_path) as conn:
+        conn.execute('DELETE FROM users')
+        conn.execute(
+            'INSERT INTO users (id, name, password_hash, role, created_at) '
+            'VALUES (?, ?, ?, ?, ?)',
+            ('u1', LOGIN,
+             bcrypt.hashpw(PASSWORD.encode(), bcrypt.gensalt()).decode(),
+             'owner', db.now()))
+
+
 @pytest.fixture
 def client(db_path, monkeypatch):
     """A logged-in test client pointed at an isolated database."""
@@ -16,16 +53,18 @@ def client(db_path, monkeypatch):
     monkeypatch.setattr(appmod.db, 'DB_PATH', db_path)
     appmod.app.config['TESTING'] = True
     appmod._AUTH_FAILURES.clear()
-    with db.connect(db_path) as conn:
-        if not conn.execute('SELECT 1 FROM users LIMIT 1').fetchone():
-            import bcrypt
-            conn.execute(
-                'INSERT INTO users (id, name, password_hash, role, created_at) '
-                'VALUES (?, ?, ?, ?, ?)',
-                ('u1', 'Clay',
-                 bcrypt.hashpw(b'pw', bcrypt.gensalt()).decode(), 'owner', db.now()))
+    _ensure_owner(db_path)
     c = appmod.app.test_client()
-    c.post('/api/auth/login', json={'login': 'Clay', 'password': 'pw'})
+    res = c.post('/api/auth/login', json={'login': LOGIN, 'password': PASSWORD})
+    # Never hand back a client that is not logged in. The response used to be
+    # discarded, which is how a broken login stayed quiet: every page returns
+    # the /login redirect, and the ~130 tests on this fixture keep passing any
+    # `assert something not in body` against a redirect that contains nothing.
+    # A failure here should read as "the fixture broke", not as one puzzling
+    # assertion somewhere else.
+    assert res.status_code == 200, (
+        f'fixture login failed ({res.status_code}): '
+        f'{res.get_data(as_text=True)[:200]}')
     return c
 
 
@@ -251,9 +290,12 @@ def test_datasheet_search_needs_two_characters(client, army_with_unit):
     assert client.get('/api/datasheets?q=Boy').json['results']
 
 
-# ── Scanning (step 4) ────────────────────────────────────
+# ── Kit templates ────────────────────────────────────────
+#
+# Named for the scanner once, because the scanner was the only
+# thing that read them. `/templates` outlived it: it is how Clay
+# says what is in a box once so buying another copy is one action.
 
-@pytest.fixture
 def test_a_template_with_no_contents_is_refused(client, army_with_unit):
     res = client.post('/api/templates', json={'name': 'Mystery Box', 'contents': []})
     assert res.status_code == 400
@@ -584,9 +626,6 @@ def test_committing_an_unresolved_line_is_refused(client, army_with_unit):
     assert 'still need a datasheet' in res.get_json()['error']
 
 
-# ── The catalogue screen ─────────────────────────────────
-
-@pytest.fixture
 # ── Home, from Tracker Wireframes §3a ────────────────────
 
 def test_home_leads_with_the_effort_weighted_percentage(client, army_with_unit):
@@ -842,15 +881,7 @@ def anon(db_path, monkeypatch):
     import app as appmod
     monkeypatch.setattr(appmod.db, 'DB_PATH', db_path)
     appmod.app.config['TESTING'] = True
-    with db.connect(db_path) as conn:
-        if not conn.execute('SELECT 1 FROM users LIMIT 1').fetchone():
-            import bcrypt
-            conn.execute(
-                'INSERT INTO users (id, name, password_hash, role, created_at) '
-                'VALUES (?, ?, ?, ?, ?)',
-                ('u1', 'Clay',
-                 bcrypt.hashpw(b'pw', bcrypt.gensalt()).decode(), 'owner',
-                 db.now()))
+    _ensure_owner(db_path)
     return appmod.app.test_client()
 
 
