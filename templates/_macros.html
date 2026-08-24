@@ -61,11 +61,14 @@
       {# Wishlist: lucide/heart. Wanted, not owned. #}
       <path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"/>
     {%- elif position == 1 %}
-      {# On sprue: lucide/component. Parts, not yet a model. #}
-      <path d="M15.536 11.293a1 1 0 0 0 0 1.414l2.376 2.377a1 1 0 0 0 1.414 0l2.377-2.377a1 1 0 0 0 0-1.414l-2.377-2.377a1 1 0 0 0-1.414 0z"/>
-      <path d="M2.297 11.293a1 1 0 0 0 0 1.414l2.377 2.377a1 1 0 0 0 1.414 0l2.377-2.377a1 1 0 0 0 0-1.414L6.088 8.916a1 1 0 0 0-1.414 0z"/>
-      <path d="M8.916 17.912a1 1 0 0 0 0 1.415l2.377 2.376a1 1 0 0 0 1.414 0l2.377-2.376a1 1 0 0 0 0-1.415l-2.377-2.376a1 1 0 0 0-1.414 0z"/>
-      <path d="M8.916 4.674a1 1 0 0 0 0 1.414l2.377 2.376a1 1 0 0 0 1.414 0l2.377-2.376a1 1 0 0 0 0-1.414l-2.377-2.377a1 1 0 0 0-1.414 0z"/>
+      {# On sprue: the one hand-drawn icon left, kept because Clay asked for it
+         back. Lucide's `component` was four loose diamonds — tidier, and it
+         meant nothing. This is the actual object: a frame with parts still
+         attached by their gates, which is what "on sprue" *is*, and no icon
+         set has one because nobody outside this hobby needs it. #}
+      <rect x="3" y="4" width="18" height="16" rx="1.5"/>
+      <circle cx="9" cy="10" r="2"/><circle cx="15" cy="15" r="2"/>
+      <path d="M9 4v4M15 20v-3M3 10h4M21 15h-4"/>
     {%- elif position == 2 %}
       {# Assembled: lucide/person-standing. It stands up now. #}
       <circle cx="12" cy="5" r="1"/>

@@ -1,7 +1,8 @@
 # Stage icons
 
-The eight stage icons in `templates/_macros.html` are **Lucide**, vendored
-inline rather than linked or bundled.
+Seven of the eight stage icons in `templates/_macros.html` are **Lucide**,
+vendored inline rather than linked or bundled. The eighth — On sprue — is
+hand-drawn and stays that way; see the table.
 
 - Source: https://lucide.dev — https://github.com/lucide-icons/lucide
 - Revision pinned: `23f9abc4ed0146cffededd3d7f94c1018bfdf693`
@@ -12,13 +13,26 @@ inline rather than linked or bundled.
 | position | stage          | lucide icon       |
 |---------:|----------------|-------------------|
 | 0        | Wishlist       | `heart`           |
-| 1        | On sprue       | `component`       |
+| 1        | On sprue       | *(hand-drawn)*    |
 | 2        | Assembled      | `person-standing` |
 | 3        | Base prepared  | `disc`            |
 | 4        | Primed         | `spray-can`       |
 | 5        | Painted        | `paintbrush`      |
 | 6        | Based          | `sprout`          |
 | 7        | Battle ready   | `shield-check`    |
+
+## Why On sprue is not from the set
+
+Clay: *"I actually liked your Sprue icon better."*
+
+Lucide's `component` is four loose diamonds — tidier than the hand-drawn frame,
+and it means nothing. A sprue is a frame with parts still attached by their
+gates, and no icon set has one, because nobody outside this hobby needs it.
+That is the case where drawing it badly still beats picking something neat and
+wrong.
+
+The other seven are ordinary objects that professionals have already drawn
+better than I will.
 
 ## Why a pin
 
@@ -31,7 +45,7 @@ To re-fetch exactly what is vendored here:
 
 ```bash
 SHA=23f9abc4ed0146cffededd3d7f94c1018bfdf693
-for n in heart component person-standing disc spray-can paintbrush sprout shield-check; do
+for n in heart person-standing disc spray-can paintbrush sprout shield-check; do
   curl -sS "https://raw.githubusercontent.com/lucide-icons/lucide/$SHA/icons/$n.svg"
 done
 ```
