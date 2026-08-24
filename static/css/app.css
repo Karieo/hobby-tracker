@@ -315,7 +315,13 @@ button:disabled { opacity: .4; cursor: not-allowed; }
    one column down the ladder. Hiding them outright makes every number sit at
    a different place on the row and the pipeline stops reading as a pipeline. */
 .nudge button:disabled { visibility: hidden; }
-.ghost { background: transparent; color: var(--muted); font-size: .9rem; }
+/* `button.ghost`, not `.ghost`: the accent-fill rule above matches
+   `button[type="submit"]`, which is specificity 0-1-1 and beats a bare class.
+   Every ghost submit button in the app was rendering as a primary one — the
+   disposal buttons made it obvious, because "Sell" arriving gold and heavier
+   than "Remove" is the wrong way round for a control that takes models away. */
+.ghost, button.ghost { background: transparent; color: var(--muted);
+                       font-size: .9rem; border-color: var(--line); }
 
 /* The `.pipe` list this replaced is gone. Implementing Tracker Wireframes §2c
    rebuilt both stage screens on `.ramp` / `.rung`, and no template has rendered
@@ -951,3 +957,8 @@ a.go {
    is most of a phone screen before any control appears. */
 h2 + .panel, h2 + form, h2 + .hint { margin-top: 0; }
 .stack label:last-of-type { margin-bottom: .6rem; }
+
+/* The price field beside a count: narrow, because it holds "55.50" and the
+   count holds "1". Without this the two share the row equally and the count
+   gets a box it could fit a phone number in. */
+.row label.tight { flex: 0 1 7rem; min-width: 5rem; }

@@ -210,6 +210,36 @@
     <button class="danger" type="submit">Remove</button>
   </form>
 
+  {# Gone, but not gone from the record. `remove-models` above deletes rows —
+     this keeps them, their stage and what they went for, which is what makes
+     "didn't I used to have one of those?" answerable. #}
+  {% if models|length %}
+    <form class="panel row" id="dispose-models" data-unit="{{ unit.id }}">
+      <label>Sold or gave away
+        <input type="number" name="count" min="1" max="{{ models|length }}"
+               value="1" autocomplete="off"
+               aria-label="how many models left the collection">
+      </label>
+      <label class="tight">For
+        <input type="text" name="price" inputmode="decimal"
+               placeholder="{{ currency_symbol }}" autocomplete="off"
+               aria-label="what they went for">
+      </label>
+      <button class="ghost" type="submit" data-status="sold">Sell</button>
+      <button class="ghost" type="submit" data-status="gifted">Trade / give</button>
+    </form>
+  {% endif %}
+
+  {# Wishlist is position 0 of the same ladder, so wanting more of something is
+     the same operation as owning more of it, one rung lower. #}
+  <form class="panel row" id="wishlist-models" data-unit="{{ unit.id }}">
+    <label>Wishlist more
+      <input type="number" name="count" min="1" value="1" autocomplete="off"
+             aria-label="how many more to want">
+    </label>
+    <button class="ghost" type="submit">Add to wishlist</button>
+  </form>
+
   <form class="panel row" id="move-form" data-unit="{{ unit.id }}">
     <label>Move to army
       <select name="army_id">

@@ -864,6 +864,89 @@ def test_the_csv_form_flattens(client, army_with_unit):
     assert 'by_stage' not in header and 'points' not in header
 
 
+# ── Selling, trading, wanting more ───────────────────────────────────────────
+
+def test_the_unit_page_offers_all_three(client, army_with_unit):
+    """The endpoint existing is not the feature. Three of the last four things
+    Clay asked for turned out to be already built and unreachable."""
+    body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    assert 'id="dispose-models"' in body
+    assert 'data-status="sold"' in body and 'data-status="gifted"' in body
+    assert 'id="wishlist-models"' in body
+
+
+def test_selling_through_the_api_keeps_the_rows(client, army_with_unit, db_path):
+    unit = army_with_unit['unit_id']
+
+    got = client.post(f'/api/units/{unit}/dispose',
+                      json={'count': 4, 'status': 'sold', 'price': '20.00'})
+
+    assert got.status_code == 200 and got.get_json()['disposed'] == 4
+    with db.connect(db_path) as conn:
+        assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 10
+        assert conn.execute('SELECT disposed_price_cents FROM models '
+                            'WHERE disposed_on IS NOT NULL LIMIT 1'
+                            ).fetchone()[0] == 2000
+
+
+def test_a_price_nobody_can_parse_is_no_price(client, army_with_unit, db_path):
+    """It used to be `round(float(price) * 100)` inline, which is a 500 the
+    first time something non-numeric arrives."""
+    unit = army_with_unit['unit_id']
+
+    got = client.post(f'/api/units/{unit}/dispose',
+                      json={'count': 1, 'status': 'sold', 'price': 'a fiver'})
+
+    assert got.status_code == 200
+    with db.connect(db_path) as conn:
+        assert conn.execute('SELECT disposed_price_cents FROM models '
+                            'WHERE disposed_on IS NOT NULL').fetchone()[0] is None
+
+
+def test_a_currency_symbol_is_tolerated(client, army_with_unit, db_path):
+    """A value pasted back out of the app arrives with its symbol on it."""
+    unit = army_with_unit['unit_id']
+
+    client.post(f'/api/units/{unit}/dispose',
+                json={'count': 1, 'status': 'sold', 'price': '$55.50'})
+
+    with db.connect(db_path) as conn:
+        assert conn.execute('SELECT disposed_price_cents FROM models '
+                            'WHERE disposed_on IS NOT NULL').fetchone()[0] == 5550
+
+
+def test_an_unknown_disposal_is_refused(client, army_with_unit):
+    got = client.post(f'/api/units/{army_with_unit["unit_id"]}/dispose',
+                      json={'count': 1, 'status': 'incinerated'})
+
+    assert got.status_code == 400
+
+
+def test_disposing_none_is_refused(client, army_with_unit):
+    got = client.post(f'/api/units/{army_with_unit["unit_id"]}/dispose',
+                      json={'count': 0, 'status': 'sold'})
+
+    assert got.status_code == 400
+
+
+def test_wishlisting_through_the_api(client, army_with_unit):
+    unit = army_with_unit['unit_id']
+
+    got = client.post(f'/api/units/{unit}/wishlist', json={'count': 5})
+
+    assert got.status_code == 200 and got.get_json()['wishlisted'] == 5
+    body = client.get('/collection?own=wanted').get_data(as_text=True)
+    assert 'Boyz' in body
+
+
+def test_both_refuse_a_unit_that_is_not_there(client):
+    assert client.post('/api/units/9999/dispose',
+                       json={'count': 1, 'status': 'sold'}).status_code == 404
+    assert client.post('/api/units/9999/wishlist',
+                       json={'count': 1}).status_code == 404
+
+
 # ── The collection downloads as CSV ──────────────────────────────────────────
 #
 # Clay: "Do a csv that I can download from the site." Deliberately not the

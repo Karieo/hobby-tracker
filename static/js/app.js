@@ -359,6 +359,42 @@ if (removeForm) {
   });
 }
 
+/* ── Leaving the collection, and wanting more ─────────────
+ * Two buttons on one form: which one was pressed decides the status, so the
+ * count and the price are typed once rather than in two near-identical
+ * panels. `submitter` is what carries that — a plain submit listener cannot
+ * tell them apart.
+ *
+ * Not confirmed, unlike Remove above. That one deletes rows and has nothing
+ * to tap afterwards; this keeps every row, so the worst case is a wrong number
+ * that can be corrected. */
+const disposeForm = $('#dispose-models');
+if (disposeForm) {
+  disposeForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const status = (e.submitter && e.submitter.dataset.status) || 'sold';
+    const count = Number($('input[name="count"]', disposeForm).value);
+    const price = $('input[name="price"]', disposeForm).value.trim();
+    try {
+      await post(`/api/units/${disposeForm.dataset.unit}/dispose`,
+                 {count, status, price: price || null});
+      location.reload();
+    } catch (err) { toast(err.message, 'error'); }
+  });
+}
+
+const wishlistForm = $('#wishlist-models');
+if (wishlistForm) {
+  wishlistForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const count = Number($('input[name="count"]', wishlistForm).value);
+    try {
+      await post(`/api/units/${wishlistForm.dataset.unit}/wishlist`, {count});
+      location.reload();
+    } catch (err) { toast(err.message, 'error'); }
+  });
+}
+
 /* ── Generic form posting ───────────────────────────────── */
 
 function formBody(form) {

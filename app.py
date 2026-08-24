@@ -315,6 +315,29 @@ CURRENCY_SYMBOLS = {'USD': '$', 'GBP': '£', 'EUR': '€', 'CAD': 'CA$',
 CURRENCY_SYMBOL = CURRENCY_SYMBOLS.get(CURRENCY, CURRENCY + ' ')
 
 
+def _money(value):
+    """A typed amount to minor units. None for blank, None for nonsense.
+
+    The way in, where `money()` is the way out. It used to be
+    `round(float(price) * 100) if price else None`, written inline in four
+    places — which meant four chances to drift and, more to the point, an
+    uncaught ValueError and a 500 the first time something non-numeric
+    arrived. A price nobody can parse is a price nobody typed.
+
+    Strips the currency symbol and thousands separators, because a value
+    pasted back out of the app arrives with them.
+    """
+    if value is None:
+        return None
+    text = str(value).strip().lstrip(CURRENCY_SYMBOL).replace(',', '').strip()
+    if not text:
+        return None
+    try:
+        return round(float(text) * 100)
+    except ValueError:
+        return None
+
+
 @app.template_filter('money')
 def money(cents):
     """Minor units to a readable amount, or an em dash for nothing.
@@ -937,7 +960,7 @@ def api_remove_models(unit_id):
 
     Same distinction the whole-unit delete makes: this deletes rows, so it is
     for plastic that was never there. Models Clay owned and sold leave through
-    a kit disposal, which keeps them.
+    `POST .../dispose`, which keeps every row and what it went for.
     """
     data = _payload()
     count = _int(data.get('count'), 0)
@@ -948,6 +971,54 @@ def api_remove_models(unit_id):
             abort(404)
         result = col.remove_models(conn, unit_id, count)
     return jsonify(result)
+
+
+@app.route('/api/units/<int:unit_id>/dispose', methods=['POST'])
+def api_dispose_models(unit_id):
+    """Sold, traded or given away — a number of them, not the whole squad.
+
+    Clay: *"sell, trade/giveaway"*. The mirror of DELETE above and the reason
+    both exist: this keeps every row, its stage and what it went for, because
+    a disposal is a status change and the spend history is the point. Deleting
+    is for plastic that was never there.
+    """
+    data = _payload()
+    count = _int(data.get('count'), 0)
+    status = (data.get('status') or 'sold').strip()
+    if count < 1:
+        return jsonify({'error': 'How many?'}), 400
+    if status not in ('sold', 'traded', 'gifted'):
+        return jsonify({'error': f'{status!r} is not a disposal'}), 400
+    with _write() as conn:
+        if not col.get_unit(conn, unit_id):
+            abort(404)
+        try:
+            result = col.dispose_models(
+                conn, unit_id, count, status,
+                price_cents=_money(data.get('price')),
+                note=(data.get('note') or '').strip() or None)
+        except ValueError as err:
+            return jsonify({'error': str(err)}), 400
+    return jsonify(result)
+
+
+@app.route('/api/units/<int:unit_id>/wishlist', methods=['POST'])
+def api_wishlist_models(unit_id):
+    """Want more of these.
+
+    Clay: *"wishlist more"*. No new storage — Wishlist has been position 0 of
+    the ladder since the first migration, so this is `add_models` aimed one
+    rung below owned. They show at /collection?own=wanted.
+    """
+    data = _payload()
+    count = _int(data.get('count'), 0)
+    if count < 1:
+        return jsonify({'error': 'How many?'}), 400
+    with _write() as conn:
+        if not col.get_unit(conn, unit_id):
+            abort(404)
+        added = col.wishlist_models(conn, unit_id, count)
+    return jsonify({'wishlisted': added})
 
 
 # ── Photos (spec §2.4) ───────────────────────────────────

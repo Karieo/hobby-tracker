@@ -147,7 +147,17 @@ anyone notices.
 - **No scraping** GW for prices, eBay for resale values, or any site for points.
 - **`box_state` is not a model stage.** A sealed box and an opened one both hold
   models "On sprue", but only one carries a resale premium. Keep it on the kit.
-- **Disposals are status changes, never deletions.** A sold kit stays with its
+- **Disposals are status changes, never deletions — at two levels.**
+  `kits.status` covers a whole box; `models.disposed_on/_as/_price_cents`
+  (migration 010) covers "I sold five of my twenty Boyz". The model keeps its
+  `stage_id`, deliberately: a *Sold* stage would have made all thirty ownership
+  queries correct for free and destroyed the fact worth recording, which is
+  that the five were painted. Ownership excludes them through
+  `m.disposed_on IS NULL` in the JOIN — the **ON** clause, never WHERE, since
+  these are LEFT JOINs and a WHERE would drop every unit with no models.
+  `tests/test_collection.py::test_every_ownership_surface_drops_a_disposed_model`
+  walks the surfaces, because a filter half the queries ignore is a collection
+  that over-counts quietly for months. A sold kit stays with its
   models, excluded from ownership counts, retained for spend history. A
   *correction* is the other thing: `collection.remove_models` and
   `delete_unit` delete rows outright, because plastic that was never there has
