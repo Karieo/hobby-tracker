@@ -81,12 +81,12 @@ function repaintPipe(breakdown) {
     const li = $(`[data-stage="${stage.id}"]`, pipe);
     if (!li) return;
     painted += 1;
-    // Both screens show a plain number now — unit detail used to make it an
-    // editable field. Same number either way, and both have to stay honest.
+    // Paint mode is the only screen that repaints — the unit page's summary
+    // is cards now and reloads. `.count-at` was read here too and had stopped
+    // matching anything, which is the same hazard the comment above describes:
+    // a dead lookup beside a live one reads as a second supported shape.
     const count = $('.count b', li);
     if (count) count.textContent = stage.count;
-    const field = $('.count-at', li);
-    if (field) field.textContent = stage.count;
     li.classList.toggle('empty', stage.count === 0);
     const tick = $('.tick', li);
     if (tick) tick.disabled = !stage.can_advance;

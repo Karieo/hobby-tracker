@@ -36,13 +36,29 @@
   {% set filled = breakdown | selectattr('is_owned') | selectattr('count') | list %}
   <h2>Where they are</h2>
   {% if filled %}
-    <ul class="ramp read-only">
+    {# Cards rather than rungs, from a character sheet Clay sent: a label, a
+       number that is the whole point, and a smaller one under it saying the
+       same thing another way.
+
+       It suits a summary in a way the ladder never did. A rung is a row in a
+       sequence and earns its shape from the rows above and below it — but the
+       empty ones are gone from this screen now, so what is left is two or
+       three facts with no sequence between them, and a stack of full-width
+       rows was mostly whitespace saying so.
+
+       The percentage is the second number. Same figure twice: "8 assembled"
+       and "40% of them", which is the shape the invariant already asks for
+       everywhere else — the proportion never instead of the raw count. #}
+    <ul class="statgrid">
       {% for s in filled %}
-        <li class="rung {% if not s.applies %}na{% endif %}
-                   {% if s.is_terminal %}terminal{% endif %}">
-          {{ stage_icon(s.position, s.name) }}
-          <span class="rname">{{ s.name }}</span>
-          <span class="nudge"><span class="count-at">{{ s.count }}</span></span>
+        <li class="statcard {% if s.is_terminal %}done{% endif %}
+                   {% if not s.applies %}na{% endif %}">
+          <p class="statname">{{ s.name }}</p>
+          <p class="statbox"><b>{{ s.count }}</b></p>
+          <p class="statfoot">
+            {{ stage_icon(s.position, s.name) }}
+            <span>{{ s.percent }}%</span>
+          </p>
         </li>
       {% endfor %}
     </ul>

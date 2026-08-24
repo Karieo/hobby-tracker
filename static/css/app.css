@@ -690,17 +690,6 @@ a.go {
 /* Header actions never wrap mid-phrase. */
 .page > .ghost, .page > a.ghost { white-space: nowrap; }
 
-/* The count inside a rung. It was an <input> and is now a <span>, so this no
-   longer needs to undo any field styling — but it keeps the same box as the
-   paint session's, because the two screens are the same control and should
-   not drift apart again. */
-.rung .count-at {
-  width: 3.2rem; min-height: 40px; text-align: center;
-  font-variant-numeric: tabular-nums; background: var(--panel-2);
-  border: 1px solid var(--rule); color: var(--ink);
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.rung.na .count-at { opacity: .4; }
 
 /* ── Desktop: use the width, don't just stretch into it ──
    The phone layout is the baseline and stays exactly as it is. On a wide
@@ -713,10 +702,6 @@ a.go {
 /* A rung is a name and three small controls. It never wants to be wider than
    this, on any screen. */
 .ramp { max-width: 30rem; }
-/* The unit page's copy has no controls at all — the ladder moved to paint
-   mode and what is left is a count to read. The rungs keep their shape so the
-   two screens still look like the same object. */
-.ramp.read-only .nudge { justify-content: flex-end; }
 
 .detail-cols { display: grid; gap: 1.5rem 2.5rem; }
 @media (min-width: 58rem) {
@@ -790,4 +775,39 @@ a.go {
 #add-photo input[type="file"] { font-size: .85rem; }
 @media (min-width: 46rem) {
   .shots { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── Stage cards ─────────────────────────────────────────
+   The unit page's summary, from a character sheet Clay sent: a label, the
+   number that is the point, and a smaller one saying it another way.
+
+   Cards suit a summary in a way rungs did not. A rung earns its shape from
+   the rows above and below it, and with the empty ones gone there is no
+   sequence left — just two or three facts, which a stack of full-width rows
+   rendered as mostly whitespace. */
+.statgrid { list-style: none; padding: 0; margin: .6rem 0 1rem;
+            display: grid; gap: .7rem; grid-template-columns: 1fr 1fr; }
+.statcard { border: 1px solid var(--rule); background: var(--panel);
+            padding: .7rem .6rem .5rem; text-align: center; }
+/* Battle ready is the only card that takes the accent, because the accent
+   means done and nothing else. */
+.statcard.done { border-color: var(--accent); }
+.statcard.na { opacity: .55; }
+.statname { margin: 0 0 .5rem; font-size: .7rem; letter-spacing: .08em;
+            text-transform: uppercase; color: var(--muted); }
+/* The number sits in its own box, as it does on the sheet — it is the thing
+   being read, and a border says so more quietly than a colour would. */
+.statbox { margin: 0; border: 1px solid var(--rule); background: var(--panel-2);
+           padding: .35rem 0; }
+.statbox b { font-size: 1.9rem; line-height: 1.1;
+             font-variant-numeric: tabular-nums; }
+.statfoot { margin: .45rem 0 0; display: flex; align-items: center;
+            justify-content: center; gap: .35rem;
+            font-size: .8rem; color: var(--muted); }
+.statcard.done .statfoot { color: var(--accent); }
+@media (min-width: 34rem) {
+  .statgrid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (min-width: 58rem) {
+  .statgrid { grid-template-columns: repeat(4, 1fr); }
 }

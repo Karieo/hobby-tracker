@@ -1010,7 +1010,7 @@ def test_unit_detail_reads_the_stages_and_never_moves_them(client, army_with_uni
     a model between stages any more."""
     body = client.get(f"/units/{army_with_unit['unit_id']}").get_data(as_text=True)
 
-    assert 'count-at' in body, 'the counts are still readable'
+    assert 'class="statbox"' in body, 'the counts are still readable'
     assert 'id="count-form"' not in body, 'the separate Set-a-count form is gone'
     for control in ('untick', 'class="tick"', 'button class="advance'):
         assert control not in body, f'{control} belongs to paint mode now'
@@ -1764,11 +1764,13 @@ def test_adding_models_puts_them_where_plastic_arrives(client, army_with_unit, d
 
 
 def test_the_counts_are_not_editable(client, army_with_unit):
-    """A number to read, not a field to type in. Paint mode has always shown
-    it this way; this is the two screens agreeing."""
+    """A number to read, not a field to type in. It began as an <input> so a
+    count could be reconciled by typing; it is a stat card now, and the only
+    way to move a model is paint mode."""
     body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
 
-    assert 'class="count-at"' in body
+    assert 'class="statbox"' in body
+    assert 'class="count-at"' not in body
     assert '<input class="count-at"' not in body
 
 
@@ -1857,7 +1859,7 @@ def test_the_filters_reach_the_query(client, army_with_unit, db_path):
 def test_the_unit_page_is_a_summary_and_a_count(client, army_with_unit):
     body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
 
-    assert 'count-at' in body, 'the summary stays'
+    assert 'class="statgrid"' in body, 'the summary stays'
     assert 'id="add-models"' in body and 'id="remove-models"' in body
     assert 'id="bulk"' not in body, 'the per-model stage picker went with the ramp'
     assert 'name="model_ids"' not in body
