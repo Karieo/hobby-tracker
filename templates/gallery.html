@@ -119,13 +119,13 @@
           {% elif e.kind == 'kit' %}
             <span class="what">
               <b>Bought</b>
-              <a href="/kits/{{ e.kit_id }}">{{ e.name }}</a>
+              {{ e.name }}
               {% if e.cost_cents %}<span class="muted">· {{ e.cost_cents|money }}</span>{% endif %}
             </span>
           {% else %}
             <span class="what">
               <b>{{ e.status|capitalize }}</b>
-              <a href="/kits/{{ e.kit_id }}">{{ e.name }}</a>
+              {{ e.name }}
               {% if e.cost_cents %}<span class="muted">· {{ e.cost_cents|money }}</span>{% endif %}
             </span>
           {% endif %}

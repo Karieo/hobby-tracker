@@ -232,6 +232,37 @@ answer.
 destroys the codes already linked to templates, which is a decision of its own
 rather than a side effect of deleting a screen.
 
+## The Kits screens (removed)
+
+Clay: *"Drop the kits page, it's not helpful."*
+
+Gone: the `Kits` nav entry, `/kits`, `/kits/<id>`, their four API routes and
+the JavaScript that drove them. `templates/kits.html` and `kit.html` are
+deleted.
+
+**The `kits` table stays, and so does every row in it.** Asked how far to go —
+the screens, or the data too — Clay first chose everything, then chose to keep
+the data once it was clear what depends on it:
+
+- the journey's *Bought* and *Sold* entries, which are the spend history
+- `buildable_from_spare` in the gap report and the export, which matches an
+  unbuilt sprue to a datasheet through `kit_datasheets` — keyed on `kits.id`
+- the collection's "still sealed" counts, from `box_state`
+- `instantiate_template`, which is what "Define a box" creates
+
+So this is a screen removal, not a schema change. There is no migration and
+nothing is destroyed; `collection.py`'s kit functions are all still here and
+still called.
+
+`update_kit` and `delete_kit` had their only test coverage through the routes,
+so those tests moved down to `tests/test_collection.py` rather than leaving
+with the screens — `update_kit`'s partial write is the exact bug `update_unit`
+shipped, and it would have been left unguarded.
+
+**Rebuilding a kits screen is a decision, not a restoration.** What made this
+one unhelpful is that it listed boxes, and a box is not a thing Clay does
+anything with once the models are out of it.
+
 ## Backups
 
 `backup.sh` snapshots via `sqlite3 .backup`, never `cp` — the app holds a

@@ -86,7 +86,7 @@ def army_with_unit(db_path):
 
 # ── Auth ─────────────────────────────────────────────────
 
-@pytest.mark.parametrize('path', ['/', '/kits', '/paint', '/reference'])
+@pytest.mark.parametrize('path', ['/', '/collection', '/paint', '/reference'])
 def test_pages_require_login(db_path, monkeypatch, path):
     import app as appmod
     monkeypatch.setattr(appmod.db, 'DB_PATH', db_path)
@@ -111,7 +111,7 @@ def test_healthz_is_public(db_path, monkeypatch):
 
 # ── Pages render ─────────────────────────────────────────
 
-@pytest.mark.parametrize('path', ['/', '/kits', '/paint', '/reference'])
+@pytest.mark.parametrize('path', ['/', '/collection', '/paint', '/reference'])
 def test_pages_render(client, army_with_unit, path):
     assert client.get(path).status_code == 200
 
@@ -263,29 +263,6 @@ def test_move_unit_between_armies_and_back_to_unassigned(client, army_with_unit,
 
 # ── Kits ─────────────────────────────────────────────────
 
-def test_create_kit_stores_money_as_cents(client):
-    res = client.post('/api/kits', json={'name': 'Wrecka Krew', 'cost': '55.50'})
-    assert res.status_code == 201
-
-
-def test_kit_disposal_records_what_it_went_for(client, db_path):
-    kit_id = client.post('/api/kits', json={'name': 'Killa Kans'}).json['id']
-    res = client.post(f'/api/kits/{kit_id}/status',
-                      json={'status': 'sold', 'price': '40', 'note': 'to Dave'})
-    assert res.status_code == 200
-    with db.connect(db_path) as conn:
-        kit = col.get_kit(conn, kit_id)
-    assert kit['status'] == 'sold' and kit['disposed_price_cents'] == 4000
-
-
-def test_unknown_kit_status_is_rejected(client):
-    kit_id = client.post('/api/kits', json={'name': 'Killa Kans'}).json['id']
-    res = client.post(f'/api/kits/{kit_id}/status', json={'status': 'incinerated'})
-    assert res.status_code == 400
-
-
-# ── Datasheet picker ─────────────────────────────────────
-
 def test_datasheet_search_needs_two_characters(client, army_with_unit):
     assert client.get('/api/datasheets?q=B').json['results'] == []
     assert client.get('/api/datasheets?q=Boy').json['results']
@@ -328,87 +305,6 @@ def _models_in_kit(conn, kit_id):
 # The Kits table could show a kit holding "0 units, 0 models" and offer
 # nowhere to go and find out why, and nothing anywhere could correct a name or
 # remove a mis-scan.
-
-def _a_kit(client, db_path, **fields):
-    res = client.post('/api/kits', json={'name': 'Wrecka Krew', **fields})
-    assert res.status_code == 201
-    return res.json['id']
-
-
-def test_the_kit_page_renders_and_lists_its_contents(client, db_path, army_with_unit):
-    kit_id = _a_kit(client, db_path)
-    with db.connect(db_path) as conn:
-        conn.execute('UPDATE units SET kit_id = ? WHERE id = ?',
-                     (kit_id, army_with_unit['unit_id']))
-
-    body = client.get(f'/kits/{kit_id}').get_data(as_text=True)
-
-    assert 'Wrecka Krew' in body
-    assert 'Boyz' in body, 'the units inside the box are the point of the page'
-
-
-def test_a_missing_kit_is_a_404(client):
-    assert client.get('/kits/999').status_code == 404
-
-
-def test_editing_only_touches_the_fields_sent(client, db_path):
-    """A form posting three fields must not blank the other seven."""
-    kit_id = _a_kit(client, db_path, notes='keep me', acquired_on='2026-01-02')
-
-    assert client.post(f'/api/kits/{kit_id}',
-                       json={'name': 'Wrecka Krew 2024'}).status_code == 200
-
-    with db.connect(db_path) as conn:
-        kit = conn.execute('SELECT * FROM kits WHERE id = ?', (kit_id,)).fetchone()
-    assert kit['name'] == 'Wrecka Krew 2024'
-    assert kit['notes'] == 'keep me'
-    assert kit['acquired_on'] == '2026-01-02'
-
-
-def test_a_kit_cannot_be_renamed_to_nothing(client, db_path):
-    kit_id = _a_kit(client, db_path)
-    res = client.post(f'/api/kits/{kit_id}', json={'name': '   '})
-    assert res.status_code == 400
-    with db.connect(db_path) as conn:
-        assert conn.execute('SELECT name FROM kits WHERE id = ?',
-                            (kit_id,)).fetchone()[0] == 'Wrecka Krew'
-
-
-def test_deleting_takes_its_units_and_models_with_it(client, db_path, army_with_unit):
-    kit_id = _a_kit(client, db_path)
-    with db.connect(db_path) as conn:
-        conn.execute('UPDATE units SET kit_id = ? WHERE id = ?',
-                     (kit_id, army_with_unit['unit_id']))
-
-    assert client.delete(f'/api/kits/{kit_id}').status_code == 200
-
-    with db.connect(db_path) as conn:
-        assert conn.execute('SELECT COUNT(*) FROM kits').fetchone()[0] == 0
-        assert conn.execute('SELECT COUNT(*) FROM units').fetchone()[0] == 0
-        assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 0
-
-
-def test_deleting_a_missing_kit_is_a_404(client):
-    assert client.delete('/api/kits/999').status_code == 404
-
-
-def test_disposing_is_not_deleting(client, db_path, army_with_unit):
-    """The invariant, asserted rather than assumed: a sold kit keeps every row."""
-    kit_id = _a_kit(client, db_path)
-    with db.connect(db_path) as conn:
-        conn.execute('UPDATE units SET kit_id = ? WHERE id = ?',
-                     (kit_id, army_with_unit['unit_id']))
-
-    assert client.post(f'/api/kits/{kit_id}/status',
-                       json={'status': 'sold', 'price': '25.00'}).status_code == 200
-
-    with db.connect(db_path) as conn:
-        kit = conn.execute('SELECT * FROM kits WHERE id = ?', (kit_id,)).fetchone()
-        assert kit['status'] == 'sold'
-        assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 10
-
-
-# ── The collection screen (spec §2.1, §2.3) ──────────────
 
 def test_the_collection_screen_shows_what_is_owned(client, db_path, army_with_unit):
     body = client.get('/collection').get_data(as_text=True)
@@ -798,19 +694,6 @@ def test_the_define_form_opens_with_the_typed_name(client):
     assert 'hidden' not in body.split('id="new-template"')[0][-120:], \
         'the form is open, not collapsed'
 
-
-def test_recording_a_set_by_name_invents_no_models(client):
-    """Ownership now, contents whenever. Guessing contents from a name is the
-    one thing this app will not do."""
-    res = client.post('/api/kits', json={'name': 'Nobz Mob 2019'})
-
-    assert res.status_code == 201
-    kit_id = res.get_json()['id']
-    body = client.get(f'/kits/{kit_id}').get_data(as_text=True)
-    assert 'Nobz Mob 2019' in body
-
-
-# ── List import (spec §2.7) ──────────────────────────────
 
 def test_the_import_screen_exists(client):
     body = client.get('/lists/import').get_data(as_text=True)
