@@ -328,7 +328,7 @@ def money(cents):
     return f'{CURRENCY_SYMBOL}{cents / 100:,.2f}'
 
 
-def filter_url(**overrides):
+def filter_url(_path=None, **overrides):
     """This page's URL with some query args changed and the rest kept.
 
     The chip rail used to hand-build `?system=wh40k&q=...`, which meant every
@@ -349,8 +349,12 @@ def filter_url(**overrides):
             args.pop(key, None)
         else:
             args[key] = str(value)
+    # `_path` sends the same filters somewhere else — the CSV download is this
+    # page's URL with a different extension, and building it by hand in the
+    # template is how a link starts dropping filters the page still shows.
+    path = _path or request.path
     query = urlencode(sorted(args.items()))
-    return f'{request.path}?{query}' if query else request.path
+    return f'{path}?{query}' if query else path
 
 
 @app.context_processor
@@ -391,6 +395,64 @@ def armies_page():
                            summary=summary)
 
 
+#: The chip filters, as predicates over rows already loaded. They are
+#: questions about what is on screen rather than about the database, so they
+#: run here and the counts underneath them cannot disagree.
+_COLLECTION_CHIPS = {
+    'unpainted': lambda r: r['done_count'] < r['owned_count'],
+    'sealed': lambda r: r['sealed_boxes'],
+}
+
+
+def _collection_filters():
+    """The collection screen's filters, read off the query string.
+
+    One function because two routes render the same rows — the page and its
+    CSV — and a download that quietly ignored a filter the screen was showing
+    would be the worst kind of wrong: a spreadsheet that looks right.
+    """
+    query = (request.args.get('q') or '').strip()
+    return {
+        'query': query,
+        # Three states rather than the old "unowned appear only when
+        # searching": mine (the inventory), wanted (the shopping list),
+        # everything (the catalogue, which is what the own-it check needs).
+        # Searching still opens it up by default, so the shop question is one
+        # box as before — but now it can be said rather than inferred.
+        'own': request.args.get('own') or ('all' if query else 'mine'),
+        'sort': request.args.get('sort') or 'name',
+        'faction_id': _int(request.args.get('faction_id')),
+        'system': request.args.get('system') or None,
+        'stage_id': _int(request.args.get('stage_id')),
+        'points_min': _int(request.args.get('points_min')),
+        'points_max': _int(request.args.get('points_max')),
+        'chip': request.args.get('filter') or '',
+    }
+
+
+def _collection_rows(conn, f):
+    """The rows those filters select, chips included."""
+    rows = col.inventory(
+        conn, query=f['query'] or None, faction_id=f['faction_id'],
+        game_system=f['system'], stage_id=f['stage_id'],
+        points_min=f['points_min'], points_max=f['points_max'],
+        only_wanted=(f['own'] == 'wanted'), sort=f['sort'],
+        include_unowned=(f['own'] == 'all'))
+    keep = _COLLECTION_CHIPS.get(f['chip'])
+    return [r for r in rows if keep(r)] if keep else rows
+
+
+def _collection_totals(rows):
+    return {
+        'datasheets': len(rows),
+        'owned': sum(r['owned_count'] for r in rows),
+        'built': sum(r['built_count'] for r in rows),
+        'done': sum(r['done_count'] for r in rows),
+        'wanted': sum(r['wanted_count'] for r in rows),
+        'sealed': sum(r['sealed_boxes'] for r in rows),
+    }
+
+
 @app.route('/collection')
 def collection_page():
     """What I own, how many, and what state — and, with a query, the own-it
@@ -402,51 +464,96 @@ def collection_page():
     if any(v == '' for v in request.args.values()):
         return redirect(filter_url())
 
-    query = (request.args.get('q') or '').strip()
-    # Three states rather than the old "unowned appear only when searching":
-    # mine (the inventory), wanted (the shopping list), everything (the
-    # catalogue, which is what the own-it check needs). Searching still opens
-    # it up to everything by default, so the shop question is one box as
-    # before — but now it can be said rather than inferred.
-    own = request.args.get('own') or ('all' if query else 'mine')
-    sort = request.args.get('sort') or 'name'
+    f = _collection_filters()
     with _read() as conn:
-        rows = col.inventory(
-            conn, query=query or None,
-            faction_id=_int(request.args.get('faction_id')),
-            game_system=(request.args.get('system') or None),
-            stage_id=_int(request.args.get('stage_id')),
-            points_min=_int(request.args.get('points_min')),
-            points_max=_int(request.args.get('points_max')),
-            only_wanted=(own == 'wanted'),
-            sort=sort,
-            include_unowned=(own == 'all'))
-        # Chip filters narrow what is already loaded rather than re-querying:
-        # "unpainted" and "sealed" are questions about the rows on screen, and
-        # keeping them here means the chips cannot disagree with the counts.
-        chip = request.args.get('filter') or ''
-        if chip == 'unpainted':
-            rows = [r for r in rows if r['done_count'] < r['owned_count']]
-        elif chip == 'sealed':
-            rows = [r for r in rows if r['sealed_boxes']]
+        rows = _collection_rows(conn, f)
         return render_template(
-            'collection.html', rows=rows, query=query, filter=chip,
+            'collection.html', rows=rows, query=f['query'], filter=f['chip'],
             system=(request.args.get('system') or ''),
-            faction_id=_int(request.args.get('faction_id')),
-            stage_id=_int(request.args.get('stage_id')),
+            faction_id=f['faction_id'], stage_id=f['stage_id'],
             points_min=request.args.get('points_min') or '',
             points_max=request.args.get('points_max') or '',
-            own=own, sort=sort, sorts=col.INVENTORY_SORT_LABELS,
+            own=f['own'], sort=f['sort'], sorts=col.INVENTORY_SORT_LABELS,
             factions=col.list_factions(conn),
             stages=col.stage_ladder(conn),
-            totals={
-                'datasheets': len(rows),
-                'owned': sum(r['owned_count'] for r in rows),
-                'built': sum(r['built_count'] for r in rows),
-                'done': sum(r['done_count'] for r in rows),
-                'wanted': sum(r['wanted_count'] for r in rows),
-                'sealed': sum(r['sealed_boxes'] for r in rows),
-            })
+            totals=_collection_totals(rows))
+
+
+#: The download's columns. Everything a row can answer without nesting, in the
+#: order the screen reads: what it is, how many, how far along.
+COLLECTION_CSV_COLUMNS = (
+    ('name', 'name'),
+    ('faction', 'faction_name'),
+    ('game_system', 'game_system'),
+    ('owned', 'owned_count'),
+    ('built', 'built_count'),
+    ('battle_ready', 'done_count'),
+    ('wanted', 'wanted_count'),
+    ('sealed_boxes', 'sealed_boxes'),
+    ('units', 'unit_count'),
+    ('kits', 'kit_count'),
+    ('effort_total', 'effort_total'),
+    ('effort_done', 'effort_done'),
+    ('completion_pct', 'completion'),
+    ('points_low', 'points_low'),
+    ('points_high', 'points_high'),
+    ('last_activity', 'last_activity'),
+)
+
+
+@app.route('/collection.csv')
+def collection_csv():
+    """The collection screen, downloadable.
+
+    Clay: "Do a csv that I can download from the site."
+
+    Deliberately *not* `/api/export/inventory?format=csv`, which is the other
+    CSV in this app and answers a different question. That one is per
+    datasheet for a list optimiser and knows only `army_id` — point a button
+    on this screen at it and filtering to "Orks, unpainted" would download
+    every Ork including the painted ones. A spreadsheet that looks right and
+    is not is worse than no button.
+
+    So this renders the rows the screen just computed, through the same
+    `_collection_filters` and `_collection_rows` the page uses. The two cannot
+    drift, because there is one of each.
+
+    Effort is here alongside the raw counts, never instead: a Knight and a
+    Termagant are both "1 model", which is what makes a model-count percentage
+    meaningless.
+    """
+    f = _collection_filters()
+    with _read() as conn:
+        rows = _collection_rows(conn, f)
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([label for label, _ in COLLECTION_CSV_COLUMNS])
+    for row in rows:
+        writer.writerow([row[key] for _, key in COLLECTION_CSV_COLUMNS])
+    return Response(buffer.getvalue(), mimetype='text/csv', headers={
+        'Content-Disposition':
+            f'attachment; filename="{_csv_filename(f)}"'})
+
+
+def _csv_filename(f):
+    """Named for what is in it, so a folder of these is still readable.
+
+    A download called `collection.csv` four times over is four files called
+    `collection (3).csv`, and no way to tell the Orks from the Knights.
+    """
+    parts = ['collection']
+    if f['faction_id']:
+        with _read() as conn:
+            found = conn.execute('SELECT slug FROM factions WHERE id = ?',
+                                 (f['faction_id'],)).fetchone()
+        if found:
+            parts.append(found['slug'])
+    if f['chip']:
+        parts.append(f['chip'])
+    if f['own'] != 'mine':
+        parts.append(f['own'])
+    return '-'.join(parts) + '.csv'
 
 
 # ── Lists (spec §2.6) ────────────────────────────────────
@@ -1308,16 +1415,62 @@ def api_export_inventory():
     if fmt not in ('json', 'csv'):
         return jsonify({'error': "format must be 'json' or 'csv'"}), 400
 
+    # Validated before the query rather than after: a typo should cost a 400,
+    # not a full inventory aggregation thrown away.
+    fields = None
+    if request.args.get('fields') is not None:
+        fields, problem = _export_fields(request.args['fields'],
+                                         include_capability)
+        if problem:
+            return jsonify({'error': problem}), 400
+        nested = [f for f in fields if f in _EXPORT_NESTED]
+        if fmt == 'csv' and nested:
+            return jsonify({'error':
+                            f'{", ".join(nested)} cannot be a CSV column — '
+                            'use format=json'}), 400
+
+    wanted_faction = (request.args.get('faction') or '').strip()
+
     with _read() as conn:
         if army_id and not conn.execute('SELECT 1 FROM armies WHERE id = ?',
                                         (army_id,)).fetchone():
             return jsonify({'error': f'no army {army_id}'}), 404
+        faction = None
+        if wanted_faction:
+            # By name or slug rather than id: this gets typed into a curl, and
+            # `?faction=orks` is something Clay can write from memory while
+            # `?faction_id=1` is a lookup first. 404 like a missing army,
+            # because filtering to a faction that does not exist and getting a
+            # cheerful empty list is how you conclude you own no Orks.
+            faction = conn.execute(
+                'SELECT name FROM factions WHERE name = ? COLLATE NOCASE '
+                'OR slug = ? COLLATE NOCASE', (wanted_faction,
+                                               wanted_faction)).fetchone()
+            if not faction:
+                return jsonify(
+                    {'error': f'no faction {wanted_faction!r}'}), 404
         data = col.export_inventory(conn, army_id=army_id,
                                     include_unassigned=include_unassigned,
                                     include_capability=include_capability)
+
+    if faction:
+        # Filtered on the assembled rows rather than in the query, because
+        # four things contribute rows — the ownership aggregate, by_stage, the
+        # capability join and the flexible join — and the last two can add a
+        # datasheet nothing is built as yet. One filter at the end cannot miss
+        # a contributor the way four copies of a WHERE clause could.
+        data['datasheets'] = [r for r in data['datasheets']
+                              if r['faction'] == faction['name']]
+    if fields:
+        # The envelope is left alone. `fields` narrows the rows; it does not
+        # turn the response into a different shape, so a consumer can add it
+        # to a URL without rewriting how it reads the reply.
+        data['datasheets'] = [{k: row[k] for k in fields if k in row}
+                              for row in data['datasheets']]
     if fmt == 'csv':
-        return Response(_export_csv(data), mimetype='text/csv', headers={
-            'Content-Disposition': 'attachment; filename="inventory.csv"'})
+        return Response(_export_csv(data, fields), mimetype='text/csv',
+                        headers={'Content-Disposition':
+                                 'attachment; filename="inventory.csv"'})
     return jsonify(data)
 
 
@@ -1361,7 +1514,52 @@ def _flag(value, default):
     return value.lower() not in ('0', 'false', 'no', 'off')
 
 
-def _export_csv(data):
+#: Fields whose value is a list or a dict. Fine in JSON, meaningless in a CSV
+#: cell — `_export_csv` has always dropped them for that reason, and asking for
+#: one as a column is refused rather than silently omitted.
+_EXPORT_NESTED = ('by_stage', 'points')
+
+
+def _export_fields(raw, include_capability):
+    """Which columns the caller asked for, in their order. Returns (fields, error).
+
+    `fields=name,owned,battle_ready` exists because the full row is built for a
+    list optimiser — join keys, every points tier, the whole stage breakdown —
+    and the question actually asked at a phone on the sofa is "what do I have
+    and how much of it is finished". That was a curl piped through python; now
+    it is a URL.
+
+    Unknown names are refused rather than dropped. A typo that silently returns
+    fewer columns is a spreadsheet with a column missing and nothing saying
+    why, which is the same failure as a silently dropped import line.
+
+    Order is the caller's, because it is the CSV's column order. It does not
+    survive into JSON — Flask sorts object keys — and that is fine: nothing
+    reading JSON cares, and nothing should depend on key order there.
+    """
+    names, seen = [], set()
+    for name in (n.strip() for n in raw.split(',')):
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+    if not names:
+        return None, 'fields was empty'
+
+    available = [f for f in col.EXPORT_FIELDS
+                 if include_capability or f != 'buildable_from_spare']
+    # Named separately so "you turned it off" does not read as "no such field".
+    if not include_capability and 'buildable_from_spare' in names:
+        return None, ('buildable_from_spare is not computed when '
+                      'include_capability=0')
+    unknown = [n for n in names if n not in available]
+    if unknown:
+        return None, (f'unknown field{"s" if len(unknown) > 1 else ""}: '
+                      f'{", ".join(unknown)} — choose from '
+                      f'{", ".join(available)}')
+    return names, None
+
+
+def _export_csv(data, fields=None):
     """The same rows, flattened.
 
     `by_stage` and `points` are dropped rather than squashed into a cell: a
@@ -1370,11 +1568,16 @@ def _export_csv(data):
     needs it. The scalars that answer the common questions all survive.
     """
     buffer = io.StringIO()
-    columns = ['bsdata_id', 'name', 'faction', 'game_system', 'min_models',
-               'max_models', 'effort', 'owned', 'assembled', 'battle_ready',
-               'wishlist', 'flexible']
-    if data['datasheets'] and 'buildable_from_spare' in data['datasheets'][0]:
-        columns.append('buildable_from_spare')
+    if fields:
+        # Nested values have no honest CSV form, so asking for one in CSV is a
+        # 400 at the route rather than a cell nobody can parse.
+        columns = list(fields)
+    else:
+        columns = ['bsdata_id', 'name', 'faction', 'game_system', 'min_models',
+                   'max_models', 'effort', 'owned', 'assembled', 'battle_ready',
+                   'wishlist', 'flexible']
+        if data['datasheets'] and 'buildable_from_spare' in data['datasheets'][0]:
+            columns.append('buildable_from_spare')
     writer = csv.DictWriter(buffer, fieldnames=columns, extrasaction='ignore')
     writer.writeheader()
     for row in data['datasheets']:
