@@ -60,6 +60,7 @@ import collection as col
 import list_allocate
 import list_parse
 import list_resolve
+import journey
 import lists as army_lists
 import photos
 import rules_data  # noqa: E402
@@ -872,6 +873,25 @@ def api_add_photo(unit_id):
     return jsonify(saved), 201
 
 
+@app.route('/api/photos/<int:photo_id>', methods=['PATCH'])
+def api_update_photo(photo_id):
+    """A note after the fact.
+
+    The picture gets taken and uploaded in one motion; what it was worth saying
+    about it turns up later. As a field on the upload form and nowhere else, a
+    caption had exactly one moment to exist in.
+    """
+    data = _payload()
+    fields = {k: data[k] for k in ('taken_on', 'caption') if k in data}
+    if not fields:
+        return jsonify({'error': 'Nothing to change'}), 400
+    with _write() as conn:
+        if not photos.get(conn, photo_id):
+            abort(404)
+        photos.update(conn, photo_id, **fields)
+    return jsonify({'success': True})
+
+
 @app.route('/api/photos/<int:photo_id>', methods=['DELETE'])
 def api_delete_photo(photo_id):
     with _write() as conn:
@@ -879,6 +899,22 @@ def api_delete_photo(photo_id):
     if unit_id is None:
         abort(404)
     return jsonify({'unit_id': unit_id})
+
+
+@app.route('/gallery')
+def gallery_page():
+    """The journey, oldest first and scrubbable.
+
+    Every other screen answers a question about now — what is owned, what is
+    short, what is half-painted. This one is the only backward-looking thing in
+    the app, and it is the reward for a log that has been kept: the pile of
+    grey plastic in March and the same squad based in August, in one gesture.
+    """
+    with _read() as conn:
+        entries = journey.events(conn)
+        return render_template('gallery.html', entries=entries,
+                               shots=journey.pictures(conn),
+                               span=journey.span(entries))
 
 
 @app.route('/photos/<path:filename>')

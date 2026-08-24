@@ -832,3 +832,84 @@ a.go {
 @media (min-width: 58rem) {
   .statgrid { grid-template-columns: repeat(4, 1fr); }
 }
+
+/* ── The photo dialog ────────────────────────────────────
+   <dialog> for the browser's Escape, focus trapping and backdrop — this app
+   has no framework to borrow them from. */
+#photo-dialog {
+  border: 1px solid var(--rule); background: var(--panel); color: var(--ink);
+  padding: 0; width: min(30rem, calc(100vw - 2rem));
+}
+#photo-dialog::backdrop { background: rgba(0, 0, 0, .55); }
+.dialoghead { display: flex; align-items: center; justify-content: space-between;
+              gap: 1rem; padding: .8rem 1rem; border-bottom: 1px solid var(--rule); }
+.dialoghead h2 { margin: 0; }
+#photo-form { padding: 1rem; margin: 0; }
+#photo-form .hint { margin: .2rem 0 0; }
+
+/* The note sits between the date and the buttons and takes the slack, so a
+   long one wraps rather than pushing Remove off the row. */
+.shotnote { flex: 1 1 8rem; }
+.shotmeta .shot-edit { margin-left: auto; }
+.shotmeta .shot-delete { margin-left: 0; }
+
+/* ── The journey ─────────────────────────────────────────
+   One frame visible, all of them in the document. */
+.scrubber { margin: 0 0 1.5rem; }
+.frames { position: relative; border: 1px solid var(--rule);
+          background: var(--panel); }
+.frame { display: none; margin: 0; }
+.frame.on { display: block; }
+.frame img { display: block; width: 100%; height: auto;
+             max-height: 60vh; object-fit: contain; background: var(--bg); }
+.frame .gone { padding: 2rem 1rem; }
+.frame figcaption { display: flex; flex-wrap: wrap; gap: .4rem;
+                    align-items: baseline; padding: .6rem .8rem;
+                    font-size: .85rem; border-top: 1px solid var(--rule); }
+.frame figcaption .note { flex: 1 1 100%; color: var(--muted); }
+
+.scrubrow { margin-top: .7rem; }
+/* Full width and a tall thumb: this is dragged with a thumb on a phone, and a
+   default range input is about half the target it needs to be. */
+.scrubrow input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent);
+                                min-height: 44px; }
+.scrubends { display: flex; justify-content: space-between; gap: .5rem;
+             margin: 0; font-size: .75rem; color: var(--muted);
+             font-variant-numeric: tabular-nums; }
+.gallerygrid { grid-template-columns: 1fr 1fr; }
+@media (min-width: 46rem) {
+  .gallerygrid { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* ── The journey stream ──────────────────────────────────
+   Four kinds of thing on one dated spine. The rule down the left is what makes
+   it read as one sequence rather than four lists that happen to be adjacent. */
+.timeline { list-style: none; margin: .6rem 0 0; padding: 0 0 0 1rem;
+            border-left: 1px solid var(--rule); }
+.timeline > li { position: relative; }
+/* A date is a heading inside the list, not another entry: it gets the ground's
+   colour behind it so the spine appears to pass behind it. */
+.daymark { margin: 1.1rem 0 .5rem -1rem; padding-left: 1rem; }
+.daymark:first-child { margin-top: 0; }
+.daymark span { background: var(--bg); padding-right: .5rem;
+                font-size: .75rem; letter-spacing: .08em;
+                text-transform: uppercase; color: var(--muted);
+                font-variant-numeric: tabular-nums; }
+.tl { display: flex; align-items: center; gap: .5rem; padding: .35rem 0;
+      font-size: .9rem; }
+.tl .what { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem; }
+.tl .note { flex: 1 1 100%; color: var(--muted); }
+/* The dot on the spine. Each kind gets its own so a glance down the rule reads
+   as a pattern of days rather than a wall of text. */
+.tl::before { content: ''; position: absolute; left: -1.3rem; top: .95rem;
+              width: 7px; height: 7px; border: 1px solid var(--rule);
+              background: var(--bg); }
+.tl.done::before { background: var(--accent); border-color: var(--accent); }
+.tl.photo::before { border-radius: 50%; }
+.tl.kit::before, .tl.gone::before { transform: rotate(45deg); }
+.tl.gone { color: var(--muted); }
+/* A thumbnail, because a photo entry with no picture in it is the one kind of
+   entry that cannot say what it is in words. */
+.tlshot { flex: 0 0 auto; }
+.tlshot img { display: block; width: 44px; height: 44px; object-fit: cover;
+              border: 1px solid var(--rule); }
