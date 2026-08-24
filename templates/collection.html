@@ -152,6 +152,21 @@
     </div>
   </div>
 
+  {# Takes the filters with it — `filter_url` builds the same query string the
+     page is already showing, so the file is what is on screen and not a
+     hopeful subset of it. The count is in the label for that reason: it is
+     the promise the download has to keep. #}
+  {% if rows %}
+    <p class="download">
+      <a class="ghost" href="{{ filter_url('/collection.csv') }}"
+         download>Download CSV</a>
+      <span class="muted">
+        {{ totals.datasheets }} row{{ '' if totals.datasheets == 1 else 's' }},
+        exactly what is filtered here
+      </span>
+    </p>
+  {% endif %}
+
   {% if not rows %}
     <div class="panel">
       {% if query %}

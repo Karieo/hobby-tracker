@@ -913,3 +913,9 @@ a.go {
 .tlshot { flex: 0 0 auto; }
 .tlshot img { display: block; width: 44px; height: 44px; object-fit: cover;
               border: 1px solid var(--rule); }
+
+/* The collection's CSV download. A row of its own under the tiles rather than
+   a button in the header: it is about the rows currently on screen, so it
+   belongs with the count of them. */
+.download { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap;
+            margin: 0 0 1.2rem; font-size: .85rem; }

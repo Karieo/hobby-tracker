@@ -526,7 +526,7 @@ they are listed here, with what the app actually has today.
 
 | Original | Requirement | State |
 |---|---|---|
-| §10 | **CSV export of the whole collection** — "non-negotiable. The data must never be trapped in this app." | **Part built,** 2026-08-23. `GET /api/export/inventory` emits the inventory as JSON or CSV, bearer-token or session authenticated, with `bsdata_id` as the join key and every points tier uncollapsed. It is per *datasheet*, which is what a list optimiser asked for. Still owed from §10: a flat per-model CSV of whatever the collection screen is currently filtered to (§5.4), and list export as text and JSON. |
+| §10 | **CSV export of the whole collection** — "non-negotiable. The data must never be trapped in this app." | **Part built,** 2026-08-23. `GET /api/export/inventory` emits the inventory as JSON or CSV, bearer-token or session authenticated, with `bsdata_id` as the join key and every points tier uncollapsed. It is per *datasheet*, which is what a list optimiser asked for. **`GET /collection.csv` was added 2026-08-24** — the collection screen, downloadable, carrying exactly the filters the page is showing. Deliberately not a button pointed at `/api/export/inventory`: that one is per datasheet for an optimiser and knows only `army_id`, so on a screen filtered to "Orks, unpainted" it would have downloaded every Ork including the painted ones. Both routes go through one `_collection_filters` and one `_collection_rows`, so the file and the page cannot drift. Still owed from §10: list export as text and JSON. |
 | §8 | **Sale candidates** — sealed + owned kits, with age, price paid, duplicates, and *whether any list calls for the contents* | **Not built.** Every field it needs exists (`box_state`, `acquired_on`, `cost_cents`, `status`), and disposal itself works. The query and the view do not exist. |
 | §9 | **List validation** — points against the limit, legal unit sizes, faction consistency, and the three-state badge that refuses to show a false green | **Not built.** Points total and limit are displayed side by side and never compared; `min_models`/`max_models` are imported and read but never checked against a list. |
 | §7 | **Shortfalls → purchases** — invert `kit_templates`, show the overage, and always show the à la carte total beside the bundle total | **Not built.** The wishlist names datasheets and model counts. `kit_templates.rrp_cents` and `price_updated_on` exist and are editable, so the data is there; nothing computes the comparison. |
@@ -561,6 +561,15 @@ Built 2026-08-23 to its own spec. The parts worth carrying here:
 - Tokens are SHA-256, not bcrypt — 256 bits of `secrets` output has nothing to
   brute-force, and a salted hash could not be looked up by index at all.
   `scripts/api_token.py` mints, lists and revokes them.
+- **`faction=` narrows the rows too, added 2026-08-24.** By name or slug, in
+  any case, because it gets typed into a curl — `?faction=orks` is writable
+  from memory where `?faction_id=1` is a lookup first. An unknown faction is a
+  404 rather than an empty list: a cheerful zero rows is how you conclude you
+  own no Orks when you actually mistyped. Applied to the assembled rows rather
+  than in SQL, because four things contribute rows — the ownership aggregate,
+  `by_stage`, the capability join and the flexible join — and the last two can
+  add a datasheet nothing is built as yet. One filter at the end cannot miss a
+  contributor the way four copies of a WHERE clause could.
 - **`fields=` narrows the rows, added 2026-08-24.** The full row is built for a
   list optimiser; the question Clay actually asked from his phone was "a list
   of models, how many I have, then how many battle ready", which was a curl

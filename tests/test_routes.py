@@ -80,7 +80,8 @@ def army_with_unit(db_path):
         datasheet_id = cur.lastrowid
         army_id = col.create_army(conn, 'Da Boyz')
         unit_id = col.create_unit(conn, datasheet_id, 10, army_id=army_id)
-    return {'army_id': army_id, 'unit_id': unit_id, 'datasheet_id': datasheet_id}
+    return {'army_id': army_id, 'unit_id': unit_id,
+            'datasheet_id': datasheet_id, 'faction_id': faction_id}
 
 
 # ── Auth ─────────────────────────────────────────────────
@@ -978,6 +979,157 @@ def test_the_csv_form_flattens(client, army_with_unit):
     header = body.splitlines()[0]
     assert 'bsdata_id' in header and 'owned' in header
     assert 'by_stage' not in header and 'points' not in header
+
+
+# ── The collection downloads as CSV ──────────────────────────────────────────
+#
+# Clay: "Do a csv that I can download from the site." Deliberately not the
+# export endpoint with a button on it: that one is per datasheet for a list
+# optimiser and knows only `army_id`, so a button on the collection screen
+# would download every Ork while the screen showed "Orks, unpainted".
+
+def _csv_names(response):
+    """The name column of a collection CSV, in order."""
+    import csv as csv_mod
+    body = response.get_data(as_text=True).splitlines()
+    return [r['name'] for r in csv_mod.DictReader(body)]
+
+
+def test_the_collection_downloads_as_csv(client, army_with_unit):
+    got = client.get('/collection.csv')
+
+    assert got.status_code == 200
+    assert got.mimetype == 'text/csv'
+    header = got.get_data(as_text=True).splitlines()[0]
+    assert header.startswith('name,faction,game_system,owned,built,battle_ready')
+
+
+def test_the_download_is_what_the_screen_is_showing(client, army_with_unit,
+                                                    db_path):
+    """The whole reason this is its own route. Both go through one
+    `_collection_filters` and one `_collection_rows`, so a filter cannot be
+    honoured by the page and quietly dropped by the file."""
+    import collection as col_mod
+    with db.connect(db_path) as conn:
+        other = db.upsert_faction(conn, 'Necrons', 'necrons')
+        conn.execute(
+            'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+            'created_at, updated_at) VALUES (?,?,?,1,?,?)',
+            ('warriors', 'Necron Warriors', other, db.now(), db.now()))
+        sheet = conn.execute(
+            "SELECT id FROM datasheets WHERE bsdata_id = 'warriors'"
+        ).fetchone()['id']
+        col_mod.create_unit(conn, sheet, 10)
+
+    for args in ('', '?faction_id=%d' % other, '?filter=unpainted',
+                 '?q=Boyz&own=mine', '?sort=owned'):
+        page = client.get('/collection' + args).get_data(as_text=True)
+        names = _csv_names(client.get('/collection.csv' + args))
+        for name in names:
+            assert name in page, f'{name} is in the file but not the page ({args})'
+
+
+def test_the_download_honours_the_faction_filter(client, army_with_unit,
+                                                  db_path):
+    with db.connect(db_path) as conn:
+        other = db.upsert_faction(conn, 'Necrons', 'necrons')
+        conn.execute(
+            'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+            'created_at, updated_at) VALUES (?,?,?,1,?,?)',
+            ('warriors', 'Necron Warriors', other, db.now(), db.now()))
+
+    names = _csv_names(client.get('/collection.csv?faction_id=%d'
+                                  % army_with_unit['faction_id']))
+
+    assert names == ['Boyz']
+
+
+def test_the_download_honours_a_chip(client, army_with_unit, db_path):
+    """The chips narrow rows already loaded, so they are the filter most
+    easily forgotten by a second code path. There is no second code path."""
+    import collection as col_mod
+    with db.connect(db_path) as conn:
+        unit = army_with_unit['unit_id']
+        for _ in range(9):
+            col_mod.advance_unit(conn, unit)
+
+    assert _csv_names(client.get('/collection.csv')) == ['Boyz']
+    assert _csv_names(client.get('/collection.csv?filter=unpainted')) == []
+
+
+def test_the_filename_says_what_is_in_it(client, army_with_unit):
+    """Four downloads called collection.csv are four files called
+    "collection (3).csv" and no way to tell the Orks from the Knights."""
+    plain = client.get('/collection.csv')
+    narrowed = client.get('/collection.csv?faction_id=%d&filter=unpainted'
+                          % army_with_unit['faction_id'])
+
+    assert 'filename="collection.csv"' in plain.headers['Content-Disposition']
+    assert ('filename="collection-orks-unpainted.csv"'
+            in narrowed.headers['Content-Disposition'])
+
+
+def test_the_download_needs_a_session(db_path, monkeypatch):
+    """It is a page, not an API route, so it redirects rather than 401s — and
+    a bearer token does not open it, because TOKEN_PATHS is /api/export/."""
+    import app as appmod
+    monkeypatch.setattr(appmod.db, 'DB_PATH', db_path)
+    anon_client = appmod.app.test_client()
+
+    got = anon_client.get('/collection.csv')
+
+    assert got.status_code == 302 and '/login' in got.headers['Location']
+
+
+def test_effort_rides_along_with_the_raw_counts(client, army_with_unit):
+    """Every progress figure is effort-weighted, and raw counts show alongside
+    rather than instead — a Knight and a Termagant are both "1 model"."""
+    header = client.get('/collection.csv').get_data(as_text=True).splitlines()[0]
+
+    for column in ('owned', 'battle_ready', 'effort_total', 'effort_done',
+                   'completion_pct'):
+        assert column in header
+
+
+# ── `faction=` narrows the export ────────────────────────────────────────────
+
+def test_the_export_filters_by_faction_name(client, army_with_unit, db_path):
+    with db.connect(db_path) as conn:
+        other = db.upsert_faction(conn, 'Necrons', 'necrons')
+        conn.execute(
+            'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+            'created_at, updated_at) VALUES (?,?,?,1,?,?)',
+            ('warriors', 'Necron Warriors', other, db.now(), db.now()))
+
+    rows = client.get(
+        '/api/export/inventory?faction=Orks').get_json()['datasheets']
+
+    assert rows and all(r['faction'] == 'Orks' for r in rows)
+
+
+def test_a_faction_can_be_a_slug_or_a_name_in_either_case(client, army_with_unit):
+    """It gets typed into a curl. `?faction=orks` is writable from memory;
+    `?faction_id=1` is a lookup first."""
+    for value in ('Orks', 'orks', 'ORKS'):
+        rows = client.get('/api/export/inventory?faction='
+                          + value).get_json()['datasheets']
+        assert rows, value
+
+
+def test_a_faction_that_does_not_exist_is_a_404(client, army_with_unit):
+    """Not an empty list. A cheerful zero rows is how you conclude you own no
+    Orks when you actually mistyped the name."""
+    got = client.get('/api/export/inventory?faction=Tyrandis')
+
+    assert got.status_code == 404
+    assert 'Tyrandis' in got.get_json()['error']
+
+
+def test_faction_and_fields_compose(client, army_with_unit):
+    rows = client.get('/api/export/inventory'
+                      '?faction=orks&fields=name,owned').get_json()['datasheets']
+
+    assert rows and set(rows[0]) == {'name', 'owned'}
 
 
 # ── `fields=` narrows the export ─────────────────────────────────────────────
