@@ -705,15 +705,15 @@ def test_a_missing_list_is_a_404(client):
     assert client.post('/api/lists/999/wishlist', json={}).status_code == 404
 
 
-def test_the_collection_screen_can_move_a_model_forward(client, db_path,
-                                                        army_with_unit):
-    """The front door has to be actionable. It rendered a stage bar and offered
-    no way to move anything, so from the app's main screen nothing could be
-    advanced at all."""
+def test_the_collection_screen_offers_a_way_in(client, db_path, army_with_unit):
+    """The front door has to be actionable — it once rendered a stage bar and
+    offered nothing at all. What it offers is a door rather than the action:
+    moving models is paint mode's on every screen now, and a list about which
+    units exist should not be a third place that does it."""
     body = client.get('/collection').get_data(as_text=True)
 
-    assert f'data-unit="{army_with_unit["unit_id"]}"' in body
-    assert 'Advance all' in body
+    assert f'/paint/{army_with_unit["unit_id"]}' in body
+    assert 'Advance all' not in body
     assert f'/units/{army_with_unit["unit_id"]}' in body, 'and it links through'
 
 
@@ -729,16 +729,16 @@ def test_a_finished_unit_offers_no_advance(client, db_path, army_with_unit):
     assert 'Advance all' not in body
 
 
-def test_each_box_advances_on_its_own(client, db_path, army_with_unit):
-    """Two boxes of the same unit are one inventory row but two units, and
-    advancing one must not touch the other."""
+def test_each_box_gets_its_own_way_in(client, db_path, army_with_unit):
+    """Two boxes of the same unit are one inventory row but two units, and each
+    line has to reach its own — one shared link would paint the wrong squad."""
     with db.connect(db_path) as conn:
         second = col.create_unit(conn, army_with_unit['datasheet_id'], 10)
 
     body = client.get('/collection').get_data(as_text=True)
 
-    assert f'data-unit="{army_with_unit["unit_id"]}"' in body
-    assert f'data-unit="{second}"' in body
+    assert f'/paint/{army_with_unit["unit_id"]}' in body
+    assert f'/paint/{second}' in body
 
 
 def test_a_wishlist_unit_says_bought_it_not_advance(client, db_path,

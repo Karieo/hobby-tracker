@@ -70,22 +70,21 @@
           {% if u.kit_status == 'listed' %}<span class="flag">listed for sale</span>{% endif %}
           {{ staleness(u.last_activity) }}
         </p>
-        {# The primary control: one tap, no selection, no thinking about which
-           models. "Advance N" is second because half-finished squads are normal. #}
+        {# Advancing lives in paint mode now, and only there. This list used to
+           carry "Advance all" and an Advance-N stepper on every card, which
+           made a page about *which units exist* into a third place to move
+           models — and the third one to disagree with the other two the moment
+           any of them changed.
+
+           A unit that is finished says so rather than offering a way in: there
+           is nothing to paint, and a live-looking control that does nothing is
+           the thing this app has already been caught doing twice. #}
         <div class="actions">
-          <button class="advance" data-unit="{{ u.id }}"
-                  {% if u.done_count == u.model_count %}disabled{% endif %}>
-            Advance all →
-          </button>
-          <div class="stepper">
-            <input type="number" min="1" max="{{ u.model_count }}" value="1"
-                   aria-label="how many models">
-            <button class="advance-n" data-unit="{{ u.id }}"
-                    {% if u.done_count == u.model_count %}disabled{% endif %}>
-              Advance
-            </button>
-          </div>
-          <a class="ghost" href="/paint/{{ u.id }}">Paint</a>
+          {% if u.done_count == u.model_count %}
+            <span class="ok-badge">Battle ready</span>
+          {% else %}
+            <a class="go" href="/paint/{{ u.id }}">Paint →</a>
+          {% endif %}
         </div>
       </li>
     {% endfor %}
