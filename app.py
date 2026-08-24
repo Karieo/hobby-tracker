@@ -498,6 +498,8 @@ def collection_page():
             points_min=request.args.get('points_min') or '',
             points_max=request.args.get('points_max') or '',
             own=f['own'], sort=f['sort'], sorts=col.INVENTORY_SORT_LABELS,
+            # Whether the To sell chip is worth offering at all.
+            summary_for_sale=col.home_summary(conn)['for_sale'],
             factions=col.list_factions(conn),
             stages=col.stage_ladder(conn),
             totals=_collection_totals(rows))

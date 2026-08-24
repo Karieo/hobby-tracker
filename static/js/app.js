@@ -593,3 +593,19 @@ document.addEventListener('click', (e) => {
   root.dataset.ground = next;
   try { localStorage.setItem('ground', next); } catch (err) { /* private mode */ }
 });
+
+/* ── The collection's filter bar ─────────────────────────
+ * Changing a control submits. The Apply button it replaced was a second tap
+ * for a decision already made, and on a phone it sat below the fold often
+ * enough that filters looked broken until you found it.
+ *
+ * `change`, not `input`: on a number field `input` fires per keystroke, so
+ * typing "150" would submit at "1". `change` waits for blur or Enter.
+ *
+ * No JS, no problem — the form still has its Search button and Enter still
+ * works, so this is the shortcut rather than the mechanism. */
+const filterbar = document.querySelector('.filterbar');
+if (filterbar) {
+  const form = filterbar.closest('form');
+  filterbar.addEventListener('change', () => form.submit());
+}

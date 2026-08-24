@@ -760,18 +760,6 @@ a.go {
    rest is there when a question needs it. Auto-open when any of them is set,
    so nothing filters silently behind a closed fold. */
 .findbar { display: block; }
-.morefilters { margin: .6rem 0 0; }
-.morefilters > summary {
-  cursor: pointer; font-size: .85rem; color: var(--muted);
-  padding: .5rem 0; min-height: 44px; display: flex; align-items: center;
-}
-.filtergrid {
-  display: grid; gap: .6rem; margin: .4rem 0 .6rem;
-  grid-template-columns: 1fr 1fr;
-}
-.filtergrid label { display: flex; flex-direction: column; gap: .25rem;
-                    font-size: .8rem; color: var(--muted); }
-.filtergrid select, .filtergrid input { width: 100%; margin-top: 0; }
 /* Two columns exist for the points pair alone: "from" and "up to" are one
    question and reading them stacked makes them look like two. Everything else
    spans the width, because a half-width select truncates its longest option
@@ -991,3 +979,28 @@ h2 + .panel, h2 + form, h2 + .hint { margin-top: 0; }
 .piles.quick span { font-size: .68rem; text-transform: uppercase;
                     letter-spacing: .12em; color: var(--muted); }
 .piles.quick a:hover { border-color: var(--accent); }
+
+/* ── The filter bar ──────────────────────────────────────
+   Clay: "This is a mess and hard to use. Please simplify and alway show."
+
+   One wrapping row, no labels, no Apply. Every select's resting option says
+   what it is — "Any faction", "Any stage", "Name" — so a label above it was
+   saying the same thing twice and costing a line each. What replaced a
+   seven-field stacked grid inside a disclosure that force-opened itself.
+
+   Selects size to their content rather than filling the row: three narrow
+   controls read as a toolbar, three full-width ones read as a form to fill
+   in. */
+.filterbar { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0 0; }
+/* Two per row on a phone. Left to size themselves a select is as wide as its
+   longest option — "Has some base prepared" — so each took a row of its own
+   and the toolbar read as a form again. */
+.filterbar select { flex: 1 1 9rem; width: 9rem; max-width: 100%;
+                    font-size: .85rem; padding: .35rem .5rem; min-height: 38px; }
+.ptsrange { display: inline-flex; align-items: center; gap: .25rem;
+            color: var(--muted); font-size: .85rem; }
+.ptsrange input { width: 4.2rem; font-size: .85rem; padding: .35rem .4rem;
+                  min-height: 38px; }
+/* Two rails now — what to show, then how to narrow it. The gap between them
+   is what says they are different questions. */
+.chips + .chips { margin-top: .3rem; }
