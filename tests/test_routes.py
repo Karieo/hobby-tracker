@@ -866,93 +866,76 @@ def test_the_csv_form_flattens(client, army_with_unit):
 
 # ── Selling, trading, wanting more ───────────────────────────────────────────
 
-def test_the_unit_page_offers_all_three(client, army_with_unit):
-    """The endpoint existing is not the feature. Three of the last four things
-    Clay asked for turned out to be already built and unreachable."""
+def test_the_unit_page_offers_all_three_piles(client, army_with_unit):
+    """The endpoint existing is not the feature — several of the last things
+    Clay asked for turned out to be built already and unreachable."""
     body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
 
-    assert 'id="dispose-models"' in body
-    assert 'data-status="sold"' in body and 'data-status="gifted"' in body
-    assert 'id="wishlist-models"' in body
+    for pile in ('owned', 'wishlist', 'gone'):
+        assert f'data-pile="{pile}"' in body, pile
+    assert 'data-delta="1"' in body and 'data-delta="-1"' in body
 
 
-def test_selling_through_the_api_keeps_the_rows(client, army_with_unit, db_path):
+def test_no_money_is_asked_for_anywhere(client, army_with_unit):
+    """Clay: "I don't care about sell price or purchase price." A field the app
+    does not need is a decision it should not ask for."""
+    body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    assert 'name="price"' not in body
+    import app as appmod
+    assert appmod.CURRENCY_SYMBOL not in body
+
+
+def test_a_pile_moves_one_at_a_time(client, army_with_unit, db_path):
     unit = army_with_unit['unit_id']
 
-    got = client.post(f'/api/units/{unit}/dispose',
-                      json={'count': 4, 'status': 'sold', 'price': '20.00'})
-
-    assert got.status_code == 200 and got.get_json()['disposed'] == 4
-    with db.connect(db_path) as conn:
-        assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 10
-        assert conn.execute('SELECT disposed_price_cents FROM models '
-                            'WHERE disposed_on IS NOT NULL LIMIT 1'
-                            ).fetchone()[0] == 2000
-
-
-def test_a_price_nobody_can_parse_is_no_price(client, army_with_unit, db_path):
-    """It used to be `round(float(price) * 100)` inline, which is a 500 the
-    first time something non-numeric arrives."""
-    unit = army_with_unit['unit_id']
-
-    got = client.post(f'/api/units/{unit}/dispose',
-                      json={'count': 1, 'status': 'sold', 'price': 'a fiver'})
+    got = client.post(f'/api/units/{unit}/pile/gone', json={'delta': 1})
 
     assert got.status_code == 200
-    with db.connect(db_path) as conn:
-        assert conn.execute('SELECT disposed_price_cents FROM models '
-                            'WHERE disposed_on IS NOT NULL').fetchone()[0] is None
+    assert got.get_json() == {'moved': 1, 'owned': 9, 'wishlist': 0, 'gone': 1}
 
 
-def test_a_currency_symbol_is_tolerated(client, army_with_unit, db_path):
-    """A value pasted back out of the app arrives with its symbol on it."""
+def test_every_pile_has_an_undo(client, army_with_unit):
+    """Nothing here is confirmed, because every button has its opposite beside
+    it — which is a better undo than a dialog."""
     unit = army_with_unit['unit_id']
 
-    client.post(f'/api/units/{unit}/dispose',
-                json={'count': 1, 'status': 'sold', 'price': '$55.50'})
-
-    with db.connect(db_path) as conn:
-        assert conn.execute('SELECT disposed_price_cents FROM models '
-                            'WHERE disposed_on IS NOT NULL').fetchone()[0] == 5550
-
-
-def test_an_unknown_disposal_is_refused(client, army_with_unit):
-    got = client.post(f'/api/units/{army_with_unit["unit_id"]}/dispose',
-                      json={'count': 1, 'status': 'incinerated'})
-
-    assert got.status_code == 400
+    for pile in ('owned', 'wishlist', 'gone'):
+        client.post(f'/api/units/{unit}/pile/{pile}', json={'delta': 1})
+        back = client.post(f'/api/units/{unit}/pile/{pile}', json={'delta': -1})
+        assert back.status_code == 200, pile
+    counts = back.get_json()
+    assert counts['owned'] == 10 and counts['wishlist'] == 0
+    assert counts['gone'] == 0
 
 
-def test_disposing_none_is_refused(client, army_with_unit):
-    got = client.post(f'/api/units/{army_with_unit["unit_id"]}/dispose',
-                      json={'count': 0, 'status': 'sold'})
-
-    assert got.status_code == 400
-
-
-def test_wishlisting_through_the_api(client, army_with_unit):
+def test_a_disposal_still_keeps_its_rows(client, army_with_unit, db_path):
+    """Simplifying the control did not change what it means: sold models keep
+    their row and their stage, and only stop being owned."""
     unit = army_with_unit['unit_id']
 
-    got = client.post(f'/api/units/{unit}/wishlist', json={'count': 5})
+    client.post(f'/api/units/{unit}/pile/gone', json={'delta': 1})
 
-    assert got.status_code == 200 and got.get_json()['wishlisted'] == 5
-    body = client.get('/collection?own=wanted').get_data(as_text=True)
-    assert 'Boyz' in body
-
-
-def test_both_refuse_a_unit_that_is_not_there(client):
-    assert client.post('/api/units/9999/dispose',
-                       json={'count': 1, 'status': 'sold'}).status_code == 404
-    assert client.post('/api/units/9999/wishlist',
-                       json={'count': 1}).status_code == 404
+    with db.connect(db_path) as conn:
+        assert conn.execute('SELECT COUNT(*) FROM models').fetchone()[0] == 10
+        assert conn.execute('SELECT COUNT(*) FROM models '
+                            'WHERE disposed_on IS NOT NULL').fetchone()[0] == 1
 
 
-# ── The collection downloads as CSV ──────────────────────────────────────────
-#
-# Clay: "Do a csv that I can download from the site." Deliberately not the
-# export endpoint with a button on it: that one is per datasheet for a list
-# optimiser and knows only `army_id`, so a button on the collection screen
-# would download every Ork while the screen showed "Orks, unpainted".
+def test_an_unknown_pile_is_a_404(client, army_with_unit):
+    assert client.post(f'/api/units/{army_with_unit["unit_id"]}/pile/attic',
+                       json={'delta': 1}).status_code == 404
+
+
+def test_a_pile_needs_a_direction(client, army_with_unit):
+    assert client.post(f'/api/units/{army_with_unit["unit_id"]}/pile/gone',
+                       json={'delta': 0}).status_code == 400
+
+
+def test_a_unit_that_is_not_there_is_a_404(client):
+    assert client.post('/api/units/9999/pile/gone',
+                       json={'delta': 1}).status_code == 404
+
 
 def _csv_names(response):
     """The name column of a collection CSV, in order."""
@@ -1534,13 +1517,13 @@ def test_the_unit_page_offers_the_control(client, army_with_unit):
     """The endpoint existing is not the feature — Clay could not reach it."""
     body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
 
-    assert 'id="remove-models"' in body
+    assert 'data-pile="owned"' in body and 'data-delta="-1"' in body
     # CLAUDE.md: every screen offering one has to say which it is, or the cheap
     # control becomes the one Clay reaches for and the spend history empties.
-    # The wording has changed twice; what it has to do has not. It used to say
-    # "dispose of the kit", which is now a page that does not exist.
-    assert 'not a sale' in body, \
-        'the panel has to say it deletes rather than sells'
+    # The wording has changed three times and the control twice — a paragraph,
+    # then a sentence, now a row label. What it has to do has not changed.
+    assert 'deletes a miscount' in body and 'keeps the model' in body, \
+        'the page has to say which of the two minus buttons destroys anything'
 
 
 # ── The ramp's bottom rung ───────────────────────────────
@@ -1559,8 +1542,8 @@ def test_the_unit_page_can_add_and_remove_models(client, army_with_unit):
     never been called from anywhere."""
     body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
 
-    assert 'id="add-models"' in body
-    assert 'id="remove-models"' in body
+    assert 'data-pile="owned"' in body
+    assert 'data-delta="1"' in body and 'data-delta="-1"' in body
 
 
 def test_adding_models_puts_them_where_plastic_arrives(client, army_with_unit, db_path):
@@ -1677,7 +1660,7 @@ def test_the_unit_page_is_a_summary_and_a_count(client, army_with_unit):
     body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
 
     assert 'class="statgrid"' in body, 'the summary stays'
-    assert 'id="add-models"' in body and 'id="remove-models"' in body
+    assert 'data-pile="owned"' in body, 'both halves of the count'
     assert 'id="bulk"' not in body, 'the per-model stage picker went with the ramp'
     assert 'name="model_ids"' not in body
     assert 'name="nickname"' not in body

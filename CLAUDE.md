@@ -273,6 +273,34 @@ shipped, and it would have been left unguarded.
 one unhelpful is that it listed boxes, and a box is not a thing Clay does
 anything with once the models are out of it.
 
+## Three piles, and no ledger
+
+Clay: *"This is over complicated, I just want to be able to add/remove one at
+a time is fine, I don't care about sell price or purchase price."*
+
+A model is in one of three piles — **owned**, **wishlist**, **gone** — and the
+unit page is three rows of plus and minus. That replaced four panels, each
+with a count box and a submit button, one of them also asking what the models
+went for. Every one of those fields was a decision the app wanted and did not
+need.
+
+`POST /api/units/<id>/pile/<pile>` with a `delta` handles all six directions.
+`_PILES` in `app.py` is the whole mapping.
+
+**Sold, traded and given away are one pile.** The difference between them is a
+story rather than a number, and the models have gone either way. The
+`disposed_as` and `disposed_price_cents` columns still exist and still record
+`'sold'` — nothing collects a price any more, and re-introducing one means
+deciding it is worth a field, not just filling a column that happens to be
+there.
+
+**Every button has its opposite beside it**, which is why nothing here asks for
+confirmation. `undispose_models` and `unwishlist_models` are those undos.
+
+The counts repaint from the reply rather than reloading: these get tapped
+several times running, and a reload between each throws away the scroll
+position.
+
 ## Backups
 
 `backup.sh` snapshots via `sqlite3 .backup`, never `cp` — the app holds a

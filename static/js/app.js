@@ -319,79 +319,42 @@ document.addEventListener('click', async (e) => {
   } catch (err) { toast(err.message, 'error'); }
 });
 
-const addForm = $('#add-models');
-if (addForm) {
-  addForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const count = Number($('input[name="count"]', addForm).value);
-    try {
-      // No stage_id: the server puts them at the first owned stage, which is
-      // where plastic actually arrives. Anything further along is a claim the
-      // app has no business making on Clay's behalf.
-      await post(`/api/units/${addForm.dataset.unit}/models`, {count});
-      location.reload();
-    } catch (err) { toast(err.message, 'error'); }
-  });
-}
-
-const removeForm = $('#remove-models');
-if (removeForm) {
-  removeForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const count = Number($('input[name="count"]', removeForm).value);
-    const unit = removeForm.dataset.unit;
-    // Confirmed, unlike every other control here. The rest of this page moves
-    // models between stages and is undone by tapping the other way; this one
-    // deletes rows, and there is nothing to tap afterwards.
-    if (!window.confirm(
-        `Remove ${count} model${count === 1 ? '' : 's'}? This cannot be undone.`)) {
-      return;
-    }
-    try {
-      const data = await post(`/api/units/${unit}/models`, {count}, 'DELETE');
-      if (data && data.unit_deleted) {
-        // Nothing left to come back to.
-        location.href = '/collection';
-        return;
-      }
-      location.reload();
-    } catch (err) { toast(err.message, 'error'); }
-  });
-}
-
-/* ── Leaving the collection, and wanting more ─────────────
- * Two buttons on one form: which one was pressed decides the status, so the
- * count and the price are typed once rather than in two near-identical
- * panels. `submitter` is what carries that — a plain submit listener cannot
- * tell them apart.
+/* ── The three piles ─────────────────────────────────────
+ * One listener on the list, not six on the buttons, so rows can change
+ * without rewiring anything.
  *
- * Not confirmed, unlike Remove above. That one deletes rows and has nothing
- * to tap afterwards; this keeps every row, so the worst case is a wrong number
- * that can be corrected. */
-const disposeForm = $('#dispose-models');
-if (disposeForm) {
-  disposeForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const status = (e.submitter && e.submitter.dataset.status) || 'sold';
-    const count = Number($('input[name="count"]', disposeForm).value);
-    const price = $('input[name="price"]', disposeForm).value.trim();
+ * The reply carries all three counts, so a tap repaints in place instead of
+ * reloading. That matters more than it sounds: these get tapped several times
+ * running — "I built three more" is three taps — and a reload between each one
+ * throws away the scroll position every time.
+ *
+ * Nothing is confirmed. Every button has its opposite beside it, which is a
+ * better undo than a dialog. */
+const piles = $('.piles');
+if (piles) {
+  piles.addEventListener('click', async (e) => {
+    const button = e.target.closest('.step');
+    if (!button) return;
+    const {pile, delta} = button.dataset;
+    const steps = $$('.step', piles);
+    steps.forEach((b) => { b.disabled = true; });
     try {
-      await post(`/api/units/${disposeForm.dataset.unit}/dispose`,
-                 {count, status, price: price || null});
-      location.reload();
-    } catch (err) { toast(err.message, 'error'); }
-  });
-}
-
-const wishlistForm = $('#wishlist-models');
-if (wishlistForm) {
-  wishlistForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const count = Number($('input[name="count"]', wishlistForm).value);
-    try {
-      await post(`/api/units/${wishlistForm.dataset.unit}/wishlist`, {count});
-      location.reload();
-    } catch (err) { toast(err.message, 'error'); }
+      const data = await post(`/api/units/${piles.dataset.unit}/pile/${pile}`,
+                              {delta: Number(delta)});
+      $$('.pcount', piles).forEach((el) => {
+        if (data[el.dataset.pile] !== undefined) {
+          el.textContent = data[el.dataset.pile];
+        }
+      });
+      // The last model leaving deletes the unit, and there is then no page.
+      if (!data.owned && !data.wishlist && !data.gone) {
+        location.href = '/collection';
+      }
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      steps.forEach((b) => { b.disabled = false; });
+    }
   });
 }
 

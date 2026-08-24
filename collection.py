@@ -652,6 +652,64 @@ def dispose_models(conn, unit_id, count, status='sold', price_cents=None,
     return {'disposed': len(going), 'remaining': len(live) - len(going)}
 
 
+def pile_counts(conn, unit_id):
+    """How many of this unit are owned, wanted and gone.
+
+    One query for the three numbers the unit page shows beside its plus and
+    minus buttons, so a tap can repaint them without reloading the page.
+    """
+    row = conn.execute("""
+        SELECT COALESCE(SUM(CASE WHEN m.disposed_on IS NULL AND s.is_owned
+                                 THEN 1 ELSE 0 END), 0) AS owned,
+               COALESCE(SUM(CASE WHEN m.disposed_on IS NULL AND NOT s.is_owned
+                                 THEN 1 ELSE 0 END), 0) AS wishlist,
+               COALESCE(SUM(CASE WHEN m.disposed_on IS NOT NULL
+                                 THEN 1 ELSE 0 END), 0) AS gone
+          FROM models m JOIN stages s ON s.id = m.stage_id
+         WHERE m.unit_id = ?
+    """, (unit_id,)).fetchone()
+    return {'owned': row['owned'], 'wishlist': row['wishlist'],
+            'gone': row['gone']}
+
+
+def undispose_models(conn, unit_id, count=1):
+    """Put one back. The undo for a mis-tap on Sold.
+
+    Most recently disposed first, so tapping minus straight after plus undoes
+    exactly what plus did. The row never left, so this only clears the three
+    columns that took it out of the counts.
+    """
+    coming_back = [r['id'] for r in conn.execute("""
+        SELECT id FROM models
+         WHERE unit_id = ? AND disposed_on IS NOT NULL
+         ORDER BY disposed_on DESC, id DESC LIMIT ?
+    """, (unit_id, max(0, count)))]
+    if not coming_back:
+        return 0
+    marks = ','.join('?' * len(coming_back))
+    conn.execute(f"""UPDATE models SET disposed_on = NULL, disposed_as = NULL,
+                                       disposed_price_cents = NULL
+                      WHERE id IN ({marks})""", coming_back)
+    _touch_unit(conn, unit_id)
+    return len(coming_back)
+
+
+def unwishlist_models(conn, unit_id, count=1):
+    """Stop wanting one. Deletes the wishlist rows — nothing was ever owned,
+    so there is no history to keep, which is why this is not a disposal."""
+    doomed = [r['id'] for r in conn.execute("""
+        SELECT m.id FROM models m JOIN stages s ON s.id = m.stage_id
+         WHERE m.unit_id = ? AND s.is_owned = 0 AND m.disposed_on IS NULL
+         ORDER BY m.id DESC LIMIT ?
+    """, (unit_id, max(0, count)))]
+    if not doomed:
+        return 0
+    conn.executemany('DELETE FROM models WHERE id = ?',
+                     [(i,) for i in doomed])
+    _touch_unit(conn, unit_id)
+    return len(doomed)
+
+
 def wishlist_models(conn, unit_id, count):
     """Put more of this on the wishlist.
 
@@ -1517,7 +1575,7 @@ INVENTORY_SORT_LABELS = [
 def inventory(conn, query=None, faction_id=None, game_system=None,
               include_unowned=False, limit=200, stage_id=None,
               points_min=None, points_max=None, only_wanted=False,
-              sort='name'):
+              only_gone=False, sort='name'):
     """What Clay owns, one row per datasheet: how many, and what state.
 
     Grouped by datasheet rather than by army or by box, because the questions
@@ -1572,6 +1630,10 @@ def inventory(conn, query=None, faction_id=None, game_system=None,
     havings = [] if include_unowned else ['(owned_count > 0 OR wanted_count > 0)']
     if only_wanted:
         havings.append('wanted_count > 0')
+    # The pile Clay has moved out: sold, traded, given away. A list rather than
+    # a ledger — he said he does not care what any of it went for.
+    if only_gone:
+        havings = ['gone_count > 0']
     if stage_id:
         havings.append('at_stage > 0')
     # A datasheet with no points row has NULL for both, and NULL fails either
@@ -1604,6 +1666,10 @@ def inventory(conn, query=None, faction_id=None, game_system=None,
                d.basing, d.keywords,
                COALESCE(SUM(CASE WHEN st.id = ? THEN 1 ELSE 0 END), 0)
                                                             AS at_stage,
+               (SELECT COUNT(*) FROM models gm
+                  JOIN units gu ON gu.id = gm.unit_id
+                 WHERE gu.datasheet_id = d.id
+                   AND gm.disposed_on IS NOT NULL)           AS gone_count,
                ({points_low})                               AS points_low,
                ({points_high})                              AS points_high,
                MAX(m.stage_changed_at)                      AS last_activity
@@ -1675,6 +1741,8 @@ def home_summary(conn):
     row = conn.execute(f"""
         SELECT COUNT(m.id)                                          AS models,
                COALESCE(SUM(CASE WHEN st.is_owned THEN 1 ELSE 0 END), 0) AS owned,
+               COALESCE(SUM(CASE WHEN NOT st.is_owned THEN 1 ELSE 0 END), 0)
+                                                                    AS wanted,
                COALESCE(SUM(CASE WHEN st.is_terminal THEN 1 ELSE 0 END), 0) AS done,
                COALESCE(SUM(CASE WHEN st.is_owned THEN d.effort ELSE 0 END), 0)
                                                                     AS effort_total,
@@ -1691,6 +1759,12 @@ def home_summary(conn):
         "SELECT COUNT(*) AS n FROM kits "
         " WHERE status = 'owned' AND box_state = 'sealed'").fetchone()['n']
 
+    # The gone pile, for the homepage's quick glance. Its own query because the
+    # aggregate above joins models with the disposed ones already excluded.
+    gone = conn.execute(
+        'SELECT COUNT(*) AS n FROM models WHERE disposed_on IS NOT NULL'
+    ).fetchone()['n']
+
     counts = {r['stage_id']: r['n'] for r in conn.execute(f"""
         SELECT m.stage_id, COUNT(*) AS n
           FROM units u JOIN models m ON m.unit_id = u.id AND m.disposed_on IS NULL
@@ -1704,6 +1778,8 @@ def home_summary(conn):
         'done': row['done'],
         'completion': _pct(row['effort_done'], row['effort_total']),
         'sealed': sealed,
+        'wanted': row['wanted'],
+        'gone': gone,
         'segments': _segments(ladder, counts, row['owned']),
     }
 
