@@ -144,13 +144,6 @@ document.addEventListener('click', (e) => {
   const all = e.target.closest('button.advance');
   if (all && all.dataset.unit) { advance(all.dataset.unit, {}, 'Whole unit'); return; }
 
-  const some = e.target.closest('button.advance-n');
-  if (some && some.dataset.unit) {
-    const input = $('input', some.closest('.stepper'));
-    advance(some.dataset.unit, {count: Number(input.value) || 1});
-    return;
-  }
-
   const tick = e.target.closest('button.tick');
   if (tick && tick.dataset.unit) {
     advance(tick.dataset.unit, {count: 1, from_stage_id: Number(tick.dataset.from)});

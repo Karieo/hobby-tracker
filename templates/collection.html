@@ -224,13 +224,17 @@
                   {% endif %}
                 </a>
                 {% if u.owned_count == 0 %}
-                  {# A wishlist unit. Advancing it means "I went and bought
-                     these", which is the loop closing from §2.6 back to the
-                     collection — but calling that "advance all" would turn a
-                     want into an owned model without saying so. #}
+                  {# A wishlist unit, and the one button here that is not hobby
+                     progress. Advancing it means "I went and bought these" —
+                     acquisition, the loop closing from §2.6 back into the
+                     collection, and exactly what this screen is for. Calling
+                     it "advance all" would turn a want into an owned model
+                     without saying so. #}
                   <button class="advance" data-unit="{{ u.id }}">Bought it →</button>
                 {% elif u.done_count < u.model_count %}
-                  <button class="advance" data-unit="{{ u.id }}">Advance all →</button>
+                  {# Not "Advance all". Moving models between stages is paint
+                     mode's, on every screen now. #}
+                  <a class="go" href="/paint/{{ u.id }}">Paint →</a>
                 {% else %}
                   <span class="ok-badge">Battle ready</span>
                 {% endif %}

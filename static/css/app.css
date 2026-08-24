@@ -316,8 +316,6 @@ button:disabled { opacity: .4; cursor: not-allowed; }
    a different place on the row and the pipeline stops reading as a pipeline. */
 .nudge button:disabled { visibility: hidden; }
 .ghost { background: transparent; color: var(--muted); font-size: .9rem; }
-.stepper { display: flex; gap: .3rem; align-items: center; }
-.stepper input { width: 3.6rem; text-align: center; padding: .6rem .3rem; }
 
 /* The `.pipe` list this replaced is gone. Implementing Tracker Wireframes §2c
    rebuilt both stage screens on `.ramp` / `.rung`, and no template has rendered
