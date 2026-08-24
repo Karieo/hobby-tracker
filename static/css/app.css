@@ -651,12 +651,35 @@ h2 { font-size: 1.4rem; }
 .sealed { color: var(--rust); }
 
 /* Ground toggle in the nav: a phone in light mode at a dark desk is exactly
-   the case prefers-color-scheme gets wrong. */
+   the case prefers-color-scheme gets wrong.
+
+   It showed the word "Ground" — the design's name for a palette, and nothing
+   to anyone else. Now it shows the destination: a moon while it is light, a
+   sun while it is dark.
+
+   Which icon shows is CSS, not JavaScript, and the three states below are the
+   same three the palette itself uses: the light default, the OS saying dark
+   with no override, and an override either way. A script cannot answer this
+   before first paint without reading prefers-color-scheme and duplicating the
+   media query anyway — so let the media query do it. */
 #ground {
   margin-left: auto; background: none; border: 1px solid var(--rule);
-  color: var(--muted); min-height: 30px; padding: 0 .5rem; font-size: .62rem;
-  text-transform: uppercase; letter-spacing: .1em; cursor: pointer;
+  color: var(--muted); min-height: 30px; min-width: 34px; cursor: pointer;
+  padding: 0 .5rem; display: inline-flex; align-items: center;
+  justify-content: center;
 }
+#ground:hover { color: var(--ink); border-color: var(--ink); }
+/* Light: offer the moon. */
+#ground .sun { display: none; }
+#ground .moon { display: block; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-ground="blueprint"]) #ground .moon { display: none; }
+  :root:not([data-ground="blueprint"]) #ground .sun { display: block; }
+}
+:root[data-ground="nuln"] #ground .moon { display: none; }
+:root[data-ground="nuln"] #ground .sun { display: block; }
+:root[data-ground="blueprint"] #ground .moon { display: block; }
+:root[data-ground="blueprint"] #ground .sun { display: none; }
 
 /* A small multiple's bar: same data, glanceable width. */
 .bar.mini { height: 8px; }
