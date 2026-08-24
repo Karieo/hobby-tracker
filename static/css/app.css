@@ -698,6 +698,10 @@ a.go {
 /* A rung is a name and three small controls. It never wants to be wider than
    this, on any screen. */
 .ramp { max-width: 30rem; }
+/* The unit page's copy has no controls at all — the ladder moved to paint
+   mode and what is left is a count to read. The rungs keep their shape so the
+   two screens still look like the same object. */
+.ramp.read-only .nudge { justify-content: flex-end; }
 
 .detail-cols { display: grid; gap: 1.5rem 2.5rem; }
 @media (min-width: 58rem) {

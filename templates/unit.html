@@ -18,94 +18,39 @@
     <a class="ghost" href="/paint/{{ unit.id }}">Paint mode</a>
   </header>
 
-  {# The ramp, from Tracker Wireframes §2c — the same control the paint session
-     uses, because the two screens answer the same question and having two
-     different pipelines for it was the split this design closed.
+  {# The ramp lived here and in paint mode, which is one control on two
+     screens — Clay: "Paint mode and collection have the same thing, let's
+     leave the collection as just a way to add or remove models, the paint
+     mode has the ramp."
 
-     The whole pipeline is present with empty rungs muted: a gap you can see is
-     information, a row that vanishes is not. Stages this unit never walks — a
-     Rhino has no base — are struck through and inert rather than hidden, so
-     the ladder stays the same length on every screen and there is nothing to
-     tap that would record work that never happened.
-
-     Typing straight into a count replaces the old "Set a count" form: it is
-     the same reconcile, at the stage it refers to, without a second form to
-     find and a stage to re-select. #}
-  {# Two columns on a wide screen, one on a phone. The pipeline is the working
-     half and gets the narrow column, because a rung is a name and three small
-     controls — stretched across a desk monitor it puts a foot of empty paper
-     between what you are reading and what you are tapping. Everything you
-     touch occasionally rides alongside instead of below, which is what the
-     extra width is actually good for. #}
-  <div class="detail-cols">
-  <section class="col-work">
-  <h2>Pipeline</h2>
-  {# `ns.first_owned` marks the bottom rung — "On sprue" for most units. Its
-     −1 has nowhere to step back to, so until now it was enabled, moved
-     nothing, and toasted "Nothing to step back": a live-looking control that
-     could never do anything. It removes a model instead, which is the thing
-     Clay actually wanted there. #}
-  {% set ns = namespace(first_owned=true) %}
-  <ul class="ramp" data-unit="{{ unit.id }}">
+     So this page keeps the count and loses the controls. What is left is
+     read-only, because /collection's own promise is "what you own, how many,
+     and what state they are in" and a unit page that could not answer the
+     third would be a worse screen, not a simpler one. Moving models is one
+     tap away in the header. #}
+  <h2>Where they are</h2>
+  <ul class="ramp read-only">
     {% for s in breakdown %}
       {% if s.is_owned %}
         <li class="rung {% if not s.count %}empty{% endif %}
                    {% if not s.applies %}na{% endif %}
-                   {% if s.is_terminal %}terminal{% endif %}"
-            data-stage="{{ s.id }}">
+                   {% if s.is_terminal %}terminal{% endif %}">
           <span class="swatch s{{ s.position }}"></span>
           <span class="rname">{{ s.name }}</span>
-          <span class="nudge">
-            {% if ns.first_owned %}
-              <button class="untick removes" data-unit="{{ unit.id }}"
-                      data-from="{{ s.id }}"
-                      {% if not s.count or not s.applies %}disabled{% endif %}
-                      aria-label="remove one model from the collection">−1</button>
-            {% else %}
-              <button class="untick" data-unit="{{ unit.id }}" data-from="{{ s.id }}"
-                      {% if not s.count or not s.applies %}disabled{% endif %}
-                      aria-label="step one model back from {{ s.name }}">−1</button>
-            {% endif %}
-            {# A number to read, not a field to type in — the same control
-               paint mode has always had. It was an input so a count could be
-               reconciled by typing it; what that cost was a box that looks
-               editable on every rung of a ladder whose actual controls are the
-               two buttons beside it. Reconciling still has three doors: −1/+1,
-               "Advance" with a count, and picking models below. #}
-            <span class="count-at" data-stage="{{ s.id }}"
-                  aria-label="{{ s.count }} at {{ s.name }}">{{ s.count }}</span>
-            {% if s.is_terminal %}
-              <button disabled aria-hidden="true">—</button>
-            {% else %}
-              <button class="tick" data-unit="{{ unit.id }}" data-from="{{ s.id }}"
-                      {% if not s.can_advance or not s.applies %}disabled{% endif %}
-                      aria-label="advance one model from {{ s.name }}">+1</button>
-            {% endif %}
-          </span>
+          <span class="nudge"><span class="count-at">{{ s.count }}</span></span>
         </li>
-        {% set ns.first_owned = false %}
       {% endif %}
     {% endfor %}
   </ul>
-
-  <div class="actions wide">
-    <button class="advance primary" data-unit="{{ unit.id }}">Advance all →</button>
-    <div class="stepper">
-      <input type="number" min="1" max="{{ models|length }}" value="1"
-             aria-label="how many models">
-      <button class="advance-n" data-unit="{{ unit.id }}">Advance</button>
-    </div>
-  </div>
+  {# A plain link, not a `.go` button: the header already carries one, and a
+     filled button dropped into the middle of a sentence makes the words wrap
+     around it and stops the sentence reading as a sentence. #}
   <p class="hint">
-    Advancing a count fills from behind first, so the models furthest back
-    catch up and anything finished is disturbed last — "six of these ten are
-    primed" never asks which six. The bottom rung's −1 removes a model from
-    the collection; every other −1 steps one back a stage.
+    <a href="/paint/{{ unit.id }}">Paint mode</a> is where these move — the
+    same ladder with the −1 and +1 on it, built for a phone propped against a
+    paint pot.
   </p>
 
-  </section>
-
-  <section class="col-admin">
   {% if options %}
     {# Spec §8's assembly prompt, as a control rather than an interrupt.
        Every model is stamped with its unit's datasheet the moment it is
@@ -175,18 +120,32 @@
     <button type="submit">Save</button>
   </form>
 
-  <h2>Too many?</h2>
-  {# The counterpart to every other control on this page, which move models
-     between stages and are undone by tapping the other way. This one deletes
-     rows, so it says what it is and asks before doing it.
+  <h2>How many</h2>
+  {# The two halves of what this screen is now for. Adding wires up
+     POST /api/units/<id>/models, which shipped with the first commit and had
+     never been called from anywhere — the same state the delete endpoint was
+     in until yesterday. #}
+  <p class="hint">
+    A miscount either way. Models arrive at
+    <b>{{ (stages | selectattr('is_owned') | first).name }}</b> — the
+    ladder starts where the plastic does, and paint mode moves them from there.
+  </p>
+  <form class="panel row" id="add-models" data-unit="{{ unit.id }}">
+    <label>Add
+      <input type="number" name="count" min="1" value="1" autocomplete="off"
+             aria-label="how many models to add">
+    </label>
+    <button class="go" type="submit">Add</button>
+  </form>
 
+  {# Removing deletes rows, so unlike adding it says what it is and asks first.
      It is deliberately not the disposal path: a sold kit keeps its models and
      its spend history, and confusing the two would quietly erase what Clay
      paid for something months before he went looking for it. #}
   <p class="hint">
-    For plastic that was never there — a mistyped count, or a bulk add that ran
-    twice. The least advanced go first, so anything you have recorded work
-    against is the last to leave.
+    Removing is for plastic that was never there — a mistyped count, or a bulk
+    add that ran twice. The least advanced go first, so anything you have
+    recorded work against is the last to leave.
     {% if models|length %}
       Removing all {{ models|length }} deletes the unit.
     {% endif %}
@@ -214,8 +173,6 @@
     </label>
     <button type="submit">Move</button>
   </form>
-  </section>
-  </div>
 {% endblock %}
 
 {% block scripts %}

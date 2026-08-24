@@ -1002,11 +1002,29 @@ def test_a_refused_reconcile_still_returns_the_true_counts(client, army_with_uni
     assert total < 999, 'the breakdown reports what is really there'
 
 
-def test_unit_detail_shows_the_ramp_not_the_old_count_form(client, army_with_unit):
+def test_unit_detail_reads_the_stages_and_never_moves_them(client, army_with_unit):
+    """Clay: "Paint mode and collection have the same thing, let's leave the
+    collection as just a way to add or remove models, the paint mode has the
+    ramp." The count stays — a unit page that could not say what state things
+    are in would be a worse screen, not a simpler one — but nothing here moves
+    a model between stages any more."""
     body = client.get(f"/units/{army_with_unit['unit_id']}").get_data(as_text=True)
-    assert 'count-at' in body, 'counts are editable in place'
+
+    assert 'count-at' in body, 'the counts are still readable'
     assert 'id="count-form"' not in body, 'the separate Set-a-count form is gone'
-    assert 'untick' in body, 'and the ramp carries −1'
+    for control in ('untick', 'class="tick"', 'button class="advance'):
+        assert control not in body, f'{control} belongs to paint mode now'
+    assert f'/paint/{army_with_unit["unit_id"]}' in body, \
+        'and the page says where the ladder went'
+
+
+def test_paint_mode_still_has_the_ramp(client, army_with_unit):
+    """The other half of the same instruction. Moving this off the unit page
+    only works if it is somewhere."""
+    body = client.get(f"/paint/{army_with_unit['unit_id']}").get_data(as_text=True)
+
+    assert 'untick' in body and 'class="tick"' in body
+    assert 'class="advance primary huge"' in body
 
 
 def test_every_pipeline_row_carries_its_stage_id(client, army_with_unit):
@@ -1018,7 +1036,9 @@ def test_every_pipeline_row_carries_its_stage_id(client, army_with_unit):
     """
     import re
     unit_id = army_with_unit['unit_id']
-    for url in (f'/units/{unit_id}', f'/paint/{unit_id}'):
+    # Paint mode alone: the unit page's ladder is read-only now and reloads
+    # rather than repainting, so its rows have nothing to be matched by.
+    for url in (f'/paint/{unit_id}',):
         body = client.get(url).get_data(as_text=True)
         pipeline = re.search(r'<ul class="(?:ramp|pipe)[^"]*"[^>]*>(.*?)</ul>',
                              body, re.S)
@@ -1716,15 +1736,31 @@ def test_the_unit_page_offers_the_control(client, army_with_unit):
 # retreat_unit skips models at the first owned stage, so −1 there moved
 # nothing and toasted "Nothing to step back".
 
-def test_the_bottom_rung_is_marked_as_removing(client, army_with_unit):
-    """It calls a different endpoint from every other −1, so the markup has to
-    say which it is — a class the handler branches on."""
+def test_the_unit_page_can_add_and_remove_models(client, army_with_unit):
+    """"just a way to add or remove models" — both halves. Adding wires up
+    POST /api/units/<id>/models, which shipped in the first commit and had
+    never been called from anywhere."""
     body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
 
-    assert 'class="untick removes"' in body
-    assert body.count('class="untick removes"') == 1, \
-        'exactly one rung removes — the rest step back a stage'
-    assert 'remove one model from the collection' in body
+    assert 'id="add-models"' in body
+    assert 'id="remove-models"' in body
+
+
+def test_adding_models_puts_them_where_plastic_arrives(client, army_with_unit, db_path):
+    """The first owned stage. Anything further along is a claim about hobby
+    work the app has no business making on Clay's behalf."""
+    unit_id = army_with_unit['unit_id']
+
+    assert client.post(f'/api/units/{unit_id}/models',
+                       json={'count': 3}).status_code == 201
+
+    with db.connect(db_path) as conn:
+        first = db.first_owned_stage(conn)['id']
+        rows = [dict(r) for r in conn.execute(
+            'SELECT stage_id, COUNT(*) AS n FROM models WHERE unit_id = ? '
+            'GROUP BY stage_id', (unit_id,))]
+    added = next(r for r in rows if r['stage_id'] == first)
+    assert added['n'] == 13, 'ten already there plus the three just added'
 
 
 def test_the_counts_are_not_editable(client, army_with_unit):
