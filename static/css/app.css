@@ -722,3 +722,32 @@ a.go {
   .stats { max-width: 42rem; }
   .search { max-width: 46rem; }
 }
+
+/* ── The collection's filters ────────────────────────────
+   One disclosure, not a permanent wall of selects. The default view is the
+   one opened twenty times a week and stays a search box and a chip rail; the
+   rest is there when a question needs it. Auto-open when any of them is set,
+   so nothing filters silently behind a closed fold. */
+.findbar { display: block; }
+.morefilters { margin: .6rem 0 0; }
+.morefilters > summary {
+  cursor: pointer; font-size: .85rem; color: var(--muted);
+  padding: .5rem 0; min-height: 44px; display: flex; align-items: center;
+}
+.filtergrid {
+  display: grid; gap: .6rem; margin: .4rem 0 .6rem;
+  grid-template-columns: 1fr 1fr;
+}
+.filtergrid label { display: flex; flex-direction: column; gap: .25rem;
+                    font-size: .8rem; color: var(--muted); }
+.filtergrid select, .filtergrid input { width: 100%; margin-top: 0; }
+/* Two columns exist for the points pair alone: "from" and "up to" are one
+   question and reading them stacked makes them look like two. Everything else
+   spans the width, because a half-width select truncates its longest option
+   and "Has some battle ready" is the one worth reading. */
+.filtergrid > label { grid-column: 1 / -1; }
+.filtergrid > .pts { grid-column: auto; }
+@media (min-width: 60rem) {
+  .filtergrid { grid-template-columns: repeat(4, 1fr); }
+  .filtergrid > label { grid-column: auto; }
+}

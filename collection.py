@@ -1380,8 +1380,41 @@ def _export_row(row, include_capability):
     return out
 
 
+#: What ``sort`` accepts, and the ORDER BY each one means. A dict rather than
+#: string interpolation because the value arrives from a query string: an
+#: unknown key falls back to 'name' and never reaches SQL.
+INVENTORY_SORTS = {
+    # Owned first, then alphabetical — the default, and the only one that reads
+    # as an inventory rather than a report.
+    'name':       '(owned_count + wanted_count) = 0, d.name',
+    'owned':      'owned_count DESC, d.name',
+    # "What should I paint next" — the most models with the least finished.
+    'unfinished': '(owned_count - done_count) DESC, d.name',
+    'points':     'points_low IS NULL, points_low, d.name',
+    'expensive':  'points_high IS NULL, points_high DESC, d.name',
+    # Stalest first: the shelf Clay has not touched in longest.
+    'stale':      'last_activity IS NULL, last_activity, d.name',
+    'recent':     'last_activity IS NULL, last_activity DESC, d.name',
+}
+
+#: The same keys with something a person can read, in the order they should be
+#: offered. Kept apart from the SQL above so no template ever renders a
+#: fragment of a query.
+INVENTORY_SORT_LABELS = [
+    ('name',       'Name'),
+    ('owned',      'Most owned'),
+    ('unfinished', 'Most left to do'),
+    ('points',     'Cheapest first'),
+    ('expensive',  'Priciest first'),
+    ('stale',      'Untouched longest'),
+    ('recent',     'Recently touched'),
+]
+
+
 def inventory(conn, query=None, faction_id=None, game_system=None,
-              include_unowned=False, limit=200):
+              include_unowned=False, limit=200, stage_id=None,
+              points_min=None, points_max=None, only_wanted=False,
+              sort='name'):
     """What Clay owns, one row per datasheet: how many, and what state.
 
     Grouped by datasheet rather than by army or by box, because the questions
@@ -1416,7 +1449,39 @@ def inventory(conn, query=None, faction_id=None, game_system=None,
     # the same reason: Clay does not own a [Legends] Vyper, he owns a Vyper.
     clauses.append("(d.variant IS NULL OR d.game_system <> 'wh40k')")
     where = ('WHERE ' + ' AND '.join(clauses)) if clauses else ''
-    having = '' if include_unowned else 'HAVING owned_count > 0 OR wanted_count > 0'
+
+    # Points are a subquery, not a join: `datasheet_points` has a row per unit
+    # size and per Requisition Threshold tier, so joining it would multiply
+    # every ownership count by however many prices the datasheet has.
+    #
+    # `faction_id IS NULL OR = d.faction_id` is the scoping the importer's
+    # docstring insists on. One Repulsor Executioner datasheet costs a Black
+    # Templar 255 and a Blood Angel 230; an unscoped MIN would quietly answer
+    # with whichever faction happened to sort first.
+    points_scope = """
+        SELECT %s(dp.points) FROM datasheet_points dp
+         WHERE dp.datasheet_id = d.id
+           AND (dp.faction_id IS NULL OR dp.faction_id = d.faction_id)
+    """
+    points_low = points_scope % 'MIN'
+    points_high = points_scope % 'MAX'
+
+    havings = [] if include_unowned else ['(owned_count > 0 OR wanted_count > 0)']
+    if only_wanted:
+        havings.append('wanted_count > 0')
+    if stage_id:
+        havings.append('at_stage > 0')
+    # A datasheet with no points row has NULL for both, and NULL fails either
+    # comparison — so asking a question about points never answers with rows
+    # that have none. No explicit IS NOT NULL guard: one was here and did
+    # nothing, which is worse than absent because it reads as load-bearing.
+    if points_min is not None:
+        havings.append('points_high >= ?')
+    if points_max is not None:
+        havings.append('points_low <= ?')
+    having = ('HAVING ' + ' AND '.join(havings)) if havings else ''
+    having_args = [v for v in (points_min, points_max) if v is not None]
+    order = INVENTORY_SORTS.get(sort) or INVENTORY_SORTS['name']
 
     rows = [dict(r) for r in conn.execute(f"""
         SELECT d.id AS datasheet_id, d.name, d.effort, d.game_system, d.variant,
@@ -1434,6 +1499,10 @@ def inventory(conn, query=None, faction_id=None, game_system=None,
                COUNT(DISTINCT u.id)                         AS unit_count,
                COUNT(DISTINCT k.id)                         AS kit_count,
                d.basing, d.keywords,
+               COALESCE(SUM(CASE WHEN st.id = ? THEN 1 ELSE 0 END), 0)
+                                                            AS at_stage,
+               ({points_low})                               AS points_low,
+               ({points_high})                              AS points_high,
                MAX(m.stage_changed_at)                      AS last_activity
           FROM datasheets d
           LEFT JOIN factions f ON f.id = d.faction_id
@@ -1444,9 +1513,9 @@ def inventory(conn, query=None, faction_id=None, game_system=None,
           {where}
          GROUP BY d.id
          {having}
-         ORDER BY (owned_count + wanted_count) = 0, d.name
+         ORDER BY {order}
          LIMIT ?
-    """, [first_owned['id'], *args, limit])]
+    """, [first_owned['id'], stage_id or 0, *args, *having_args, limit])]
 
     if not rows:
         return rows

@@ -21,6 +21,7 @@ import secrets
 import time
 from contextlib import contextmanager
 from datetime import timedelta
+from urllib.parse import urlencode
 
 from dotenv import load_dotenv
 
@@ -323,9 +324,35 @@ def money(cents):
     return f'{CURRENCY_SYMBOL}{cents / 100:,.2f}'
 
 
+def filter_url(**overrides):
+    """This page's URL with some query args changed and the rest kept.
+
+    The chip rail used to hand-build `?system=wh40k&q=...`, which meant every
+    chip silently dropped whatever else was set — tap "40k" while filtered to
+    Orks and the faction went away. With seven filters that stops being a wart
+    and becomes the reason nobody uses more than one.
+
+    A value of None or '' removes the key rather than sending it empty.
+    """
+    # Empty values are dropped on the way in as well as on the way out. A GET
+    # form submits every field it has, so "faction: Orks" arrives as
+    # ?q=&system=&faction_id=1&stage_id=&points_min=&points_max= — and without
+    # this every chip would then carry that litter forward for the rest of the
+    # session.
+    args = {k: v for k, v in request.args.to_dict().items() if v != ''}
+    for key, value in overrides.items():
+        if value in (None, ''):
+            args.pop(key, None)
+        else:
+            args[key] = str(value)
+    query = urlencode(sorted(args.items()))
+    return f'{request.path}?{query}' if query else request.path
+
+
 @app.context_processor
 def inject_globals():
     return {'owner': os.getenv('OWNER_NAME', 'Clay'), 'version': VERSION,
+            'filter_url': filter_url,
             'asset_version': _ASSET_VERSION, 'currency': CURRENCY,
             'currency_symbol': CURRENCY_SYMBOL,
             # Where this app answers over HTTPS. The scan page needs it: the
@@ -368,13 +395,32 @@ def armies_page():
 def collection_page():
     """What I own, how many, and what state — and, with a query, the own-it
     check: the same screen answers "you own none of these" from a shop."""
+    # The filter form is a GET form, so it submits its empty fields too. One
+    # hop to the tidy URL and everything after — a bookmark, a chip, the link
+    # Clay sends himself — is the short one. Nothing to loop on: the cleaned
+    # URL has no empty values left to strip.
+    if any(v == '' for v in request.args.values()):
+        return redirect(filter_url())
+
     query = (request.args.get('q') or '').strip()
+    # Three states rather than the old "unowned appear only when searching":
+    # mine (the inventory), wanted (the shopping list), everything (the
+    # catalogue, which is what the own-it check needs). Searching still opens
+    # it up to everything by default, so the shop question is one box as
+    # before — but now it can be said rather than inferred.
+    own = request.args.get('own') or ('all' if query else 'mine')
+    sort = request.args.get('sort') or 'name'
     with _read() as conn:
         rows = col.inventory(
             conn, query=query or None,
             faction_id=_int(request.args.get('faction_id')),
             game_system=(request.args.get('system') or None),
-            include_unowned=bool(query))
+            stage_id=_int(request.args.get('stage_id')),
+            points_min=_int(request.args.get('points_min')),
+            points_max=_int(request.args.get('points_max')),
+            only_wanted=(own == 'wanted'),
+            sort=sort,
+            include_unowned=(own == 'all'))
         # Chip filters narrow what is already loaded rather than re-querying:
         # "unpainted" and "sealed" are questions about the rows on screen, and
         # keeping them here means the chips cannot disagree with the counts.
@@ -387,6 +433,10 @@ def collection_page():
             'collection.html', rows=rows, query=query, filter=chip,
             system=(request.args.get('system') or ''),
             faction_id=_int(request.args.get('faction_id')),
+            stage_id=_int(request.args.get('stage_id')),
+            points_min=request.args.get('points_min') or '',
+            points_max=request.args.get('points_max') or '',
+            own=own, sort=sort, sorts=col.INVENTORY_SORT_LABELS,
             factions=col.list_factions(conn),
             stages=col.stage_ladder(conn),
             totals={

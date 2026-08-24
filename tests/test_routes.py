@@ -1753,3 +1753,61 @@ def test_inert_nudge_buttons_are_hidden_not_greyed(client):
     body = client.get('/static/css/app.css').get_data(as_text=True)
 
     assert '.nudge button:disabled { visibility: hidden; }' in body
+
+
+# ── The collection's filters ─────────────────────────────
+#
+# The route already read faction_id and passed it to the template. The template
+# never rendered a control for it, so it was reachable only by hand-editing the
+# URL — the third capability this session that existed and could not be used.
+
+def test_the_collection_offers_every_filter(client, army_with_unit):
+    body = client.get('/collection').get_data(as_text=True)
+
+    for control in ('name="faction_id"', 'name="stage_id"', 'name="own"',
+                    'name="sort"', 'name="points_min"', 'name="points_max"'):
+        assert control in body, control
+
+
+def test_a_set_filter_is_never_hidden_behind_a_closed_fold(client, army_with_unit):
+    """A screen that filters silently is worse than one showing too much."""
+    plain = client.get('/collection').get_data(as_text=True)
+    filtered = client.get('/collection?sort=points').get_data(as_text=True)
+
+    assert '<details class="morefilters"' in plain
+    assert 'open>' not in plain.split('<summary>')[0].split('morefilters')[1]
+    assert 'open>' in filtered.split('morefilters')[1].split('<summary>')[0]
+
+
+def test_chips_keep_the_other_filters(client, army_with_unit):
+    """They used to hand-build their own query strings carrying only `q`, so
+    tapping "40k" while filtered to a faction threw the faction away."""
+    body = client.get(
+        f'/collection?faction_id={army_with_unit["datasheet_id"]}&q=boyz'
+    ).get_data(as_text=True)
+
+    fortyk = [line for line in body.splitlines() if 'system=wh40k' in line]
+    assert fortyk, 'the 40k chip should be on the page'
+    assert 'faction_id=' in fortyk[0] and 'q=boyz' in fortyk[0]
+
+
+def test_a_chip_that_is_on_links_back_to_off(client, army_with_unit):
+    """A control that does nothing when tapped is one you stop trusting."""
+    body = client.get('/collection?filter=unpainted').get_data(as_text=True)
+
+    # The chip's own line, identified by its label rather than by the word
+    # appearing anywhere — every other chip's href carries the active filter
+    # forward, which is the point of the previous test.
+    chip = next(line for line in body.splitlines() if '>Unpainted</a>' in line)
+    assert 'filter=unpainted' not in chip, 'tapping it again should clear it'
+
+
+def test_the_filters_reach_the_query(client, army_with_unit, db_path):
+    """Not just rendered — actually narrowing. Boyz is Orks, so filtering to a
+    different faction has to empty the screen."""
+    with db.connect(db_path) as conn:
+        other = db.upsert_faction(conn, 'Astra Militarum', 'astra-militarum')
+
+    assert 'Boyz' in client.get('/collection').get_data(as_text=True)
+    assert 'Boyz' not in client.get(
+        f'/collection?faction_id={other}').get_data(as_text=True)

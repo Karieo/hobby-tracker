@@ -17,7 +17,12 @@
   {# Search is the own-it check. With a query the walk starts at the whole
      catalogue, so "you own none of these" is an answer this screen can give —
      which is the question you ask holding a box in a shop. #}
-  <form class="search" method="get" action="/collection">
+  {# One form, two rows. `.search` is a nowrap flex row — the field takes the
+     room and the buttons stay beside it — so the disclosure cannot be a child
+     of it or it gets laid out as another item in that row and crushes the
+     search box into "Sear". The row is its own div inside the form instead. #}
+  <form class="findbar" method="get" action="/collection">
+    <div class="search">
     <label class="sr-only" for="q">Search</label>
     <input id="q" name="q" value="{{ query }}" autocomplete="off"
            placeholder="Search everything — owned or not…">
@@ -27,30 +32,111 @@
       <option value="killteam" {% if system == 'killteam' %}selected{% endif %}>Kill Team</option>
     </select>
     <button class="go" type="submit">Search</button>
-    {% if query or system %}<a class="ghost" href="/collection">Clear</a>{% endif %}
+    {% if query or system or faction_id or stage_id or points_min or points_max
+          or own != ('all' if query else 'mine') or sort != 'name' or filter %}
+      <a class="ghost" href="/collection">Clear</a>
+    {% endif %}
+    </div>
+
+  {# Everything past the name box lives behind one disclosure. The default
+     view is the one Clay opens twenty times a week and it stays a search box
+     and a chip rail; a wall of seven selects on a phone is the friction this
+     app is supposed to be avoiding.
+
+     `open` whenever any of them is set, so a filter can never be quietly on
+     behind a closed fold — a screen that lies about what it is showing is
+     worse than one that shows too much. #}
+  <details class="morefilters"
+           {% if faction_id or stage_id or points_min or points_max
+                 or own != ('all' if query else 'mine') or sort != 'name' %}open{% endif %}>
+    <summary>Narrow it down</summary>
+    <div class="filtergrid">
+      <label>Faction
+        <select name="faction_id">
+          <option value="">Any faction</option>
+          {% for f in factions %}
+            <option value="{{ f.id }}" {% if faction_id == f.id %}selected{% endif %}>
+              {{ f.label or f.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>State
+        <select name="stage_id">
+          <option value="">Any stage</option>
+          {% for s in stages %}
+            {% if s.is_owned %}
+              <option value="{{ s.id }}" {% if stage_id == s.id %}selected{% endif %}>
+                Has some {{ s.name|lower }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>Show
+        <select name="own">
+          <option value="mine" {% if own == 'mine' %}selected{% endif %}>What I own</option>
+          <option value="wanted" {% if own == 'wanted' %}selected{% endif %}>On the wishlist</option>
+          <option value="all" {% if own == 'all' %}selected{% endif %}>Everything in the game</option>
+        </select>
+      </label>
+
+      <label>Sort by
+        <select name="sort">
+          {% for key, label in sorts %}
+            <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      {# A range rather than one number, because a datasheet has several
+         prices — ten Boyz and twenty Boyz are 90 and 180. A row matches if any
+         of its prices falls in the range, so "under 100" finds Boyz on the
+         strength of the ten-model price and does not pretend the twenty-model
+         one is cheap. #}
+      <label class="pts">Points from
+        <input name="points_min" type="number" min="0" step="5" inputmode="numeric"
+               value="{{ points_min }}" autocomplete="off" placeholder="any">
+      </label>
+      <label class="pts">up to
+        <input name="points_max" type="number" min="0" step="5" inputmode="numeric"
+               value="{{ points_max }}" autocomplete="off" placeholder="any">
+      </label>
+    </div>
+    <div class="actions"><button class="go" type="submit">Apply</button></div>
+  </details>
   </form>
 
-  {% if query %}
+  {% if own == 'all' %}
     <p class="hint">
-      Searching everything, owned or not — so a nil answer is still an answer.
+      Showing everything in the game, owned or not — so a nil answer is still
+      an answer.
     </p>
+  {% elif own == 'wanted' %}
+    <p class="hint">The wishlist: things you have said you want, not things on the shelf.</p>
   {% endif %}
 
   {# Chip rail, §3b. Direction 1a won because the query stays readable: you can
      always see what you filtered without opening anything. Sealed carries the
      rust because it is a thing that wants you, never the accent. #}
+  {# Every chip goes through filter_url, which keeps whatever else is set.
+     They used to hand-build their own query strings and carried only `q`, so
+     tapping "40k" while filtered to Orks silently threw the faction away.
+     Toggling: a chip that is on links back to *off* rather than to itself,
+     because a control that does nothing when tapped is a control you stop
+     trusting. #}
   <nav class="chips" aria-label="Filters">
     <a class="chip {% if not system and not filter %}on{% endif %}"
-       href="/collection{% if query %}?q={{ query|urlencode }}{% endif %}">All</a>
+       href="{{ filter_url(system=None, filter=None) }}">All</a>
     <a class="chip {% if system == 'wh40k' %}on{% endif %}"
-       href="/collection?system=wh40k{% if query %}&q={{ query|urlencode }}{% endif %}">40k</a>
+       href="{{ filter_url(system=None if system == 'wh40k' else 'wh40k') }}">40k</a>
     <a class="chip {% if system == 'killteam' %}on{% endif %}"
-       href="/collection?system=killteam{% if query %}&q={{ query|urlencode }}{% endif %}">Kill Team</a>
+       href="{{ filter_url(system=None if system == 'killteam' else 'killteam') }}">Kill Team</a>
     <a class="chip {% if filter == 'unpainted' %}on{% endif %}"
-       href="/collection?filter=unpainted{% if query %}&q={{ query|urlencode }}{% endif %}">Unpainted</a>
-    {% if totals.sealed %}
+       href="{{ filter_url(filter=None if filter == 'unpainted' else 'unpainted') }}">Unpainted</a>
+    {% if totals.sealed or filter == 'sealed' %}
       <a class="chip wants {% if filter == 'sealed' %}on{% endif %}"
-         href="/collection?filter=sealed{% if query %}&q={{ query|urlencode }}{% endif %}">
+         href="{{ filter_url(filter=None if filter == 'sealed' else 'sealed') }}">
         Sealed {{ totals.sealed }}</a>
     {% endif %}
   </nav>
@@ -91,6 +177,12 @@
             <span class="muted">
               {% if r.game_system != 'wh40k' %}Kill Team{% if r.variant %} {{ r.variant }}{% endif %} · {% endif %}
               {{ r.faction_name or 'no faction' }}
+              {# Filtering by a number you cannot see is guesswork. A range
+                 where the datasheet has several prices — ten Boyz and twenty
+                 Boyz are not the same unit at the table. #}
+              {% if r.points_low %}
+                · {{ r.points_low }}{% if r.points_high != r.points_low %}–{{ r.points_high }}{% endif %} pts
+              {% endif %}
             </span>
           </div>
 

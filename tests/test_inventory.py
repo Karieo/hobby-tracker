@@ -432,3 +432,149 @@ def test_a_faction_priced_datasheet_follows_the_army(conn, sheets, stages):
     labelled = {p.get('faction') for p in everything['points']}
     assert 'Blood Angels' in labelled and 'Orks' in labelled, \
         'with no army to scope by, every price goes out labelled'
+
+
+# ── Narrowing it down ────────────────────────────────────
+#
+# Clay: "Need to be able to filter by faction, points, name and anything else
+# you can think of." Name and faction were half-built — the route already read
+# faction_id and passed it to the template, and the template never rendered a
+# control for it, so the only reachable filters were name and game system.
+
+@pytest.fixture
+def priced(conn, sheets):
+    """Boyz at two unit sizes, Nobz at one, and a rival faction's cheap hero."""
+    for datasheet, size, points in (('Boyz', 10, 90), ('Boyz', 20, 180),
+                                    ('Nobz', 5, 75)):
+        conn.execute(
+            'INSERT INTO datasheet_points (datasheet_id, model_count, points, '
+            "effective_from, source_note) VALUES (?, ?, ?, '2026-01-01', 'MFM')",
+            (sheets[datasheet], size, points))
+    militarum = db.upsert_faction(conn, 'Astra Militarum', 'astra-militarum')
+    nork = conn.execute(
+        'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+        'created_at, updated_at) VALUES (?,?,?,1,?,?)',
+        ('nork', 'Nork Deddog', militarum, db.now(), db.now())).lastrowid
+    conn.execute(
+        'INSERT INTO datasheet_points (datasheet_id, model_count, points, '
+        "effective_from, source_note) VALUES (?, 1, 65, '2026-01-01', 'MFM')",
+        (nork,))
+    return {'militarum': militarum, 'nork': nork}
+
+
+def names(rows):
+    return [r['name'] for r in rows]
+
+
+def test_faction_narrows_a_name_that_matches_two(conn, sheets, priced, stages):
+    """Searching "Ork" returned Nork Deddog — an Astra Militarum hero whose
+    name happens to contain the substring. This is the screenshot Clay sent."""
+    everything = col.inventory(conn, query='ork', include_unowned=True)
+    assert 'Nork Deddog' in names(everything)
+
+    orks_only = col.inventory(conn, query='ork', include_unowned=True,
+                              faction_id=sheets['_faction'])
+    assert 'Nork Deddog' not in names(orks_only)
+
+
+def test_a_datasheet_reports_the_range_of_its_prices(conn, sheets, priced, stages):
+    """Ten Boyz and twenty Boyz are 90 and 180 — one datasheet, two prices, and
+    a single number would have to lie about one of them."""
+    col.create_unit(conn, sheets['Boyz'], 10)
+    row = next(r for r in col.inventory(conn) if r['name'] == 'Boyz')
+    assert (row['points_low'], row['points_high']) == (90, 180)
+
+
+def test_points_are_scoped_to_the_datasheets_own_faction(conn, sheets, priced):
+    """One Repulsor Executioner costs a Black Templar 255 and a Blood Angel
+    230. An unscoped MIN answers with whichever faction sorted first."""
+    other = db.upsert_faction(conn, 'Blood Angels', 'blood-angels')
+    conn.execute(
+        'INSERT INTO datasheet_points (datasheet_id, faction_id, model_count, '
+        "points, effective_from, source_note) VALUES (?, ?, 10, 5, '2026-01-01', 'MFM')",
+        (sheets['Boyz'], other))
+
+    row = next(r for r in col.inventory(conn, include_unowned=True)
+               if r['name'] == 'Boyz')
+
+    assert row['points_low'] == 90, "another faction's price is not Clay's"
+
+
+def test_a_points_range_matches_any_of_a_datasheets_prices(conn, sheets, priced):
+    """"Under 100" finds Boyz on the ten-model price without pretending the
+    twenty-model one is cheap."""
+    cheap = col.inventory(conn, include_unowned=True, points_max=100)
+    assert 'Boyz' in names(cheap) and 'Nobz' in names(cheap)
+
+    dear = col.inventory(conn, include_unowned=True, points_min=150)
+    assert names(dear) == ['Boyz'], 'only the twenty-model price is that high'
+
+
+def test_unpriced_datasheets_drop_out_of_a_points_filter(conn, sheets, priced):
+    """Gretchin has no points row. Asking a question about points must not
+    answer with rows that have none — which SQLite gives for free, since a
+    comparison against NULL is not true. Pinned because it is behaviour the
+    filter leans on rather than states."""
+    assert 'Gretchin' not in names(
+        col.inventory(conn, include_unowned=True, points_max=1000))
+
+
+def test_filtering_by_the_stage_models_are_at(conn, sheets, stages, priced):
+    """"What is still on sprue" is the question this app exists for."""
+    boyz = col.create_unit(conn, sheets['Boyz'], 10)
+    col.advance_unit(conn, boyz, count=4)             # 4 Assembled, 6 On sprue
+    col.create_unit(conn, sheets['Nobz'], 5)          # all On sprue
+
+    assert set(names(col.inventory(conn, stage_id=stages['On sprue']))) == \
+        {'Boyz', 'Nobz'}
+    assert names(col.inventory(conn, stage_id=stages['Assembled'])) == ['Boyz']
+    assert names(col.inventory(conn, stage_id=stages['Painted'])) == []
+
+
+def test_the_wishlist_is_its_own_view(conn, sheets, stages, priced):
+    col.create_unit(conn, sheets['Boyz'], 10)
+    col.create_unit(conn, sheets['Nobz'], 5, stage_id=stages['Wishlist'])
+
+    assert names(col.inventory(conn, only_wanted=True)) == ['Nobz']
+
+
+def test_sorting_by_price(conn, sheets, priced):
+    cheapest = col.inventory(conn, include_unowned=True, sort='points')
+    assert names(cheapest)[:3] == ['Nork Deddog', 'Nobz', 'Boyz']
+
+    priciest = col.inventory(conn, include_unowned=True, sort='expensive')
+    assert names(priciest)[0] == 'Boyz', 'twenty Boyz is the dearest thing here'
+
+
+def test_sorting_by_what_is_least_finished(conn, sheets, stages, priced):
+    """"What should I paint next" — the most models with the least done."""
+    col.create_unit(conn, sheets['Nobz'], 3)
+    boyz = col.create_unit(conn, sheets['Boyz'], 10)
+    for _ in range(10):
+        col.advance_unit(conn, boyz)                  # all the way to done
+
+    assert names(col.inventory(conn, sort='unfinished'))[0] == 'Nobz'
+
+
+def test_an_unknown_sort_falls_back_rather_than_reaching_sql(conn, sheets, priced):
+    """The value arrives from a query string. INVENTORY_SORTS is a dict of
+    known keys for exactly this reason — nothing from the URL is interpolated
+    into the statement."""
+    col.create_unit(conn, sheets['Boyz'], 10)
+
+    assert col.inventory(conn, sort='; DROP TABLE models;--') == \
+        col.inventory(conn, sort='name')
+    assert conn.execute('SELECT COUNT(*) AS n FROM models').fetchone()['n'] == 10
+
+
+def test_filters_combine(conn, sheets, stages, priced):
+    """Each one narrows the last. Any that quietly replaced another would make
+    the screen lie about what it is showing."""
+    boyz = col.create_unit(conn, sheets['Boyz'], 10)
+    col.advance_unit(conn, boyz, count=10)
+    col.create_unit(conn, sheets['Nobz'], 5)
+
+    rows = col.inventory(conn, query='o', faction_id=sheets['_faction'],
+                         stage_id=stages['Assembled'], points_max=100)
+
+    assert names(rows) == ['Boyz']
