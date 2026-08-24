@@ -238,7 +238,16 @@ datasheet, 255 points for Black Templars and 230 for Blood Angels).
 
 `backup.sh` snapshots via `sqlite3 .backup`, never `cp` — the app holds a
 connection open, so committed data routinely sits in the `-wal` file with the
-`.db` not yet containing it, and a plain copy loses it silently. `restore.sh
+`.db` not yet containing it, and a plain copy loses it silently.
+
+**Photos are the one thing whose bytes are not in the database.** A row in
+`unit_photos` points at a file under `data/photos/`, so the snapshot and the
+directory have to travel together or a restore produces a log of missing
+pictures. `backup.sh` rsyncs them into a shared `photos/` beside the snapshots
+— shared because the filenames are random and immutable, so thirty snapshots
+are not thirty copies — and rotation never touches it. `restore.sh` brings
+them back. Anything else stored on disk has to make the same arrangement, or
+it is not backed up at all. `restore.sh
 --check` verifies a snapshot without writing; `restore.sh <snap>` restores and
 sets the current database aside first.
 

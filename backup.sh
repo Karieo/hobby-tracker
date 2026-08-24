@@ -132,7 +132,30 @@ print(f'  exported {len(tables)} tables'
 PY
 ok "CSV export → csv/$STAMP/"
 
-# ── 3 · Off-box copy ────────────────────────────────────
+# ── 3 · Photos ──────────────────────────────────────────
+# The one thing in this app whose bytes are not in the database. A row in
+# unit_photos points at a file under data/photos/, so a snapshot without the
+# directory restores a hobby log of missing images — and the app would say so
+# on every unit page, which is a miserable way to find out.
+#
+# rsync into one shared directory rather than a per-stamp copy: the files are
+# immutable and named by a random token, so the same photo is never written
+# twice and thirty snapshots do not mean thirty copies of every picture.
+PHOTO_DIR="$APP_DIR/data/photos"
+if [ -d "$PHOTO_DIR" ]; then
+  mkdir -p "$BACKUP_DIR/photos"
+  # No --delete: a picture removed in the app must not vanish from the backup
+  # the same night. Rotation is a decision, not a side effect.
+  rsync -a "$PHOTO_DIR/" "$BACKUP_DIR/photos/"
+  # `find | wc -l` rather than `ls | wc -l`: an empty directory makes ls print
+  # nothing and this whole script runs under `set -e`.
+  PHOTO_COUNT="$(find "$BACKUP_DIR/photos" -type f | wc -l | tr -d ' ')"
+  ok "Photos → photos/ ($PHOTO_COUNT files)"
+else
+  note "No data/photos/ yet — nothing to carry"
+fi
+
+# ── 4 · Off-box copy ────────────────────────────────────
 if [ -n "$BACKUP_DEST" ]; then
   # An array, not a string: a key path is a filename, and splitting one on
   # whitespace is how a backup starts failing for someone whose home directory
@@ -151,19 +174,30 @@ if [ -n "$BACKUP_DEST" ]; then
   # No --delete: a deletion here must never wipe the backup copy.
   rsync -az -e "$RSH" "$SNAP" "$BACKUP_DEST/db/"
   rsync -az -e "$RSH" "$CSV_DIR" "$BACKUP_DEST/csv/"
+  if [ -d "$BACKUP_DIR/photos" ]; then
+    # Same as above: DEST_PATH is expanded here on purpose, and the inner
+    # quotes protect it once it lands on the far side.
+    # shellcheck disable=SC2029
+    ssh "${SSH_OPTS[@]}" "$DEST_HOST" "mkdir -p '$DEST_PATH/photos'" \
+      || fail "Can't reach $DEST_HOST over SSH"
+    rsync -az -e "$RSH" "$BACKUP_DIR/photos/" "$BACKUP_DEST/photos/"
+  fi
   ok "Shipped off-box → $BACKUP_DEST"
 else
   note "BACKUP_DEST unset — local snapshot only. One box is not a backup."
 fi
 
-# ── 4 · Rotate ──────────────────────────────────────────
+# ── 5 · Rotate ──────────────────────────────────────────
 # `|| true` because on the very first run there is nothing to rotate, and ls
 # exiting non-zero must not take the (already successful) backup down with it.
 { ls -1t "$BACKUP_DIR"/db/tracker-*.db 2>/dev/null || true; } \
   | tail -n +$((BACKUP_KEEP + 1)) | xargs -r rm -f
 { ls -1dt "$BACKUP_DIR"/csv/*/ 2>/dev/null || true; } \
   | tail -n +$((BACKUP_KEEP + 1)) | xargs -r rm -rf
-ok "Kept newest $BACKUP_KEEP snapshots"
+# Only db/ and csv/ rotate. photos/ is shared across every snapshot — an old
+# snapshot still points at the same files, so deleting them would hollow out
+# every backup at once rather than the oldest.
+ok "Kept newest $BACKUP_KEEP snapshots (photos/ is shared and never rotated)"
 
 bold ""
 bold "Backup complete → $BACKUP_DIR"

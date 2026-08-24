@@ -92,6 +92,61 @@
      nothing that was named loses its name. Only the way to type a new one has
      left, because naming a squad is neither the summary nor the count and this
      screen is now those two things. #}
+  {# The hobby log. Newest date first, because "what did I just finish" is the
+     question asked far more often than "what did I finish in March" — and the
+     one worth a tap is the one at the top. #}
+  <h2>Photos {% if unit_photos %}<span class="muted">{{ unit_photos|length }}</span>{% endif %}</h2>
+
+  {% if unit_photos %}
+    <ul class="shots">
+      {% for shot in unit_photos %}
+        <li>
+          {% if shot.missing %}
+            {# The row is here and the file is not. A restore that carried the
+               database and not data/photos/, most likely — and a caption
+               saying so beats a grey box that looks like a bug in the app. #}
+            <div class="gone">
+              <p><b>The picture is missing.</b></p>
+              <p class="muted">
+                The record is here but the file is not — most likely a restore
+                that brought the database without <code>data/photos/</code>.
+              </p>
+            </div>
+          {% else %}
+            <a href="/photos/{{ shot.filename }}" target="_blank" rel="noopener">
+              <img src="/photos/{{ shot.filename }}" loading="lazy"
+                   alt="{{ shot.caption or unit.display_name }}, {{ shot.taken_on }}">
+            </a>
+          {% endif %}
+          <p class="shotmeta">
+            <b>{{ shot.taken_on }}</b>
+            {% if shot.caption %} · {{ shot.caption }}{% endif %}
+            <button class="ghost shot-delete" data-photo="{{ shot.id }}">Remove</button>
+          </p>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {# A plain multipart form, no JavaScript: `capture` is missing on purpose so
+     iOS offers the camera roll as well as the camera, and most of these are
+     pictures taken earlier at the desk rather than in the moment. #}
+  <form class="panel stack" id="add-photo" method="post"
+        enctype="multipart/form-data"
+        action="/api/units/{{ unit.id }}/photos">
+    <label>Picture
+      <input type="file" name="photo" accept="image/*" required>
+    </label>
+    <label>Finished on
+      <input type="date" name="taken_on" value="{{ today }}">
+    </label>
+    <label>Caption
+      <input name="caption" autocomplete="off"
+             placeholder="Optional — first ten done, new basing…">
+    </label>
+    <div class="actions"><button class="go" type="submit">Add picture</button></div>
+  </form>
+
   <h2>Notes</h2>
   <form class="panel stack" data-patch="/api/units/{{ unit.id }}">
     <label class="sr-only" for="unit-notes">Notes</label>

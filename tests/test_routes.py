@@ -1892,3 +1892,68 @@ def test_an_empty_value_still_clears(client, army_with_unit, db_path):
     with db.connect(db_path) as conn:
         assert conn.execute('SELECT notes FROM units WHERE id = ?',
                             (unit_id,)).fetchone()['notes'] is None
+
+
+# ── Photos through the app ───────────────────────────────
+
+def _jpeg():
+    import io
+    return (io.BytesIO(b'\xff\xd8\xff\xe0' + b'\x00' * 40), 'squad.jpg')
+
+
+def test_uploading_a_photo(client, army_with_unit, tmp_path, monkeypatch):
+    import photos as photomod
+    monkeypatch.setattr(photomod, 'PHOTO_DIR', str(tmp_path / 'shots'))
+    unit_id = army_with_unit['unit_id']
+
+    res = client.post(f'/api/units/{unit_id}/photos',
+                      data={'photo': _jpeg(), 'taken_on': '2026-08-18',
+                            'caption': 'first ten done'},
+                      content_type='multipart/form-data')
+
+    assert res.status_code == 201
+    body = client.get(f'/units/{unit_id}').get_data(as_text=True)
+    assert '2026-08-18' in body and 'first ten done' in body
+
+
+def test_a_post_with_no_file_says_so(client, army_with_unit):
+    assert client.post(f'/api/units/{army_with_unit["unit_id"]}/photos',
+                       data={}, content_type='multipart/form-data'
+                       ).status_code == 400
+
+
+def test_a_photo_for_a_unit_that_is_not_there(client, tmp_path, monkeypatch):
+    import photos as photomod
+    monkeypatch.setattr(photomod, 'PHOTO_DIR', str(tmp_path / 'shots'))
+    assert client.post('/api/units/9999/photos',
+                       data={'photo': _jpeg()},
+                       content_type='multipart/form-data').status_code == 404
+
+
+def test_serving_and_deleting_a_photo(client, army_with_unit, tmp_path, monkeypatch):
+    import photos as photomod
+    monkeypatch.setattr(photomod, 'PHOTO_DIR', str(tmp_path / 'shots'))
+    unit_id = army_with_unit['unit_id']
+    saved = client.post(f'/api/units/{unit_id}/photos', data={'photo': _jpeg()},
+                        content_type='multipart/form-data').get_json()
+
+    served = client.get(f'/photos/{saved["filename"]}')
+    assert served.status_code == 200
+    assert served.data.startswith(b'\xff\xd8\xff')
+
+    assert client.delete(f'/api/photos/{saved["id"]}').status_code == 200
+    assert client.get(f'/photos/{saved["filename"]}').status_code == 404
+
+
+def test_photos_are_behind_the_login(db_path, monkeypatch):
+    """These are pictures of Clay's house. The tunnel is public."""
+    import app as appmod
+    monkeypatch.setattr(appmod.db, 'DB_PATH', db_path)
+    anon = appmod.app.test_client()
+    assert anon.get('/photos/anything.jpg').status_code in (302, 401)
+
+
+def test_the_upload_form_is_on_the_unit_page(client, army_with_unit):
+    body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
+    assert 'id="add-photo"' in body
+    assert 'name="taken_on"' in body, 'the date is the point of the log'

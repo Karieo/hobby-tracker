@@ -755,3 +755,24 @@ a.go {
   .filtergrid { grid-template-columns: repeat(4, 1fr); }
   .filtergrid > label { grid-column: auto; }
 }
+
+/* ── The hobby log ───────────────────────────────────────
+   Pictures of finished models, newest first. Wide enough to see the paint at
+   arm's length and narrow enough that two dates fit on one phone screen — the
+   point is scanning back through them, not admiring one. */
+.shots { list-style: none; padding: 0; margin: .6rem 0 1rem;
+         display: grid; gap: .9rem; }
+.shots > li { border: 1px solid var(--rule); background: var(--panel); }
+.shots img { display: block; width: 100%; height: auto; max-height: 22rem;
+             object-fit: cover; }
+.shots .gone { padding: 1rem; }
+.shots .gone p { margin: 0 0 .3rem; }
+.shotmeta { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap;
+            margin: 0; padding: .5rem .7rem; font-size: .85rem; }
+/* The remove button sits at the far end so it is never the thing a thumb
+   lands on while scrolling the log. */
+.shotmeta .shot-delete { margin-left: auto; }
+#add-photo input[type="file"] { font-size: .85rem; }
+@media (min-width: 46rem) {
+  .shots { grid-template-columns: 1fr 1fr; }
+}

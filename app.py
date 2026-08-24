@@ -20,7 +20,7 @@ import os
 import secrets
 import time
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import date, timedelta
 from urllib.parse import urlencode
 
 from dotenv import load_dotenv
@@ -50,7 +50,7 @@ apply_timezone()
 
 import bcrypt  # noqa: E402
 from flask import (Flask, Response, abort, jsonify, redirect,  # noqa: E402
-                   render_template, request, session)
+                   render_template, request, send_file, session)
 from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 
 import bulk_add  # noqa: E402
@@ -59,6 +59,7 @@ import list_allocate
 import list_parse
 import list_resolve
 import lists as army_lists
+import photos
 import rules_data  # noqa: E402
 import database as db  # noqa: E402
 import scanning as scan  # noqa: E402
@@ -694,6 +695,8 @@ def unit_detail(unit_id):
             # nothing to prompt for.
             options=options if len(options) > 1 else [],
             built_as=col.unit_built_as(conn, unit_id),
+            unit_photos=photos.for_unit(conn, unit_id),
+            today=date.today().isoformat(),
             armies=[a for a in col.list_armies(conn) if a['id']])
 
 
@@ -839,6 +842,59 @@ def api_remove_models(unit_id):
             abort(404)
         result = col.remove_models(conn, unit_id, count)
     return jsonify(result)
+
+
+# ── Photos (spec §2.4) ───────────────────────────────────
+#
+# A dated log per unit rather than one picture on a column: a squad gets
+# photographed on sprue, half-painted and done. The bytes live under
+# data/photos/ and backup.sh carries the directory beside the snapshot, so the
+# row and its file travel together.
+
+@app.route('/api/units/<int:unit_id>/photos', methods=['POST'])
+def api_add_photo(unit_id):
+    """Multipart, because this is a phone with a camera roll.
+
+    `taken_on` is what Clay says, not what the clock says: the squad finished
+    on Tuesday is photographed then and uploaded on Sunday.
+    """
+    upload = request.files.get('photo')
+    if not upload:
+        return jsonify({'error': 'No picture came through'}), 400
+    with _write() as conn:
+        if not col.get_unit(conn, unit_id):
+            abort(404)
+        try:
+            saved = photos.add(
+                conn, unit_id, upload.read(),
+                taken_on=(request.form.get('taken_on') or '').strip() or None,
+                caption=request.form.get('caption'))
+        except photos.PhotoError as err:
+            return jsonify({'error': str(err)}), 400
+    return jsonify(saved), 201
+
+
+@app.route('/api/photos/<int:photo_id>', methods=['DELETE'])
+def api_delete_photo(photo_id):
+    with _write() as conn:
+        unit_id = photos.delete(conn, photo_id)
+    if unit_id is None:
+        abort(404)
+    return jsonify({'unit_id': unit_id})
+
+
+@app.route('/photos/<path:filename>')
+def serve_photo(filename):
+    """Behind the login like every other page — these are Clay's models.
+
+    Not served from `static/`: that directory is the app's own assets and ships
+    in the image, while these are data and live on the volume beside the
+    database.
+    """
+    path = photos.path_for(filename)
+    if not path:
+        abort(404)
+    return send_file(path, conditional=True)
 
 
 # ── Kits ─────────────────────────────────────────────────

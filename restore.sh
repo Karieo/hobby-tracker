@@ -206,6 +206,25 @@ with d:
 s.close(); d.close()
 PY
     ok "Restored $(basename "$SNAP") → data/hobby_tracker.db"
+
+    # The other half. unit_photos rows point at files under data/photos/, and
+    # a database restored without them is a hobby log of missing pictures —
+    # which the unit page will say out loud, but only after Clay has gone
+    # looking. The snapshot lives at <backup>/db/tracker-*.db and the photos
+    # beside it at <backup>/photos/, shared across every snapshot.
+    PHOTO_SRC="$(dirname "$(dirname "$SNAP")")/photos"
+    if [ -d "$PHOTO_SRC" ]; then
+      mkdir -p "$APP_DIR/data/photos"
+      # No --delete: a photo taken since this snapshot is not something a
+      # restore should throw away. Extra pictures are harmless; the rows that
+      # named them are what decide what the app shows.
+      rsync -a "$PHOTO_SRC/" "$APP_DIR/data/photos/"
+      RESTORED="$(find "$APP_DIR/data/photos" -type f | wc -l | tr -d ' ')"
+      ok "Photos → data/photos/ ($RESTORED files)"
+    else
+      note "No photos/ beside the snapshot — restoring the database only"
+    fi
+
     bold ""
     bold "Restart the app, then check the armies page looks right."
     ;;

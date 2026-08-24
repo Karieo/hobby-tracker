@@ -227,6 +227,44 @@ if (moveForm) {
   });
 }
 
+/* ── The hobby log ───────────────────────────────────────
+ * A multipart POST through fetch rather than a plain form submit: the endpoint
+ * answers in JSON like every other one here, and letting the browser navigate
+ * to it would leave Clay looking at `{"id": 4}` on a white page. */
+const photoForm = $('#add-photo');
+if (photoForm) {
+  photoForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const button = $('button[type="submit"]', photoForm);
+    // A phone photo over a tunnel is not instant, and a button that does
+    // nothing visible for four seconds gets pressed again.
+    button.disabled = true;
+    const said = button.textContent;
+    button.textContent = 'Uploading…';
+    try {
+      const res = await fetch(photoForm.action,
+                              {method: 'POST', body: new FormData(photoForm)});
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((data && data.error) || `${res.status}`);
+      location.reload();
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = said;
+      toast(err.message, 'error');
+    }
+  });
+}
+
+document.addEventListener('click', async (e) => {
+  const remove = e.target.closest('.shot-delete');
+  if (!remove) return;
+  if (!window.confirm('Remove this picture? This cannot be undone.')) return;
+  try {
+    await post(`/api/photos/${remove.dataset.photo}`, null, 'DELETE');
+    location.reload();
+  } catch (err) { toast(err.message, 'error'); }
+});
+
 const addForm = $('#add-models');
 if (addForm) {
   addForm.addEventListener('submit', async (e) => {
