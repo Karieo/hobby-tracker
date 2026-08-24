@@ -1595,14 +1595,42 @@ def test_the_collection_offers_every_filter(client, army_with_unit):
         assert control in body, control
 
 
-def test_a_set_filter_is_never_hidden_behind_a_closed_fold(client, army_with_unit):
-    """A screen that filters silently is worse than one showing too much."""
-    plain = client.get('/collection').get_data(as_text=True)
-    filtered = client.get('/collection?sort=points').get_data(as_text=True)
+def test_no_filter_is_ever_hidden(client, army_with_unit):
+    """A screen that filters silently is worse than one showing too much.
 
-    assert '<details class="morefilters"' in plain
-    assert 'open>' not in plain.split('<summary>')[0].split('morefilters')[1]
-    assert 'open>' in filtered.split('morefilters')[1].split('<summary>')[0]
+    This used to guard a disclosure that opened itself whenever a filter was
+    set. Clay: "This is a mess and hard to use. Please simplify and alway
+    show." There is no fold now, which is the same guarantee without the
+    machinery — so the test is that every control is on the page
+    unconditionally, and that nothing can collapse them again."""
+    plain = client.get('/collection').get_data(as_text=True)
+    filtered = client.get('/collection?sort=points&own=wanted').get_data(as_text=True)
+
+    for body in (plain, filtered):
+        assert '<details' not in body, 'nothing on this screen folds away'
+        for control in ('name="faction_id"', 'name="stage_id"', 'name="sort"',
+                        'name="points_min"', 'name="points_max"'):
+            assert control in body, control
+
+
+def test_what_to_show_is_chips_not_a_select(client, army_with_unit):
+    """Three choices behind a dropdown cost a labelled row and a tap to open.
+    Chips say which one is on without being opened."""
+    body = client.get('/collection?own=wanted').get_data(as_text=True)
+
+    assert 'aria-label="What to show"' in body
+    assert '<select name="own"' not in body
+    # The one that is on is marked, or the rail says nothing.
+    rail = body.split('aria-label="What to show"')[1].split('</nav>')[0]
+    assert 'chip on' in rail.replace('  ', ' ')
+
+
+def test_the_filters_need_no_apply(client, army_with_unit):
+    """The Apply button was a second tap for a decision already made, and on a
+    phone it sat below the fold often enough that filters looked broken."""
+    body = client.get('/collection').get_data(as_text=True)
+
+    assert '>Apply<' not in body
 
 
 def test_chips_keep_the_other_filters(client, army_with_unit):

@@ -5,9 +5,6 @@
   <header class="page">
     <div>
       <h1>Collection</h1>
-      <p class="muted">
-        What you own, how many, and what state they are in.
-      </p>
     </div>
     {# The door for putting models in. Not in the nav: it is
        something you do a few times, not somewhere you live. #}
@@ -38,80 +35,65 @@
     {% endif %}
     </div>
 
-  {# Everything past the name box lives behind one disclosure. The default
-     view is the one Clay opens twenty times a week and it stays a search box
-     and a chip rail; a wall of seven selects on a phone is the friction this
-     app is supposed to be avoiding.
+  {# Clay: "This is a mess and hard to use. Please simplify and alway show."
 
-     `open` whenever any of them is set, so a filter can never be quietly on
-     behind a closed fold — a screen that lies about what it is showing is
-     worse than one that shows too much. #}
-  <details class="morefilters"
-           {% if faction_id or stage_id or points_min or points_max
-                 or own != ('all' if query else 'mine') or sort != 'name' %}open{% endif %}>
-    <summary>Narrow it down</summary>
-    <div class="filtergrid">
-      <label>Faction
-        <select name="faction_id">
-          <option value="">Any faction</option>
-          {% for f in factions %}
-            <option value="{{ f.id }}" {% if faction_id == f.id %}selected{% endif %}>
-              {{ f.label or f.name }}</option>
-          {% endfor %}
-        </select>
-      </label>
+     What was here: a disclosure holding seven labelled controls in a stacked
+     grid, plus an Apply button. It force-opened whenever any filter was set —
+     so choosing "wishlist" filled the whole screen with form before a single
+     model appeared, which is exactly the case it was meant to avoid.
 
-      <label>State
-        <select name="stage_id">
-          <option value="">Any stage</option>
-          {% for s in stages %}
-            {% if s.is_owned %}
-              <option value="{{ s.id }}" {% if stage_id == s.id %}selected{% endif %}>
-                Has some {{ s.name|lower }}</option>
-            {% endif %}
-          {% endfor %}
-        </select>
-      </label>
+     Now: nothing is hidden, and nothing is labelled twice. Every select's
+     resting option already says what it is ("Any faction", "Any stage",
+     "Name"), so the labels above them were saying it a second time and
+     costing a line each. Anything with three or four choices is a chip
+     instead — one tap, no dropdown, and you can see what is on without
+     opening anything. Changing a control submits, so there is no Apply. #}
+  <div class="filterbar">
+    <label class="sr-only" for="faction_id">Faction</label>
+    <select id="faction_id" name="faction_id">
+      <option value="">Any faction</option>
+      {% for f in factions %}
+        <option value="{{ f.id }}" {% if faction_id == f.id %}selected{% endif %}>
+          {{ f.label or f.name }}</option>
+      {% endfor %}
+    </select>
 
-      <label>Show
-        <select name="own">
-          <option value="mine" {% if own == 'mine' %}selected{% endif %}>What I own</option>
-          <option value="wanted" {% if own == 'wanted' %}selected{% endif %}>On the wishlist</option>
-          <option value="all" {% if own == 'all' %}selected{% endif %}>Everything in the game</option>
-        </select>
-      </label>
+    <label class="sr-only" for="stage_id">State</label>
+    <select id="stage_id" name="stage_id">
+      <option value="">Any stage</option>
+      {% for s in stages %}
+        {% if s.is_owned %}
+          <option value="{{ s.id }}" {% if stage_id == s.id %}selected{% endif %}>
+            Has some {{ s.name|lower }}</option>
+        {% endif %}
+      {% endfor %}
+    </select>
 
-      <label>Sort by
-        <select name="sort">
-          {% for key, label in sorts %}
-            <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </label>
+    <label class="sr-only" for="sort">Sort by</label>
+    <select id="sort" name="sort">
+      {% for key, label in sorts %}
+        <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
 
-      {# A range rather than one number, because a datasheet has several
-         prices — ten Boyz and twenty Boyz are 90 and 180. A row matches if any
-         of its prices falls in the range, so "under 100" finds Boyz on the
-         strength of the ten-model price and does not pretend the twenty-model
-         one is cheap. #}
-      <label class="pts">Points from
-        <input name="points_min" type="number" min="0" step="5" inputmode="numeric"
-               value="{{ points_min }}" autocomplete="off" placeholder="any">
-      </label>
-      <label class="pts">up to
-        <input name="points_max" type="number" min="0" step="5" inputmode="numeric"
-               value="{{ points_max }}" autocomplete="off" placeholder="any">
-      </label>
-    </div>
-    <div class="actions"><button class="go" type="submit">Apply</button></div>
-  </details>
+    {# A range rather than one number, because a datasheet has several prices —
+       ten Boyz and twenty Boyz are 90 and 180. A row matches if any of its
+       prices falls in the range. #}
+    <span class="ptsrange">
+      <label class="sr-only" for="points_min">Points from</label>
+      <input id="points_min" name="points_min" type="number" min="0" step="5"
+             inputmode="numeric" value="{{ points_min }}" placeholder="pts">
+      <span aria-hidden="true">–</span>
+      <label class="sr-only" for="points_max">Points up to</label>
+      <input id="points_max" name="points_max" type="number" min="0" step="5"
+             inputmode="numeric" value="{{ points_max }}" placeholder="any">
+    </span>
+
+    {# `own` was a select of three. As chips it is one tap and always readable.
+       A hidden input carries it so the search box submits it too. #}
+    <input type="hidden" name="own" value="{{ own }}">
+  </div>
   </form>
-
-  {% if own == 'all' %}
-    <p class="hint">Everything in the game, owned or not.</p>
-  {% elif own == 'wanted' %}
-    <p class="hint">Wishlist — wanted, not owned.</p>
-  {% endif %}
 
   {# Chip rail, §3b. Direction 1a won because the query stays readable: you can
      always see what you filtered without opening anything. Sealed carries the
@@ -122,7 +104,23 @@
      Toggling: a chip that is on links back to *off* rather than to itself,
      because a control that does nothing when tapped is a control you stop
      trusting. #}
-  <nav class="chips" aria-label="Filters">
+  <nav class="chips" aria-label="What to show">
+    {# Was a select of three, which cost a labelled row and a tap to open.
+       Chips say what is on without being opened. "To sell" only appears once
+       something is on it — an empty list is not a place to go. #}
+    <a class="chip {% if own == 'mine' %}on{% endif %}"
+       href="{{ filter_url(own='mine') }}">Mine</a>
+    <a class="chip {% if own == 'wanted' %}on{% endif %}"
+       href="{{ filter_url(own='wanted') }}">Wishlist</a>
+    {% if summary_for_sale or own == 'sell' %}
+      <a class="chip wants {% if own == 'sell' %}on{% endif %}"
+         href="{{ filter_url(own='sell') }}">To sell</a>
+    {% endif %}
+    <a class="chip {% if own == 'all' %}on{% endif %}"
+       href="{{ filter_url(own='all') }}">Everything</a>
+  </nav>
+
+  <nav class="chips" aria-label="Narrow it down">
     <a class="chip {% if not system and not filter %}on{% endif %}"
        href="{{ filter_url(system=None, filter=None) }}">All</a>
     <a class="chip {% if system == 'wh40k' %}on{% endif %}"
@@ -157,10 +155,8 @@
     <p class="download">
       <a class="ghost" href="{{ filter_url('/collection.csv') }}"
          download>Download CSV</a>
-      <span class="muted">
-        {{ totals.datasheets }} row{{ '' if totals.datasheets == 1 else 's' }},
-        exactly what is filtered here
-      </span>
+      <span class="muted">{{ totals.datasheets }}
+        row{{ '' if totals.datasheets == 1 else 's' }}</span>
     </p>
   {% endif %}
 
