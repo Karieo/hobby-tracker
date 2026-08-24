@@ -550,3 +550,90 @@ def test_the_two_rows_stay_separate(conn):
 
     assert a != b
     assert len(col.list_factions(conn)) == 2
+
+
+# ── Removing models ──────────────────────────────────────
+#
+# The gap Clay found: adding too many was easy and there was no way back. Note
+# what this is NOT — a disposal. A kit that got sold keeps every model row and
+# the spend history; this deletes rows, so it is only for plastic that was
+# never there.
+
+def test_removing_models_takes_the_ones_never_started(conn, orks, stages):
+    """The whole point of the ordering. Ten Boyz, six of them built, trim to
+    six: the four that go are the four still on sprue, not four of the six."""
+    unit_id = col.create_unit(conn, orks['Boyz'], 10)
+    col.advance_unit(conn, unit_id, count=6)          # 6 Assembled, 4 On sprue
+
+    result = col.remove_models(conn, unit_id, 4)
+
+    assert result == {'removed': 4, 'remaining': 6, 'unit_deleted': False}
+    counts = {s['name']: s['count'] for s in col.unit_breakdown(conn, unit_id)}
+    assert counts['On sprue'] == 0, 'the untouched models are the ones to go'
+    assert counts['Assembled'] == 6, 'recorded work is the last thing to leave'
+
+
+def test_within_a_stage_the_newest_go_first(conn, orks, stages):
+    """The accidental extras are the ones just typed in. Both orderings — least
+    advanced, then newest — point at the same models, which is the safety."""
+    unit_id = col.create_unit(conn, orks['Boyz'], 5)
+    original = [m['id'] for m in col.unit_models(conn, unit_id)]
+    col.add_models(conn, unit_id, 3, stages['On sprue']['id'])
+
+    col.remove_models(conn, unit_id, 3)
+
+    assert [m['id'] for m in col.unit_models(conn, unit_id)] == original
+
+
+def test_removing_every_model_deletes_the_unit(conn, orks, stages):
+    """A unit with no models is a zero in every count that can never become
+    anything else."""
+    unit_id = col.create_unit(conn, orks['Boyz'], 3)
+
+    result = col.remove_models(conn, unit_id, 3)
+
+    assert result == {'removed': 3, 'remaining': 0, 'unit_deleted': True}
+    assert col.get_unit(conn, unit_id) is None
+
+
+def test_asking_for_more_than_there_are_removes_what_there_is(conn, orks, stages):
+    """Rather than erroring. "Remove 50" from a unit of 3 means all of them."""
+    unit_id = col.create_unit(conn, orks['Boyz'], 3)
+
+    result = col.remove_models(conn, unit_id, 50)
+
+    assert result['removed'] == 3 and result['unit_deleted'] is True
+
+
+def test_removing_none_changes_nothing(conn, orks, stages):
+    unit_id = col.create_unit(conn, orks['Boyz'], 4)
+
+    assert col.remove_models(conn, unit_id, 0) == \
+        {'removed': 0, 'remaining': 4, 'unit_deleted': False}
+    assert len(col.unit_models(conn, unit_id)) == 4
+
+
+def test_a_removed_models_history_goes_with_it(conn, orks, stages):
+    """stage_events is ON DELETE CASCADE. Right for a model that never existed,
+    and exactly why a disposal has to be a different operation."""
+    unit_id = col.create_unit(conn, orks['Boyz'], 2)
+    col.advance_unit(conn, unit_id)
+    before = conn.execute('SELECT COUNT(*) AS n FROM stage_events').fetchone()['n']
+    assert before > 0
+
+    col.remove_models(conn, unit_id, 2)
+
+    assert conn.execute(
+        'SELECT COUNT(*) AS n FROM stage_events').fetchone()['n'] == 0
+
+
+def test_removing_from_one_unit_leaves_another_alone(conn, orks, stages):
+    """The LIMIT is scoped by unit_id. Getting that wrong would eat a
+    neighbouring squad silently."""
+    keep = col.create_unit(conn, orks['Boyz'], 5)
+    trim = col.create_unit(conn, orks['Boyz'], 5)
+
+    col.remove_models(conn, trim, 2)
+
+    assert len(col.unit_models(conn, keep)) == 5
+    assert len(col.unit_models(conn, trim)) == 3

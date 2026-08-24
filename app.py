@@ -769,6 +769,25 @@ def api_add_models(unit_id):
     return jsonify({'success': True}), 201
 
 
+@app.route('/api/units/<int:unit_id>/models', methods=['DELETE'])
+def api_remove_models(unit_id):
+    """Undo for adding too many — not how you record getting rid of models.
+
+    Same distinction the whole-unit delete makes: this deletes rows, so it is
+    for plastic that was never there. Models Clay owned and sold leave through
+    a kit disposal, which keeps them.
+    """
+    data = _payload()
+    count = _int(data.get('count'), 0)
+    if count < 1:
+        return jsonify({'error': 'How many?'}), 400
+    with _write() as conn:
+        if not col.get_unit(conn, unit_id):
+            abort(404)
+        result = col.remove_models(conn, unit_id, count)
+    return jsonify(result)
+
+
 # ── Kits ─────────────────────────────────────────────────
 
 @app.route('/kits')

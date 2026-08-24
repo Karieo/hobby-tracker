@@ -1654,3 +1654,102 @@ def test_the_resolve_button_does_not_shadow_its_own_row(client, gap_list):
     row = body.split('row-unresolved', 1)[1].split('</li>', 1)[0]
     assert 'data-resolve=' in row
     assert 'entry-resolve" data-entry=' not in row
+
+
+# ── Removing models ──────────────────────────────────────
+#
+# Clay: "I have no way to remove models if I accidentally add too many." Both
+# halves of the fix are asserted here — the endpoint, and the control on the
+# page that reaches it, because the endpoint to delete a whole unit had existed
+# since the beginning with nothing anywhere calling it.
+
+def test_removing_models_trims_the_unit(client, army_with_unit):
+    unit_id = army_with_unit['unit_id']
+
+    res = client.delete(f'/api/units/{unit_id}/models', json={'count': 4})
+
+    assert res.status_code == 200
+    assert res.get_json() == {'removed': 4, 'remaining': 6,
+                              'unit_deleted': False}
+
+
+def test_removing_them_all_reports_the_unit_gone(client, army_with_unit):
+    """So the page can send Clay somewhere that still exists rather than
+    reloading into a 404."""
+    unit_id = army_with_unit['unit_id']
+
+    res = client.delete(f'/api/units/{unit_id}/models', json={'count': 10})
+
+    assert res.get_json()['unit_deleted'] is True
+    assert client.get(f'/units/{unit_id}').status_code == 404
+
+
+def test_removing_nothing_is_refused(client, army_with_unit):
+    """A zero or a missing count is a mis-submitted form, not an instruction."""
+    unit_id = army_with_unit['unit_id']
+    for payload in ({'count': 0}, {}, {'count': -3}):
+        assert client.delete(f'/api/units/{unit_id}/models',
+                             json=payload).status_code == 400
+
+
+def test_removing_from_a_unit_that_is_not_there(client):
+    assert client.delete('/api/units/9999/models',
+                         json={'count': 1}).status_code == 404
+
+
+def test_the_unit_page_offers_the_control(client, army_with_unit):
+    """The endpoint existing is not the feature — Clay could not reach it."""
+    body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    assert 'id="remove-models"' in body
+    assert 'Dispose of the kit' in body, \
+        'the panel has to say what this is not, or it becomes the disposal path'
+
+
+# ── The ramp's bottom rung ───────────────────────────────
+#
+# Clay, on the unit page: "Can the negative 1 on the 'on Sprue' remove the
+# model from inventory and make the number between the - and + non editable.
+# And only show the - and + that have models available to move."
+#
+# The first of those fixed a control that had always been live and inert:
+# retreat_unit skips models at the first owned stage, so −1 there moved
+# nothing and toasted "Nothing to step back".
+
+def test_the_bottom_rung_is_marked_as_removing(client, army_with_unit):
+    """It calls a different endpoint from every other −1, so the markup has to
+    say which it is — a class the handler branches on."""
+    body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    assert 'class="untick removes"' in body
+    assert body.count('class="untick removes"') == 1, \
+        'exactly one rung removes — the rest step back a stage'
+    assert 'remove one model from the collection' in body
+
+
+def test_the_counts_are_not_editable(client, army_with_unit):
+    """A number to read, not a field to type in. Paint mode has always shown
+    it this way; this is the two screens agreeing."""
+    body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    assert 'class="count-at"' in body
+    assert '<input class="count-at"' not in body
+
+
+def test_paint_mode_never_offers_to_delete(client, army_with_unit):
+    """Same dead button there, but a painting session with wet hands is no
+    place for an irreversible one. Off, not repurposed."""
+    body = client.get(f'/paint/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    assert 'removes' not in body
+    first = body.index('class="untick"')
+    assert 'disabled' in body[first:first + 260], \
+        "the bottom rung's −1 has nowhere to step back to"
+
+
+def test_inert_nudge_buttons_are_hidden_not_greyed(client):
+    """"only show the − and + that have models available to move" — and with
+    visibility, so the counts stay in one column down the ladder."""
+    body = client.get('/static/css/app.css').get_data(as_text=True)
+
+    assert '.nudge button:disabled { visibility: hidden; }' in body

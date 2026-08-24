@@ -51,6 +51,11 @@
        −1 sits beside +1 because every tap here saves immediately and nothing
        asks "are you sure": a mis-tap with wet hands has to cost one more tap
        to undo, not a trip to another screen. #}
+    {# The bottom rung's −1 has nowhere to step back to. On the unit page it
+       removes a model; here it is simply off. Deleting plastic is not
+       something to offer mid-session with wet hands, and a button that moves
+       nothing is worse than one that is not there. #}
+    {% set ns = namespace(first_owned=true) %}
     <ul class="ramp">
       {% for s in breakdown %}
         {% if s.is_owned %}
@@ -61,7 +66,7 @@
             <span class="rname">{{ s.name }}</span>
             <span class="nudge">
               <button class="untick" data-unit="{{ unit.id }}" data-from="{{ s.id }}"
-                      {% if not s.count %}disabled{% endif %}
+                      {% if not s.count or ns.first_owned %}disabled{% endif %}
                       aria-label="step one model back from {{ s.name }}">−1</button>
               <span class="count"><b>{{ s.count }}</b></span>
               {% if s.is_terminal %}
@@ -73,6 +78,7 @@
               {% endif %}
             </span>
           </li>
+          {% set ns.first_owned = false %}
         {% endif %}
       {% endfor %}
     </ul>
