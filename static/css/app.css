@@ -621,6 +621,21 @@ h2 { font-size: 1.4rem; }
         align-items: center; border: 1px solid var(--rule);
         padding: .5rem .6rem; background: var(--panel); }
 .rung .swatch { width: 14px; height: 14px; border: 1px solid var(--rule); }
+/* The stage icons took the swatch's place, and they do not inherit its
+   colour. --s1 through --s4 are pale on purpose — they were 14px of solid
+   fill, where "barely there" reads as early. A 1.6px line drawing in the same
+   colour is not subtle, it is invisible.
+
+   So the icons are drawn in the ink colour and the shape carries the meaning,
+   which is the whole point of using images. Battle ready keeps the accent,
+   because the design is explicit that the accent means done and nothing else.
+
+   `background: none` because .s0-.s7 set one, and an SVG with a pale block
+   behind it looks like a rendering fault. */
+.stageicon { flex: 0 0 auto; background: none; color: var(--ink); }
+.stageicon.s7 { color: var(--accent); }
+.rung.empty .stageicon { color: var(--muted); }
+.rung.na .stageicon { opacity: .4; }
 .rung .rname { font-size: .85rem; }
 .rung.empty .rname { color: var(--faint); }
 .rung.na { border-style: dashed; }

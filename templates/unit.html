@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import staleness %}
+{% from "_macros.html" import staleness, stage_icon %}
 {% block title %}{{ unit.display_name }} · Collection Tracker{% endblock %}
 {% block body %}
   <header class="page">
@@ -28,20 +28,29 @@
      and what state they are in" and a unit page that could not answer the
      third would be a worse screen, not a simpler one. Moving models is one
      tap away in the header. #}
+  {# "Only show ramp option with model count." Empty rungs are gone from this
+     screen: it is a summary now, and five rows of zero were most of what it
+     said. Paint mode keeps the whole ladder, because there the empty rungs are
+     where the models are going and one that changes length as you tap is a
+     worse thing to work against. #}
+  {% set filled = breakdown | selectattr('is_owned') | selectattr('count') | list %}
   <h2>Where they are</h2>
-  <ul class="ramp read-only">
-    {% for s in breakdown %}
-      {% if s.is_owned %}
-        <li class="rung {% if not s.count %}empty{% endif %}
-                   {% if not s.applies %}na{% endif %}
+  {% if filled %}
+    <ul class="ramp read-only">
+      {% for s in filled %}
+        <li class="rung {% if not s.applies %}na{% endif %}
                    {% if s.is_terminal %}terminal{% endif %}">
-          <span class="swatch s{{ s.position }}"></span>
+          {{ stage_icon(s.position, s.name) }}
           <span class="rname">{{ s.name }}</span>
           <span class="nudge"><span class="count-at">{{ s.count }}</span></span>
         </li>
-      {% endif %}
-    {% endfor %}
-  </ul>
+      {% endfor %}
+    </ul>
+  {% else %}
+    {# Every model is on the wishlist, which is not an owned stage. Saying so
+       beats an empty box that looks like the page failed to load. #}
+    <p class="hint">Nothing owned yet — every model here is still on the wishlist.</p>
+  {% endif %}
   {# A plain link, not a `.go` button: the header already carries one, and a
      filled button dropped into the middle of a sentence makes the words wrap
      around it and stops the sentence reading as a sentence. #}
@@ -87,11 +96,6 @@
     </div>
   {% endif %}
 
-  {# The nickname field is gone at Clay's word. The column stays and so does
-     any nickname already on a unit — `display_name` still prefers it, so
-     nothing that was named loses its name. Only the way to type a new one has
-     left, because naming a squad is neither the summary nor the count and this
-     screen is now those two things. #}
   {# The hobby log. Newest date first, because "what did I just finish" is the
      question asked far more often than "what did I finish in March" — and the
      one worth a tap is the one at the top. #}
@@ -147,13 +151,11 @@
     <div class="actions"><button class="go" type="submit">Add picture</button></div>
   </form>
 
-  <h2>Notes</h2>
-  <form class="panel stack" data-patch="/api/units/{{ unit.id }}">
-    <label class="sr-only" for="unit-notes">Notes</label>
-    <input id="unit-notes" name="notes" value="{{ unit.notes or '' }}"
-           placeholder="Anything worth remembering about this unit">
-    <button type="submit">Save</button>
-  </form>
+  {# The Unit panel is gone, nickname and notes crossed out together. The
+     columns stay and so does everything already in them: `display_name` still
+     prefers a nickname, and PATCH /api/units/<id> still writes either field.
+     Only the box on this screen has left, because neither is the summary nor
+     the count. #}
 
   <h2>How many</h2>
   {# The two halves of what this screen is now for. Adding wires up

@@ -1957,3 +1957,65 @@ def test_the_upload_form_is_on_the_unit_page(client, army_with_unit):
     body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
     assert 'id="add-photo"' in body
     assert 'name="taken_on"' in body, 'the date is the point of the log'
+
+
+# ── The ramp as a summary ────────────────────────────────
+#
+# Clay: "Only show ramp option with model count and use images to represent
+# each ramp."
+
+def test_the_unit_page_shows_only_stages_with_models(client, army_with_unit, db_path):
+    """Five rows of zero were most of what the summary said."""
+    unit_id = army_with_unit['unit_id']
+    with db.connect(db_path) as conn:
+        col.advance_unit(conn, unit_id, count=4)      # 4 Assembled, 6 On sprue
+
+    body = client.get(f'/units/{unit_id}').get_data(as_text=True)
+
+    assert 'On sprue' in body and 'Assembled' in body
+    for empty in ('Base prepared', 'Primed', 'Painted', 'Based'):
+        assert f'>{empty}</span>' not in body, f'{empty} is empty and should be gone'
+
+
+def test_paint_mode_keeps_the_whole_ladder(client, army_with_unit):
+    """The empty rungs are where the models are going. A ladder that changes
+    length as you tap is a worse thing to work against mid-session."""
+    body = client.get(f'/paint/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    for stage in ('On sprue', 'Base prepared', 'Primed', 'Battle ready'):
+        assert stage in body
+
+
+def test_a_unit_with_nothing_owned_says_so(client, army_with_unit, db_path):
+    """Every model on the wishlist means no owned stage has any, and an empty
+    box looks like the page failed to load."""
+    unit_id = army_with_unit['unit_id']
+    with db.connect(db_path) as conn:
+        wishlist = conn.execute(
+            "SELECT id FROM stages WHERE is_owned = 0").fetchone()['id']
+        conn.execute('UPDATE models SET stage_id = ? WHERE unit_id = ?',
+                     (wishlist, unit_id))
+
+    body = client.get(f'/units/{unit_id}').get_data(as_text=True)
+
+    assert 'still on the wishlist' in body
+
+
+def test_every_stage_has_its_own_icon(client, army_with_unit):
+    """Seven rungs, seven different drawings — a macro that fell through to one
+    default would render seven identical ones and nobody would notice."""
+    import re
+    body = client.get(f'/paint/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    icons = re.findall(r'<svg class="stageicon[^"]*".*?</svg>', body, re.S)
+    assert len(icons) == 7, 'one per owned rung'
+    paths = [re.findall(r'<path d="([^"]+)"|<(circle|ellipse|rect)\b', i) for i in icons]
+    assert len(set(map(str, paths))) == 7, 'each stage draws something different'
+
+
+def test_the_unit_panel_is_gone(client, army_with_unit):
+    """Nickname and notes were crossed out together."""
+    body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    assert 'data-patch=' not in body
+    assert 'name="notes"' not in body
