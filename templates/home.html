@@ -21,6 +21,24 @@
 
   {{ stage_bar(summary) }}
 
+  {# Clay: "I want to have a quick glance on the homepage that lets me get to
+     these list quickly." Two counts and two taps. They only appear when there
+     is something in them — a row of zeroes is furniture. #}
+  {% if summary.wanted or summary.for_sale %}
+    <div class="piles quick">
+      {% if summary.wanted %}
+        <a href="/collection?own=wanted">
+          <b>{{ summary.wanted }}</b><span>on the wishlist</span>
+        </a>
+      {% endif %}
+      {% if summary.for_sale %}
+        <a href="/collection?own=sell">
+          <b>{{ summary.for_sale }}</b><span>to sell</span>
+        </a>
+      {% endif %}
+    </div>
+  {% endif %}
+
   {% if armies %}
     <h2 class="label">By army</h2>
     <div class="multiples">

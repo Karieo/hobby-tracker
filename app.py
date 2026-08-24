@@ -459,8 +459,9 @@ def _collection_rows(conn, f):
         conn, query=f['query'] or None, faction_id=f['faction_id'],
         game_system=f['system'], stage_id=f['stage_id'],
         points_min=f['points_min'], points_max=f['points_max'],
-        only_wanted=(f['own'] == 'wanted'), sort=f['sort'],
-        include_unowned=(f['own'] == 'all'))
+        only_wanted=(f['own'] == 'wanted'),
+        only_for_sale=(f['own'] == 'sell'),
+        sort=f['sort'], include_unowned=(f['own'] == 'all'))
     keep = _COLLECTION_CHIPS.get(f['chip'])
     return [r for r in rows if keep(r)] if keep else rows
 
@@ -824,6 +825,7 @@ def unit_detail(unit_id):
             # nothing to prompt for.
             options=options if len(options) > 1 else [],
             built_as=col.unit_built_as(conn, unit_id),
+            piles=col.pile_counts(conn, unit_id),
             unit_photos=photos.for_unit(conn, unit_id),
             today=date.today().isoformat(),
             armies=[a for a in col.list_armies(conn) if a['id']])
@@ -973,52 +975,47 @@ def api_remove_models(unit_id):
     return jsonify(result)
 
 
-@app.route('/api/units/<int:unit_id>/dispose', methods=['POST'])
-def api_dispose_models(unit_id):
-    """Sold, traded or given away — a number of them, not the whole squad.
+#: The three piles a model can be in, and how one moves between them. Each is
+#: a pair, so every tap has its undo beside it — Clay: "add/remove one at a
+#: time is fine". No count box and no price anywhere: "I don't care about sell
+#: price or purchase price", so this records *where* a model is, not what it
+#: was worth.
+_PILES = {
+    'owned': (
+        lambda c, u, n: len(col.add_models(
+            c, u, n, stage_id=db.first_owned_stage(c)['id'])),
+        lambda c, u, n: col.remove_models(c, u, n)['removed']),
+    'wishlist': (col.wishlist_models, col.unwishlist_models),
+    # Still owned — a shortlist of what to part with, not a record of what
+    # has gone. Clay: "Not sold, sell a list of things to part with."
+    'sell': (col.list_for_sale, col.unlist_for_sale),
+}
 
-    Clay: *"sell, trade/giveaway"*. The mirror of DELETE above and the reason
-    both exist: this keeps every row, its stage and what it went for, because
-    a disposal is a status change and the spend history is the point. Deleting
-    is for plastic that was never there.
+
+@app.route('/api/units/<int:unit_id>/pile/<pile>', methods=['POST'])
+def api_pile(unit_id, pile):
+    """Move a model into or out of a pile.
+
+    This replaced four panels — a count box and a submit button each, plus a
+    price field. Clay: *"This is over complicated."* He was right: every one of
+    those inputs asked him for a decision the app did not need.
+
+    `delta` rather than a count, because the control is a pair of buttons
+    rather than a form. It still takes any size, so "add ten" would need no
+    second endpoint.
     """
-    data = _payload()
-    count = _int(data.get('count'), 0)
-    status = (data.get('status') or 'sold').strip()
-    if count < 1:
-        return jsonify({'error': 'How many?'}), 400
-    if status not in ('sold', 'traded', 'gifted'):
-        return jsonify({'error': f'{status!r} is not a disposal'}), 400
+    if pile not in _PILES:
+        return jsonify({'error': f'no pile {pile!r}'}), 404
+    delta = _int(_payload().get('delta'), 0)
+    if delta == 0:
+        return jsonify({'error': 'Which way?'}), 400
+    add, take = _PILES[pile]
     with _write() as conn:
         if not col.get_unit(conn, unit_id):
             abort(404)
-        try:
-            result = col.dispose_models(
-                conn, unit_id, count, status,
-                price_cents=_money(data.get('price')),
-                note=(data.get('note') or '').strip() or None)
-        except ValueError as err:
-            return jsonify({'error': str(err)}), 400
-    return jsonify(result)
-
-
-@app.route('/api/units/<int:unit_id>/wishlist', methods=['POST'])
-def api_wishlist_models(unit_id):
-    """Want more of these.
-
-    Clay: *"wishlist more"*. No new storage — Wishlist has been position 0 of
-    the ladder since the first migration, so this is `add_models` aimed one
-    rung below owned. They show at /collection?own=wanted.
-    """
-    data = _payload()
-    count = _int(data.get('count'), 0)
-    if count < 1:
-        return jsonify({'error': 'How many?'}), 400
-    with _write() as conn:
-        if not col.get_unit(conn, unit_id):
-            abort(404)
-        added = col.wishlist_models(conn, unit_id, count)
-    return jsonify({'wishlisted': added})
+        moved = (add if delta > 0 else take)(conn, unit_id, abs(delta))
+        counts = col.pile_counts(conn, unit_id)
+    return jsonify({'moved': moved, **counts})
 
 
 # ── Photos (spec §2.4) ───────────────────────────────────

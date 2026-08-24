@@ -273,6 +273,41 @@ shipped, and it would have been left unguarded.
 one unhelpful is that it listed boxes, and a box is not a thing Clay does
 anything with once the models are out of it.
 
+## Three piles, and no ledger
+
+Clay: *"This is over complicated, I just want to be able to add/remove one at
+a time is fine, I don't care about sell price or purchase price."*
+
+A model is in one of three piles — **owned**, **wishlist**, **gone** — and the
+unit page is three rows of plus and minus. That replaced four panels, each
+with a count box and a submit button, one of them also asking what the models
+went for. Every one of those fields was a decision the app wanted and did not
+need.
+
+`POST /api/units/<id>/pile/<pile>` with a `delta` handles all six directions.
+`_PILES` in `app.py` is the whole mapping.
+
+**"To sell" is a shortlist, not a disposal.** Clay: *"Not sold, sell a list of
+things to part with."* The models are still on the shelf and still his — they
+keep counting as owned, keep advancing through the stages, keep showing in the
+collection. `models.for_sale_on` (migration 011) is a flag beside ownership,
+never a state inside it. Wishlist is want-and-do-not-have; this is
+have-and-would-rather-not.
+
+Migration 010's `disposed_*` columns were the first attempt, built on reading
+"sell" as past tense. Nothing writes them now. They are left in place rather
+than dropped because dropping a column rewrites the table, and an inert column
+costs nothing while a destructive migration for tidiness costs a restore if it
+goes wrong. The `m.disposed_on IS NULL` filters in the ownership queries stay
+with them, correct and currently inert.
+
+**Every button has its opposite beside it**, which is why nothing here asks for
+confirmation. `undispose_models` and `unwishlist_models` are those undos.
+
+The counts repaint from the reply rather than reloading: these get tapped
+several times running, and a reload between each throws away the scroll
+position.
+
 ## Backups
 
 `backup.sh` snapshots via `sqlite3 .backup`, never `cp` — the app holds a

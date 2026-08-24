@@ -962,3 +962,32 @@ h2 + .panel, h2 + form, h2 + .hint { margin-top: 0; }
    count holds "1". Without this the two share the row equally and the count
    gets a box it could fit a phone number in. */
 .row label.tight { flex: 0 1 7rem; min-width: 5rem; }
+
+/* ── The three piles ─────────────────────────────────────
+   Owned, wishlist, gone — plus and minus on each, and nothing else. Replaced
+   four panels carrying a number box, a submit button and a price field. The
+   count is the only thing that changes, so it is the only thing that moves. */
+.piles { list-style: none; margin: .4rem 0 .5rem; padding: 0;
+         border: 1px solid var(--line); background: var(--panel); }
+.piles li { display: flex; align-items: center; gap: .5rem;
+            padding: .35rem .6rem; border-top: 1px solid var(--rule); }
+.piles li:first-child { border-top: 0; }
+.piles .pname { flex: 1; font-size: .9rem; }
+.piles .pcount { min-width: 2.2rem; text-align: center; font-size: 1.1rem; }
+/* Square and thumb-sized: these get tapped repeatedly, often one-handed. */
+.piles .step { width: 44px; min-height: 44px; padding: 0; font-size: 1.2rem;
+               line-height: 1; background: transparent; color: var(--ink); }
+.piles .step:disabled { opacity: .25; }
+
+/* The homepage's two quick glances. Same class as the unit page's piles
+   because they are the same three buckets seen from further away. */
+.piles.quick { display: grid; grid-auto-flow: column;
+               grid-auto-columns: 1fr; border: 0; background: none;
+               gap: .4rem; margin: .8rem 0 1.2rem; }
+.piles.quick a { display: flex; flex-direction: column; gap: .1rem;
+                 padding: .6rem .7rem; text-decoration: none; color: inherit;
+                 border: 1px solid var(--line); background: var(--panel); }
+.piles.quick b { font-size: 1.3rem; }
+.piles.quick span { font-size: .68rem; text-transform: uppercase;
+                    letter-spacing: .12em; color: var(--muted); }
+.piles.quick a:hover { border-color: var(--accent); }
