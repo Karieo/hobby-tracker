@@ -81,12 +81,12 @@ function repaintPipe(breakdown) {
     const li = $(`[data-stage="${stage.id}"]`, pipe);
     if (!li) return;
     painted += 1;
-    // Both screens show a plain number now — unit detail used to make it an
-    // editable field. Same number either way, and both have to stay honest.
+    // Paint mode is the only screen that repaints — the unit page's summary
+    // is cards now and reloads. `.count-at` was read here too and had stopped
+    // matching anything, which is the same hazard the comment above describes:
+    // a dead lookup beside a live one reads as a second supported shape.
     const count = $('.count b', li);
     if (count) count.textContent = stage.count;
-    const field = $('.count-at', li);
-    if (field) field.textContent = stage.count;
     li.classList.toggle('empty', stage.count === 0);
     const tick = $('.tick', li);
     if (tick) tick.disabled = !stage.can_advance;
@@ -159,37 +159,11 @@ document.addEventListener('click', (e) => {
 
   const untick = e.target.closest('button.untick');
   if (untick && untick.dataset.unit) {
-    // The bottom rung has nowhere to step back to, so its −1 takes the model
-    // out of the collection instead. Confirmed, unlike every other tap on this
-    // screen: the rest move models between stages and are undone by tapping
-    // the other way, and this one cannot be — +1 here advances a model, it
-    // does not conjure one back.
-    if (untick.classList.contains('removes')) {
-      if (window.confirm('Remove one model from the collection? '
-                         + 'This cannot be undone.')) {
-        removeOne(untick.dataset.unit);
-      }
-      return;
-    }
     retreat(untick.dataset.unit,
             {count: 1, from_stage_id: Number(untick.dataset.from)});
     return;
   }
 });
-
-/* Taking one model off the bottom of the ladder. A correction — plastic that
- * was never there — and not how a sold kit leaves, which keeps its models and
- * its spend history. */
-async function removeOne(unitId) {
-  try {
-    const data = await post(`/api/units/${unitId}/models`, {count: 1}, 'DELETE');
-    if (data && data.unit_deleted) { location.href = '/collection'; return; }
-    toast('Removed one model');
-    setTimeout(() => location.reload(), 600);
-  } catch (err) {
-    toast(err.message, 'error');
-  }
-}
 
 /* ── Bulk model selection ────────────────────────────────
  * The escape hatch, not the default path. It still has to be good: select-all,
@@ -248,6 +222,59 @@ if (moveForm) {
     try {
       await post(`/api/units/${moveForm.dataset.unit}/move`,
                  {army_id: value === '' ? null : Number(value)});
+      location.reload();
+    } catch (err) { toast(err.message, 'error'); }
+  });
+}
+
+/* ── The hobby log ───────────────────────────────────────
+ * A multipart POST through fetch rather than a plain form submit: the endpoint
+ * answers in JSON like every other one here, and letting the browser navigate
+ * to it would leave Clay looking at `{"id": 4}` on a white page. */
+const photoForm = $('#add-photo');
+if (photoForm) {
+  photoForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const button = $('button[type="submit"]', photoForm);
+    // A phone photo over a tunnel is not instant, and a button that does
+    // nothing visible for four seconds gets pressed again.
+    button.disabled = true;
+    const said = button.textContent;
+    button.textContent = 'Uploading…';
+    try {
+      const res = await fetch(photoForm.action,
+                              {method: 'POST', body: new FormData(photoForm)});
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((data && data.error) || `${res.status}`);
+      location.reload();
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = said;
+      toast(err.message, 'error');
+    }
+  });
+}
+
+document.addEventListener('click', async (e) => {
+  const remove = e.target.closest('.shot-delete');
+  if (!remove) return;
+  if (!window.confirm('Remove this picture? This cannot be undone.')) return;
+  try {
+    await post(`/api/photos/${remove.dataset.photo}`, null, 'DELETE');
+    location.reload();
+  } catch (err) { toast(err.message, 'error'); }
+});
+
+const addForm = $('#add-models');
+if (addForm) {
+  addForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const count = Number($('input[name="count"]', addForm).value);
+    try {
+      // No stage_id: the server puts them at the first owned stage, which is
+      // where plastic actually arrives. Anything further along is a claim the
+      // app has no business making on Clay's behalf.
+      await post(`/api/units/${addForm.dataset.unit}/models`, {count});
       location.reload();
     } catch (err) { toast(err.message, 'error'); }
   });

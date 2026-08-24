@@ -621,6 +621,21 @@ h2 { font-size: 1.4rem; }
         align-items: center; border: 1px solid var(--rule);
         padding: .5rem .6rem; background: var(--panel); }
 .rung .swatch { width: 14px; height: 14px; border: 1px solid var(--rule); }
+/* The stage icons took the swatch's place, and they do not inherit its
+   colour. --s1 through --s4 are pale on purpose — they were 14px of solid
+   fill, where "barely there" reads as early. A 1.6px line drawing in the same
+   colour is not subtle, it is invisible.
+
+   So the icons are drawn in the ink colour and the shape carries the meaning,
+   which is the whole point of using images. Battle ready keeps the accent,
+   because the design is explicit that the accent means done and nothing else.
+
+   `background: none` because .s0-.s7 set one, and an SVG with a pale block
+   behind it looks like a rendering fault. */
+.stageicon { flex: 0 0 auto; background: none; color: var(--ink); }
+.stageicon.s7 { color: var(--accent); }
+.rung.empty .stageicon { color: var(--muted); }
+.rung.na .stageicon { opacity: .4; }
 .rung .rname { font-size: .85rem; }
 .rung.empty .rname { color: var(--faint); }
 .rung.na { border-style: dashed; }
@@ -675,17 +690,6 @@ a.go {
 /* Header actions never wrap mid-phrase. */
 .page > .ghost, .page > a.ghost { white-space: nowrap; }
 
-/* The count inside a rung. It was an <input> and is now a <span>, so this no
-   longer needs to undo any field styling — but it keeps the same box as the
-   paint session's, because the two screens are the same control and should
-   not drift apart again. */
-.rung .count-at {
-  width: 3.2rem; min-height: 40px; text-align: center;
-  font-variant-numeric: tabular-nums; background: var(--panel-2);
-  border: 1px solid var(--rule); color: var(--ink);
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.rung.na .count-at { opacity: .4; }
 
 /* ── Desktop: use the width, don't just stretch into it ──
    The phone layout is the baseline and stays exactly as it is. On a wide
@@ -750,4 +754,60 @@ a.go {
 @media (min-width: 60rem) {
   .filtergrid { grid-template-columns: repeat(4, 1fr); }
   .filtergrid > label { grid-column: auto; }
+}
+
+/* ── The hobby log ───────────────────────────────────────
+   Pictures of finished models, newest first. Wide enough to see the paint at
+   arm's length and narrow enough that two dates fit on one phone screen — the
+   point is scanning back through them, not admiring one. */
+.shots { list-style: none; padding: 0; margin: .6rem 0 1rem;
+         display: grid; gap: .9rem; }
+.shots > li { border: 1px solid var(--rule); background: var(--panel); }
+.shots img { display: block; width: 100%; height: auto; max-height: 22rem;
+             object-fit: cover; }
+.shots .gone { padding: 1rem; }
+.shots .gone p { margin: 0 0 .3rem; }
+.shotmeta { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap;
+            margin: 0; padding: .5rem .7rem; font-size: .85rem; }
+/* The remove button sits at the far end so it is never the thing a thumb
+   lands on while scrolling the log. */
+.shotmeta .shot-delete { margin-left: auto; }
+#add-photo input[type="file"] { font-size: .85rem; }
+@media (min-width: 46rem) {
+  .shots { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── Stage cards ─────────────────────────────────────────
+   The unit page's summary, from a character sheet Clay sent: a label, the
+   number that is the point, and a smaller one saying it another way.
+
+   Cards suit a summary in a way rungs did not. A rung earns its shape from
+   the rows above and below it, and with the empty ones gone there is no
+   sequence left — just two or three facts, which a stack of full-width rows
+   rendered as mostly whitespace. */
+.statgrid { list-style: none; padding: 0; margin: .6rem 0 1rem;
+            display: grid; gap: .7rem; grid-template-columns: 1fr 1fr; }
+.statcard { border: 1px solid var(--rule); background: var(--panel);
+            padding: .7rem .6rem .5rem; text-align: center; }
+/* Battle ready is the only card that takes the accent, because the accent
+   means done and nothing else. */
+.statcard.done { border-color: var(--accent); }
+.statcard.na { opacity: .55; }
+.statname { margin: 0 0 .5rem; font-size: .7rem; letter-spacing: .08em;
+            text-transform: uppercase; color: var(--muted); }
+/* The number sits in its own box, as it does on the sheet — it is the thing
+   being read, and a border says so more quietly than a colour would. */
+.statbox { margin: 0; border: 1px solid var(--rule); background: var(--panel-2);
+           padding: .35rem 0; }
+.statbox b { font-size: 1.9rem; line-height: 1.1;
+             font-variant-numeric: tabular-nums; }
+.statfoot { margin: .45rem 0 0; display: flex; align-items: center;
+            justify-content: center; gap: .35rem;
+            font-size: .8rem; color: var(--muted); }
+.statcard.done .statfoot { color: var(--accent); }
+@media (min-width: 34rem) {
+  .statgrid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (min-width: 58rem) {
+  .statgrid { grid-template-columns: repeat(4, 1fr); }
 }

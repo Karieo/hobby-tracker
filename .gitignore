@@ -14,6 +14,9 @@ data/bsdata/
 data/*.db
 data/*.db-wal
 data/*.db-shm
+# Photos of Clay's models. Data, not source — they live on the volume beside
+# the database and travel in the backup, never in the repository.
+data/photos/
 venv/
 .venv/
 .pytest_cache/

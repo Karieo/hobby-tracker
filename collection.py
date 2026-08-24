@@ -567,10 +567,30 @@ def move_unit_to_army(conn, unit_id, army_id):
                  (army_id, db.now(), unit_id))
 
 
-def update_unit(conn, unit_id, nickname=None, notes=None):
-    conn.execute('UPDATE units SET nickname = ?, notes = ?, updated_at = ? '
-                 'WHERE id = ?', (nickname or None, notes or None,
-                                  db.now(), unit_id))
+_UNIT_FIELDS = ('nickname', 'notes')
+
+
+def update_unit(conn, unit_id, **fields):
+    """Write only the fields that were actually supplied.
+
+    It used to take nickname and notes as keyword arguments defaulting to None
+    and write both every time. That was fine while one form sent both, and a
+    quiet data-loss bug the moment a form sent one: dropping the nickname input
+    from the unit page would have made every notes save blank the nickname of
+    any squad Clay had named. Nothing would have told him — `display_name`
+    would simply go back to the datasheet name one day.
+
+    So an absent key means "leave it alone", and an empty string still means
+    "clear it", which is what a cleared input has to mean.
+    """
+    unknown = set(fields) - set(_UNIT_FIELDS)
+    assert not unknown, f'update_unit cannot write {sorted(unknown)}'
+    if not fields:
+        return
+    sets = ', '.join(f'{name} = ?' for name in fields)
+    conn.execute(f'UPDATE units SET {sets}, updated_at = ? WHERE id = ?',
+                 [*(value or None for value in fields.values()),
+                  db.now(), unit_id])
 
 
 def remove_models(conn, unit_id, count):

@@ -40,3 +40,10 @@ def test_the_example_is_still_tracked():
     # It ships the keys a deploy needs, with no values. Ignoring it would make
     # deploy.sh's `cp .env.example .env` fail on a fresh clone.
     assert not ignored('.env.example')
+
+
+def test_photos_are_ignored():
+    """They are data on the volume, not source. A `git add -A` after an
+    afternoon of photographing a shelf would otherwise commit a few hundred
+    megabytes of JPEGs to a repository that has no business holding them."""
+    assert ignored('data/photos/deadbeef.jpg')

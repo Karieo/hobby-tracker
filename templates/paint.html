@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Paint · Collection Tracker{% endblock %}
+{% from "_macros.html" import stage_icon %}
 {% block body %}
 {# Session mode. One screen, big targets, no forms and no navigation — this
    runs on a phone propped against a paint pot with wet brushes in hand. If
@@ -62,7 +63,7 @@
           <li class="rung {% if not s.count %}empty{% endif %}
                      {% if s.is_terminal %}terminal{% endif %}"
               data-stage="{{ s.id }}">
-            <span class="swatch s{{ s.position }}"></span>
+            {{ stage_icon(s.position, s.name) }}
             <span class="rname">{{ s.name }}</span>
             <span class="nudge">
               <button class="untick" data-unit="{{ unit.id }}" data-from="{{ s.id }}"

@@ -1002,11 +1002,29 @@ def test_a_refused_reconcile_still_returns_the_true_counts(client, army_with_uni
     assert total < 999, 'the breakdown reports what is really there'
 
 
-def test_unit_detail_shows_the_ramp_not_the_old_count_form(client, army_with_unit):
+def test_unit_detail_reads_the_stages_and_never_moves_them(client, army_with_unit):
+    """Clay: "Paint mode and collection have the same thing, let's leave the
+    collection as just a way to add or remove models, the paint mode has the
+    ramp." The count stays — a unit page that could not say what state things
+    are in would be a worse screen, not a simpler one — but nothing here moves
+    a model between stages any more."""
     body = client.get(f"/units/{army_with_unit['unit_id']}").get_data(as_text=True)
-    assert 'count-at' in body, 'counts are editable in place'
+
+    assert 'class="statbox"' in body, 'the counts are still readable'
     assert 'id="count-form"' not in body, 'the separate Set-a-count form is gone'
-    assert 'untick' in body, 'and the ramp carries −1'
+    for control in ('untick', 'class="tick"', 'button class="advance'):
+        assert control not in body, f'{control} belongs to paint mode now'
+    assert f'/paint/{army_with_unit["unit_id"]}' in body, \
+        'and the page says where the ladder went'
+
+
+def test_paint_mode_still_has_the_ramp(client, army_with_unit):
+    """The other half of the same instruction. Moving this off the unit page
+    only works if it is somewhere."""
+    body = client.get(f"/paint/{army_with_unit['unit_id']}").get_data(as_text=True)
+
+    assert 'untick' in body and 'class="tick"' in body
+    assert 'class="advance primary huge"' in body
 
 
 def test_every_pipeline_row_carries_its_stage_id(client, army_with_unit):
@@ -1018,7 +1036,9 @@ def test_every_pipeline_row_carries_its_stage_id(client, army_with_unit):
     """
     import re
     unit_id = army_with_unit['unit_id']
-    for url in (f'/units/{unit_id}', f'/paint/{unit_id}'):
+    # Paint mode alone: the unit page's ladder is read-only now and reloads
+    # rather than repainting, so its rows have nothing to be matched by.
+    for url in (f'/paint/{unit_id}',):
         body = client.get(url).get_data(as_text=True)
         pipeline = re.search(r'<ul class="(?:ramp|pipe)[^"]*"[^>]*>(.*?)</ul>',
                              body, re.S)
@@ -1716,23 +1736,41 @@ def test_the_unit_page_offers_the_control(client, army_with_unit):
 # retreat_unit skips models at the first owned stage, so −1 there moved
 # nothing and toasted "Nothing to step back".
 
-def test_the_bottom_rung_is_marked_as_removing(client, army_with_unit):
-    """It calls a different endpoint from every other −1, so the markup has to
-    say which it is — a class the handler branches on."""
+def test_the_unit_page_can_add_and_remove_models(client, army_with_unit):
+    """"just a way to add or remove models" — both halves. Adding wires up
+    POST /api/units/<id>/models, which shipped in the first commit and had
+    never been called from anywhere."""
     body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
 
-    assert 'class="untick removes"' in body
-    assert body.count('class="untick removes"') == 1, \
-        'exactly one rung removes — the rest step back a stage'
-    assert 'remove one model from the collection' in body
+    assert 'id="add-models"' in body
+    assert 'id="remove-models"' in body
+
+
+def test_adding_models_puts_them_where_plastic_arrives(client, army_with_unit, db_path):
+    """The first owned stage. Anything further along is a claim about hobby
+    work the app has no business making on Clay's behalf."""
+    unit_id = army_with_unit['unit_id']
+
+    assert client.post(f'/api/units/{unit_id}/models',
+                       json={'count': 3}).status_code == 201
+
+    with db.connect(db_path) as conn:
+        first = db.first_owned_stage(conn)['id']
+        rows = [dict(r) for r in conn.execute(
+            'SELECT stage_id, COUNT(*) AS n FROM models WHERE unit_id = ? '
+            'GROUP BY stage_id', (unit_id,))]
+    added = next(r for r in rows if r['stage_id'] == first)
+    assert added['n'] == 13, 'ten already there plus the three just added'
 
 
 def test_the_counts_are_not_editable(client, army_with_unit):
-    """A number to read, not a field to type in. Paint mode has always shown
-    it this way; this is the two screens agreeing."""
+    """A number to read, not a field to type in. It began as an <input> so a
+    count could be reconciled by typing; it is a stat card now, and the only
+    way to move a model is paint mode."""
     body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
 
-    assert 'class="count-at"' in body
+    assert 'class="statbox"' in body
+    assert 'class="count-at"' not in body
     assert '<input class="count-at"' not in body
 
 
@@ -1811,3 +1849,175 @@ def test_the_filters_reach_the_query(client, army_with_unit, db_path):
     assert 'Boyz' in client.get('/collection').get_data(as_text=True)
     assert 'Boyz' not in client.get(
         f'/collection?faction_id={other}').get_data(as_text=True)
+
+
+# ── Pruning the unit page ────────────────────────────────
+#
+# Clay: "Collection should just be a summary and add or remove. Drop the unit
+# nickname."
+
+def test_the_unit_page_is_a_summary_and_a_count(client, army_with_unit):
+    body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    assert 'class="statgrid"' in body, 'the summary stays'
+    assert 'id="add-models"' in body and 'id="remove-models"' in body
+    assert 'id="bulk"' not in body, 'the per-model stage picker went with the ramp'
+    assert 'name="model_ids"' not in body
+    assert 'name="nickname"' not in body
+
+
+def test_saving_notes_never_blanks_a_nickname(client, army_with_unit, db_path):
+    """The form no longer sends a nickname, and update_unit used to write both
+    columns every time. Without this, naming a squad and then editing its notes
+    would silently lose the name — and nothing would say so, because
+    display_name just falls back to the datasheet."""
+    unit_id = army_with_unit['unit_id']
+    client.patch(f'/api/units/{unit_id}', json={'nickname': 'Da Hard Boyz'})
+
+    client.patch(f'/api/units/{unit_id}', json={'notes': 'second squad'})
+
+    with db.connect(db_path) as conn:
+        row = conn.execute('SELECT nickname, notes FROM units WHERE id = ?',
+                           (unit_id,)).fetchone()
+    assert row['nickname'] == 'Da Hard Boyz', 'the name survived a notes save'
+    assert row['notes'] == 'second squad'
+
+
+def test_an_empty_value_still_clears(client, army_with_unit, db_path):
+    """Absent means "leave it"; empty means "clear it". A cleared input has to
+    be able to clear."""
+    unit_id = army_with_unit['unit_id']
+    client.patch(f'/api/units/{unit_id}', json={'notes': 'temporary'})
+
+    client.patch(f'/api/units/{unit_id}', json={'notes': ''})
+
+    with db.connect(db_path) as conn:
+        assert conn.execute('SELECT notes FROM units WHERE id = ?',
+                            (unit_id,)).fetchone()['notes'] is None
+
+
+# ── Photos through the app ───────────────────────────────
+
+def _jpeg():
+    import io
+    return (io.BytesIO(b'\xff\xd8\xff\xe0' + b'\x00' * 40), 'squad.jpg')
+
+
+def test_uploading_a_photo(client, army_with_unit, tmp_path, monkeypatch):
+    import photos as photomod
+    monkeypatch.setattr(photomod, 'PHOTO_DIR', str(tmp_path / 'shots'))
+    unit_id = army_with_unit['unit_id']
+
+    res = client.post(f'/api/units/{unit_id}/photos',
+                      data={'photo': _jpeg(), 'taken_on': '2026-08-18',
+                            'caption': 'first ten done'},
+                      content_type='multipart/form-data')
+
+    assert res.status_code == 201
+    body = client.get(f'/units/{unit_id}').get_data(as_text=True)
+    assert '2026-08-18' in body and 'first ten done' in body
+
+
+def test_a_post_with_no_file_says_so(client, army_with_unit):
+    assert client.post(f'/api/units/{army_with_unit["unit_id"]}/photos',
+                       data={}, content_type='multipart/form-data'
+                       ).status_code == 400
+
+
+def test_a_photo_for_a_unit_that_is_not_there(client, tmp_path, monkeypatch):
+    import photos as photomod
+    monkeypatch.setattr(photomod, 'PHOTO_DIR', str(tmp_path / 'shots'))
+    assert client.post('/api/units/9999/photos',
+                       data={'photo': _jpeg()},
+                       content_type='multipart/form-data').status_code == 404
+
+
+def test_serving_and_deleting_a_photo(client, army_with_unit, tmp_path, monkeypatch):
+    import photos as photomod
+    monkeypatch.setattr(photomod, 'PHOTO_DIR', str(tmp_path / 'shots'))
+    unit_id = army_with_unit['unit_id']
+    saved = client.post(f'/api/units/{unit_id}/photos', data={'photo': _jpeg()},
+                        content_type='multipart/form-data').get_json()
+
+    served = client.get(f'/photos/{saved["filename"]}')
+    assert served.status_code == 200
+    assert served.data.startswith(b'\xff\xd8\xff')
+
+    assert client.delete(f'/api/photos/{saved["id"]}').status_code == 200
+    assert client.get(f'/photos/{saved["filename"]}').status_code == 404
+
+
+def test_photos_are_behind_the_login(db_path, monkeypatch):
+    """These are pictures of Clay's house. The tunnel is public."""
+    import app as appmod
+    monkeypatch.setattr(appmod.db, 'DB_PATH', db_path)
+    anon = appmod.app.test_client()
+    assert anon.get('/photos/anything.jpg').status_code in (302, 401)
+
+
+def test_the_upload_form_is_on_the_unit_page(client, army_with_unit):
+    body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
+    assert 'id="add-photo"' in body
+    assert 'name="taken_on"' in body, 'the date is the point of the log'
+
+
+# ── The ramp as a summary ────────────────────────────────
+#
+# Clay: "Only show ramp option with model count and use images to represent
+# each ramp."
+
+def test_the_unit_page_shows_only_stages_with_models(client, army_with_unit, db_path):
+    """Five rows of zero were most of what the summary said."""
+    unit_id = army_with_unit['unit_id']
+    with db.connect(db_path) as conn:
+        col.advance_unit(conn, unit_id, count=4)      # 4 Assembled, 6 On sprue
+
+    body = client.get(f'/units/{unit_id}').get_data(as_text=True)
+
+    assert 'On sprue' in body and 'Assembled' in body
+    for empty in ('Base prepared', 'Primed', 'Painted', 'Based'):
+        assert f'>{empty}</span>' not in body, f'{empty} is empty and should be gone'
+
+
+def test_paint_mode_keeps_the_whole_ladder(client, army_with_unit):
+    """The empty rungs are where the models are going. A ladder that changes
+    length as you tap is a worse thing to work against mid-session."""
+    body = client.get(f'/paint/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    for stage in ('On sprue', 'Base prepared', 'Primed', 'Battle ready'):
+        assert stage in body
+
+
+def test_a_unit_with_nothing_owned_says_so(client, army_with_unit, db_path):
+    """Every model on the wishlist means no owned stage has any, and an empty
+    box looks like the page failed to load."""
+    unit_id = army_with_unit['unit_id']
+    with db.connect(db_path) as conn:
+        wishlist = conn.execute(
+            "SELECT id FROM stages WHERE is_owned = 0").fetchone()['id']
+        conn.execute('UPDATE models SET stage_id = ? WHERE unit_id = ?',
+                     (wishlist, unit_id))
+
+    body = client.get(f'/units/{unit_id}').get_data(as_text=True)
+
+    assert 'still on the wishlist' in body
+
+
+def test_every_stage_has_its_own_icon(client, army_with_unit):
+    """Seven rungs, seven different drawings — a macro that fell through to one
+    default would render seven identical ones and nobody would notice."""
+    import re
+    body = client.get(f'/paint/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    icons = re.findall(r'<svg class="stageicon[^"]*".*?</svg>', body, re.S)
+    assert len(icons) == 7, 'one per owned rung'
+    paths = [re.findall(r'<path d="([^"]+)"|<(circle|ellipse|rect)\b', i) for i in icons]
+    assert len(set(map(str, paths))) == 7, 'each stage draws something different'
+
+
+def test_the_unit_panel_is_gone(client, army_with_unit):
+    """Nickname and notes were crossed out together."""
+    body = client.get(f'/units/{army_with_unit["unit_id"]}').get_data(as_text=True)
+
+    assert 'data-patch=' not in body
+    assert 'name="notes"' not in body
