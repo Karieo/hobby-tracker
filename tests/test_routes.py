@@ -1573,3 +1573,38 @@ def test_the_unit_panel_is_gone(client, army_with_unit):
 
     assert 'data-patch=' not in body
     assert 'name="notes"' not in body
+
+
+# ── The light/dark toggle ────────────────────────────────
+#
+# Clay: "Make this an image of sun and moon or light dark mode. I'm not sure
+# why it says ground." Blueprint and Nuln are the design's names for the two
+# palettes; on a button they meant nothing.
+
+def test_the_toggle_offers_both_icons_and_no_word(client):
+    """Both ship and CSS picks one, because the choice is not knowable in
+    JavaScript before first paint — with no stored override the ground comes
+    from prefers-color-scheme, which only the media query can answer."""
+    body = client.get('/collection').get_data(as_text=True)
+    button = body.split('id="ground"')[1].split('</button>')[0]
+
+    assert 'class="moon"' in button and 'class="sun"' in button
+    assert '>Ground<' not in body, 'the word is gone'
+    assert 'aria-label="Switch between light and dark"' in body, \
+        'two hidden-by-CSS icons and no text need a name for a screen reader'
+
+
+def test_css_shows_exactly_one_icon_in_every_state(client):
+    """Three states, the same three the palette itself uses: the light default,
+    the OS saying dark with no override, and an override either way. A missing
+    branch shows both icons or neither."""
+    css = client.get('/static/css/app.css').get_data(as_text=True)
+
+    for rule in (
+        '#ground .sun { display: none; }',
+        '#ground .moon { display: block; }',
+        ':root:not([data-ground="blueprint"]) #ground .sun { display: block; }',
+        ':root[data-ground="nuln"] #ground .sun { display: block; }',
+        ':root[data-ground="blueprint"] #ground .moon { display: block; }',
+    ):
+        assert rule in css, rule
