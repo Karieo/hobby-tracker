@@ -55,15 +55,21 @@ teams:
   - {name: Death Korps,             alliance: Imperium, faction: Astra Militarum, subfaction: Death Korps of Krieg}
   - {name: Tempestus Aquilons,      alliance: Imperium, faction: Astra Militarum, subfaction: Militarum Tempestus}
   - {name: Ratlings,                alliance: Imperium, faction: Astra Militarum}
-  - {name: Imperial Navy Breachers, alliance: Imperium, faction: Imperial Navy}
+  # Clay, 2026-08-25, asked directly: Navy Breachers are an Imperium force with
+  # no army of their own, so they go on Imperial Agents. `Imperial Navy` names
+  # no row and this is his call, not a nearest-match.
+  - {name: Imperial Navy Breachers, alliance: Imperium, faction: Imperial Agents}
   - {name: Novitiates,              alliance: Imperium, faction: Adepta Sororitas}
   - {name: Sanctifiers,             alliance: Imperium, faction: Adepta Sororitas, subfaction: Ecclesiarchy}
   - {name: Celestian Insidiants,    alliance: Imperium, faction: Adepta Sororitas}
   - {name: Hunter Clade,            alliance: Imperium, faction: Adeptus Mechanicus, subfaction: Skitarii}
   - {name: Battleclade,             alliance: Imperium, faction: Adeptus Mechanicus}
-  - {name: Inquisitorial Agents,    alliance: Imperium, faction: Agents of the Imperium, subfaction: Inquisition}
-  - {name: Exaction Squad,          alliance: Imperium, faction: Agents of the Imperium, subfaction: Adeptus Arbites}
-  - {name: Elucidian Starstriders,  alliance: Imperium, faction: Agents of the Imperium, subfaction: Rogue Trader}
+  # Clay's table called this faction `Agents of the Imperium`; BSData calls the
+  # same army `Imperial Agents`. Reading two names and deciding they match is a
+  # judgement, so it was put to Clay rather than assumed — 2026-08-25, his call.
+  - {name: Inquisitorial Agents,    alliance: Imperium, faction: Imperial Agents, subfaction: Inquisition}
+  - {name: Exaction Squad,          alliance: Imperium, faction: Imperial Agents, subfaction: Adeptus Arbites}
+  - {name: Elucidian Starstriders,  alliance: Imperium, faction: Imperial Agents, subfaction: Rogue Trader}
 
   # ── Chaos ─────────────────────────────────────────────
   - {name: Legionary,               alliance: Chaos, faction: Chaos Space Marines}
@@ -73,6 +79,11 @@ teams:
   - {name: Gellerpox Infected,      alliance: Chaos, faction: Death Guard, subfaction: Nurgle}
   - {name: Warpcoven,               alliance: Chaos, faction: Thousand Sons}
   - {name: Goremongers,             alliance: Chaos, faction: World Eaters, subfaction: Khorne}
+  # These three keep `Chaos`, which names no row, and so stay unplaced on
+  # purpose. Asked and answered — Clay, 2026-08-25: leave them rather than file
+  # them under Chaos Space Marines, since Blooded are Traitor Guard and Fellgor
+  # are Beastmen and neither is a Chaos Marine. The importer reports them every
+  # run; that is the intended state, not an outstanding gap to close.
   - {name: Fellgor Ravagers,        alliance: Chaos, faction: Chaos, subfaction: Beastmen}
   - {name: Chaos Cult,              alliance: Chaos, faction: Chaos}
   - {name: Blooded,                 alliance: Chaos, faction: Chaos, subfaction: Traitor Guard}

@@ -228,12 +228,13 @@ factions, Ork operatives visible under an Orks filter 23 → 53.
 **That rule tops out at 34 teams, and the rest are a reviewed decision, not a
 better inference.** `seed/data/killteam_factions.yaml` is Clay's own table of
 the 2024 bespoke teams. It layers over the derivation and wins, because the
-inference is the fallback and the person is the authority — and it caught two
+inference is the fallback and the person is the authority — and it caught three
 places where the category rule was confidently wrong: Hand of the Archon
-derived to Aeldari (they are Drukhari) and Brood Brothers to Tyranids (they are
-Genestealer Cults). Both are printed in the report rather than applied
-silently, since a disagreement means one of the two is wrong and which is worth
-knowing. 67 teams placed, 1023 operatives on real factions.
+derived to Aeldari (they are Drukhari), Brood Brothers to Tyranids (Genestealer
+Cults) and Inquisitorial Agents to Astra Militarum (Imperial Agents). All three
+are printed in the report rather than applied silently, since a disagreement
+means one of the two is wrong and which is worth knowing. 74 teams placed,
+1095 operatives on real factions.
 
 The file is trusted for exactly one reason — a person reviewed it and
 `source.reviewed_by` says so — so `load_reviewed` refuses a table without
@@ -242,14 +243,21 @@ entry naming a faction with no row, or a team with no catalogue, is reported
 and written to `unresolved_imports` rather than approximated to the nearest
 thing.
 
-**The 36 still unplaced keep their own row and are named in the report.** The
+**The 32 still unplaced keep their own row and are named in the report.** The
 2021 Compendium teams are legacy and Clay's table deliberately does not cover
 them; an alliance like `Imperium` covers nineteen teams while naming no
 faction. Assigning those from recall is the forbidden change: fluent,
-plausible, and wrong in places with no signal about which. Seven more are
-blocked on a faction name with no row — `Agents of the Imperium`, `Chaos`,
-`Imperial Navy` — which is a decision about the `factions` table, not about
-those teams.
+plausible, and wrong in places with no signal about which.
+
+**Fellgor Ravagers, Chaos Cult and Blooded stay unplaced on purpose**, and the
+report naming them every run is the intended state rather than a gap to close.
+Clay was asked and chose it: `Chaos` names no 40,000 army, and filing them
+under Chaos Space Marines would be wrong — Blooded are Traitor Guard and
+Fellgor are Beastmen. The two questions beside it went the other way, also on
+his say-so: `Agents of the Imperium` is BSData's `Imperial Agents`, and
+Imperial Navy Breachers go there too. Those are recorded as his decisions in
+the YAML, because reading two names and deciding they mean one army is a
+judgement and not a lookup.
 
 **The name match compares normalised names, never raw strings.** It used to use
 `name = ?`, so the compendium team `T'au Empire` missed the faction row `T’au

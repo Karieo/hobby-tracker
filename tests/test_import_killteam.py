@@ -615,3 +615,17 @@ def test_a_team_that_is_not_a_faction_still_gets_its_own_row(conn, catalogues):
     assert conn.execute(
         "SELECT slug FROM factions WHERE slug LIKE 'kt-%'").fetchone()['slug'] \
         == 'kt-wrecka-krew'
+
+
+def test_the_three_chaos_teams_stay_deliberately_unplaced():
+    """Clay was asked and chose this: `Chaos` names no 40,000 army, and filing
+    these under Chaos Space Marines would be wrong — Blooded are Traitor Guard
+    and Fellgor are Beastmen. The importer naming them every run is the
+    intended state, not an outstanding gap, so a later reader tidying them onto
+    the nearest row has to change this test and read why first."""
+    table = {t['name']: t['faction']
+             for t in kt.load_reviewed(kt.REVIEWED_PATH)['teams']}
+
+    assert table['Fellgor Ravagers'] == 'Chaos'
+    assert table['Chaos Cult'] == 'Chaos'
+    assert table['Blooded'] == 'Chaos'
