@@ -53,6 +53,130 @@ def catalogues(tmp_path):
 
 # ── What comes across ────────────────────────────────────
 
+# ── Which faction a team belongs to ──────────────────────
+#
+# Clay: "when I filter for orks it filters out my ork kill team."
+#
+# It did. The importer matched a team's *name* against a 40,000 faction, so
+# Orks matched Orks and Kommandos matched nothing — 1158 of 1450 operatives sat
+# on faction rows no 40,000 filter would ever reach. The allegiance was in the
+# data the whole time, as category ids the 2024 game system defines and each
+# catalogue references.
+#
+# Built here rather than read from data/killteam/, which is fetched and not in
+# the repository: a test that silently skips when the checkout is missing is a
+# test CI never runs.
+
+GST = '''<?xml version="1.0" encoding="utf-8"?>
+<gameSystem xmlns="http://www.battlescribe.net/schema/gameSystemSchema">
+  <categoryEntries>
+    <categoryEntry name="Operative" id="role-oper"/>
+    <categoryEntry name="Leader" id="role-lead"/>
+    <categoryEntry name="Imperium" id="all-imp"/>
+    <categoryEntry name="Aeldari" id="fac-aeldari"/>
+    <categoryEntry name="Drukhari" id="fac-drukhari"/>
+    <categoryEntry name="Ork" id="fac-ork"/>
+  </categoryEntries>
+</gameSystem>
+'''
+
+TEAM = '''<?xml version="1.0" encoding="utf-8"?>
+<catalogue xmlns="http://www.battlescribe.net/schema/catalogueSchema"
+           id="cat-{cid}" name="{team}">
+  <selectionEntries>
+    <selectionEntry id="{cid}-1" name="{team} Fighter" type="model"/>
+  </selectionEntries>
+  <categoryLinks>{links}</categoryLinks>
+</catalogue>
+'''
+
+
+@pytest.fixture
+def teams(tmp_path):
+    """A miniature of the real directory: one game system, four teams."""
+    (tmp_path / '2024 - Kill Team.gst').write_text(GST)
+
+    def team(filename, name, *category_ids):
+        links = ''.join(
+            f'<categoryLink id="l{i}" targetId="{c}"/>'
+            for i, c in enumerate(category_ids))
+        (tmp_path / filename).write_text(
+            TEAM.format(cid=filename[:4].replace(' ', ''), team=name, links=links))
+
+    team('2024 - Kommandos.cat', 'Kommandos', 'fac-ork')
+    # A second Aeldari team, so Aeldari is broader than Drukhari here exactly
+    # as it is in the real data — six catalogues to one. Without it both sit
+    # at breadth 1 and the test would be measuring the tiebreak instead.
+    team('2024 - Blades of Khaine.cat', 'Blades of Khaine', 'fac-aeldari')
+    team('2024 - Mandrakes.cat', 'Mandrakes', 'fac-aeldari', 'fac-drukhari')
+    team('2024 - Battleclade.cat', 'Battleclade', 'all-imp')
+    team('2021 - Kommando.cat', 'Kommando')          # no categories at all
+    return str(tmp_path)
+
+
+@pytest.fixture
+def factions(conn):
+    return {slug: db.upsert_faction(conn, name, slug) for name, slug in
+            (('Orks', 'orks'), ('Aeldari', 'aeldari'), ('Drukhari', 'drukhari'))}
+
+
+def test_a_team_lands_on_the_faction_its_catalogue_claims(conn, teams, factions):
+    """Kommandos are Orks and say so in their category links. Nothing about
+    the string "Kommandos" says it, which is why the name match never could."""
+    placed = kt.resolve_factions(conn, teams)
+
+    assert placed['Kommandos'] == factions['orks']
+
+
+def test_the_older_printing_inherits_from_the_newer(conn, teams, factions):
+    """The 2021 catalogues carry no categories at all. `Kommando` is the same
+    team as `Kommandos`, matched on the name rather than on a guess."""
+    placed = kt.resolve_factions(conn, teams)
+
+    assert placed['Kommando'] == factions['orks']
+
+
+def test_the_narrowest_category_wins(conn, teams, factions):
+    """Mandrakes claim Aeldari and Drukhari and both name a real faction.
+    Drukhari is claimed by one team here and Aeldari by two, so the rarer is
+    the more specific — an ordering read off the data, not asserted. The
+    fixture mirrors the real breadths (Aeldari 6, Drukhari 1) on purpose: with
+    both at one this would be measuring the tiebreak."""
+    placed = kt.resolve_factions(conn, teams)
+
+    assert placed['Mandrakes'] == factions['drukhari']
+
+
+def test_a_team_the_data_cannot_place_is_left_alone(conn, teams, factions):
+    """An alliance is not a faction. `Imperium` names no row in `factions`, so
+    Battleclade keeps its own — assigning one from recall is the change this
+    repo forbids."""
+    placed = kt.resolve_factions(conn, teams)
+
+    assert 'Battleclade' not in placed
+
+
+def test_nothing_lands_on_a_kill_team_only_row(conn, teams, factions):
+    """Every id returned has to be a real 40,000 faction. One that is not
+    leaves the filter this exists to fix still broken."""
+    db.upsert_faction(conn, 'Battleclade', 'kt-battleclade')
+
+    placed = kt.resolve_factions(conn, teams)
+
+    real = {r['id'] for r in conn.execute(
+        "SELECT id FROM factions WHERE slug NOT LIKE 'kt-%'")}
+    assert placed and set(placed.values()) <= real
+
+
+def test_a_plural_is_the_same_army(conn, teams, factions):
+    """The category is `Ork` and the faction is `Orks`. That is a spelling
+    difference, and tolerating it in one direction is what lets the only two
+    Ork teams in the game reach the Orks filter."""
+    placed = kt.resolve_factions(conn, teams)
+
+    assert placed['Kommandos'] == factions['orks']
+
+
 def test_only_models_become_datasheets(conn, catalogues):
     catalogues.write('2024 - Hunter Clade.cat', 'Hunter Clade')
     report = kt.import_all(conn, directory=catalogues.path)

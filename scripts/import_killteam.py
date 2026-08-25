@@ -44,8 +44,9 @@ import argparse
 import os
 import re
 import sys
+import unicodedata
 import xml.etree.ElementTree as ET
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -102,10 +103,121 @@ def parse_catalogue(path):
     return team_name(root, filename), edition_of(filename), found
 
 
+#: Categories in the 2024 game system that are roles rather than allegiances.
+#: Everything else there is a faction or an alliance.
+_NOT_A_FACTION = {'Operative', 'Configuration', 'Reference', 'Leader',
+                  'Gunner', 'Heavy Gunner', 'Psyker', 'Medic', 'Warrior'}
+
+
+def faction_categories(directory):
+    """Which allegiance categories each team's catalogue claims.
+
+    Clay: *"when I filter for orks it filters out my ork kill team."* It did,
+    because the importer matched a team's **name** against a 40,000 faction —
+    so Orks matched Orks, and Kommandos, Wrecka Krew and Kommando each got a
+    faction row of their own that no 40,000 filter would ever reach. 1158 of
+    1450 operatives were parked on rows like that.
+
+    The allegiance is in the data, once you know where: the 2024 game system
+    defines category entries — Ork, Aeldari, Imperium, Drukhari — and each
+    team's catalogue references the ones it belongs to by id. Nothing here is
+    recalled; a team that claims no category gets no faction, and says so.
+
+    Returns {team name: {category names}} and {category: how many teams claim
+    it}, the second because breadth is how specificity is measured: Drukhari
+    appears once and Imperium nineteen times, so when Mandrakes claims both,
+    the rarer one is the answer. That ordering is read off the data rather
+    than asserted.
+    """
+    gst = os.path.join(directory, '2024 - Kill Team.gst')
+    if not os.path.exists(gst):
+        return {}, Counter()
+    with open(gst, encoding='utf-8', errors='replace') as fh:
+        text = fh.read()
+    ids = {m.group(2): m.group(1).replace('&apos;', '\u2019')
+           for m in re.finditer(
+               r'<categoryEntry\s+name="([^"]*)"\s+id="([^"]+)"', text)
+           if m.group(1) not in _NOT_A_FACTION}
+
+    claims, breadth = {}, Counter()
+    for filename in sorted(f for f in os.listdir(directory) if f.endswith('.cat')):
+        with open(os.path.join(directory, filename), encoding='utf-8',
+                  errors='replace') as fh:
+            body = fh.read()
+        cats = {name for cid, name in ids.items() if cid in body}
+        if not cats:
+            continue
+        claims.setdefault(team_name_from_filename(filename), set()).update(cats)
+        for name in cats:
+            breadth[name] += 1
+    return claims, breadth
+
+
+def team_name_from_filename(filename):
+    """`2024 - Wrecka Krew.cat` -> `Wrecka Krew`."""
+    return re.sub(r'^\d{4} - ', '', os.path.splitext(filename)[0])
+
+
+def _key(name):
+    """Comparable form: case, punctuation and curly apostrophes all removed."""
+    folded = unicodedata.normalize('NFKD', name).replace('\u2019', "'").lower()
+    return re.sub(r'[^a-z]', '', folded)
+
+
+def resolve_factions(conn, directory=KILLTEAM_DIR):
+    """{team name: 40,000 faction id} for every team the data can place.
+
+    Two passes, both derived:
+
+    1. The narrowest category a team claims that names a real 40,000 faction.
+       Plurals are tolerated in one direction only — the category is `Ork` and
+       the faction is `Orks` — because that is a spelling difference and not a
+       different army.
+    2. A team with no category of its own inherits from the same team in the
+       other edition: `Kommando` (2021) from `Kommandos` (2024). Same team,
+       two printings, and the match is on the name rather than on a guess.
+
+    A team that neither pass can place is left alone, on its own faction row.
+    It is reported rather than assigned, because the alternative is inventing
+    an allegiance and being fluently wrong about which — the one change to
+    this repo that would do real damage.
+    """
+    claims, breadth = faction_categories(directory)
+    real = {_key(r['name']): r['id'] for r in conn.execute(
+        "SELECT id, name FROM factions WHERE slug NOT LIKE 'kt-%'")}
+
+    placed = {}
+    for team, cats in claims.items():
+        # Rarest first, then by name. The name is not decoration: `cats` is a
+        # set, so breadth alone leaves ties to iteration order and two runs of
+        # the same import could place a team differently.
+        for cat in sorted(cats, key=lambda c: (breadth[c], c)):
+            for candidate in (_key(cat), _key(cat) + 's'):
+                if candidate in real:
+                    placed[team] = real[candidate]
+                    break
+            if team in placed:
+                break
+
+    inherited = {}
+    for filename in sorted(f for f in os.listdir(directory) if f.endswith('.cat')):
+        team = team_name_from_filename(filename)
+        if team in placed:
+            continue
+        for other, fid in placed.items():
+            if _key(team) in (_key(other), _key(other).rstrip('s')) \
+                    or _key(team) + 's' == _key(other):
+                inherited[team] = fid
+                break
+    return {**placed, **inherited}
+
+
 def import_all(conn, directory=KILLTEAM_DIR, dry_run=False):
     report = {'catalogues': 0, 'teams': 0, 'inserted': 0, 'updated': 0,
-              'by_edition': defaultdict(int), 'empty': [], 'unreadable': []}
+              'by_edition': defaultdict(int), 'empty': [], 'unreadable': [],
+              'placed': 0, 'unplaced': []}
     seen_factions = set()
+    placed = resolve_factions(conn, directory)
 
     for filename in sorted(f for f in os.listdir(directory) if f.endswith('.cat')):
         path = os.path.join(directory, filename)
@@ -142,14 +254,29 @@ def import_all(conn, directory=KILLTEAM_DIR, dry_run=False):
         #
         # A team with no 40,000 counterpart — Wrecka Krew, Battleclade — still
         # gets its own row, prefixed, since it is not a duplicate of anything.
+        # The allegiance the catalogue itself claims, resolved above. This
+        # is what the name match below could never reach: Kommandos are Orks
+        # and say so in their category links, but nothing about the string
+        # "Kommandos" matches the string "Orks".
+        derived = placed.get(team)
         existing = conn.execute(
             "SELECT id, slug FROM factions WHERE name = ? AND slug NOT LIKE 'kt-%'",
             (team,)).fetchone()
-        if existing:
+        if derived:
+            faction_id = derived
+            slug = conn.execute('SELECT slug FROM factions WHERE id = ?',
+                                (derived,)).fetchone()['slug']
+            report['placed'] += 1
+        elif existing:
             faction_id, slug = existing['id'], existing['slug']
         else:
+            # Not placed and not named after a faction. It keeps a row of its
+            # own and is reported, because assigning one from recall is the
+            # change this repo forbids.
             slug = f'kt-{slugify(team)}'
             faction_id = db.upsert_faction(conn, team, slug)
+            if team not in report['unplaced']:
+                report['unplaced'].append(team)
         if slug not in seen_factions:
             seen_factions.add(slug)
             report['teams'] += 1
@@ -209,6 +336,17 @@ def print_report(report, dry_run=False):
         print(f"\n  {len(r['unreadable'])} catalogue(s) could not be parsed:")
         for name, err in r['unreadable']:
             print(f'     {name}\n       {err}')
+    print(f"\n  teams placed on a 40,000 faction  {r['placed']:>6}")
+    if r['unplaced']:
+        # Named, never guessed. A team here is one whose catalogue claims no
+        # allegiance the data can resolve — the 2021 printings mostly, which
+        # carry no category entries at all. Assigning them from recall is the
+        # one change to this repo that would do real damage, so they are
+        # listed for Clay to place by hand if he owns one.
+        print(f"  teams the data could not place    {len(r['unplaced']):>6}")
+        print('\n  Not placed — these keep a faction row of their own:')
+        for name in r['unplaced']:
+            print(f'     {name}')
     if not r['empty'] and not r['unreadable']:
         print('\n  Every catalogue read cleanly.')
     print('─' * 68)

@@ -11,6 +11,10 @@
 __pycache__/
 *.pyc
 data/bsdata/
+# Fetched at a pinned SHA by scripts/fetch_killteam.py, exactly like
+# bsdata above. It was missing here, so a run of the fetch script left
+# 127 catalogues staged as an embedded git repository.
+data/killteam/
 data/*.db
 data/*.db-wal
 data/*.db-shm

@@ -211,6 +211,26 @@ GitHub whether the pins have aged, and the weekly sweep runs it. Nothing bumps
 a pin automatically: points moving under a list is something to accept
 deliberately, not to wake up to.
 
+**A Kill Team's faction comes from its catalogue, never its name.** Clay: *"when
+I filter for orks it filters out my ork kill team."* It did — the importer
+matched a team's *name* against a 40,000 faction, so Orks matched Orks and
+Kommandos matched nothing. 1158 of 1450 operatives sat on faction rows no
+40,000 filter could reach.
+
+The allegiance was in the data all along: the 2024 game system defines category
+entries (Ork, Aeldari, Drukhari, Imperium) and each catalogue references the
+ones it claims. `import_killteam.resolve_factions` reads them, takes the
+narrowest that names a real faction — breadth measured by how many catalogues
+claim it, so Drukhari at one beats Aeldari at six — and lets a 2021 printing
+inherit from its 2024 twin by name. 34 teams placed, 679 operatives on real
+factions, Ork operatives visible under an Orks filter 23 → 53.
+
+**The 62 it cannot place keep their own row and are named in the report.** The
+2021 catalogues carry no categories at all, and an alliance like `Imperium`
+covers nineteen teams while naming no faction. Assigning those from recall is
+the forbidden change: fluent, plausible, and wrong in places with no signal
+about which.
+
 Two columns exist to survive re-sync: `datasheet_points.manual_override` and
 `datasheets.effort_is_override`. The importer reports them and leaves them
 alone. Two columns exist because 11th edition outgrew the spec:
