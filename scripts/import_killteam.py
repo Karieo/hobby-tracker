@@ -48,6 +48,8 @@ import unicodedata
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 
+import yaml
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import database as db
@@ -55,6 +57,11 @@ from import_bsdata import slugify
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KILLTEAM_DIR = os.path.join(BASE_DIR, 'data', 'killteam')
+
+#: Clay's reviewed team -> faction table. See the file's own header for why it
+#: exists and why it is not derived. Absent is not an error: the catalogues
+#: still place what they can without it.
+REVIEWED_PATH = os.path.join(BASE_DIR, 'seed', 'data', 'killteam_factions.yaml')
 
 IMPORTER = 'killteam'
 GAME_SYSTEM = 'killteam'
@@ -164,60 +171,198 @@ def _key(name):
     return re.sub(r'[^a-z]', '', folded)
 
 
-def resolve_factions(conn, directory=KILLTEAM_DIR):
-    """{team name: 40,000 faction id} for every team the data can place.
+def _singular(key):
+    """`kommandos` -> `kommando`, `legionaries` -> `legionary`.
 
-    Two passes, both derived:
+    The two printings of a team differ by a plural far more often than by
+    anything else: BSData names the 2021 catalogues in the singular and the
+    2024 ones in the plural, so Novitiate/Novitiates and Legionary/Legionaries
+    are the same team twice. Folding both to one form is a spelling rule, not
+    a judgement about which teams are related \u2014 the names still have to agree
+    on every other letter.
+    """
+    if key.endswith('ies'):
+        return key[:-3] + 'y'
+    return key[:-1] if key.endswith('s') else key
 
-    1. The narrowest category a team claims that names a real 40,000 faction.
-       Plurals are tolerated in one direction only — the category is `Ork` and
-       the faction is `Orks` — because that is a spelling difference and not a
-       different army.
-    2. A team with no category of its own inherits from the same team in the
-       other edition: `Kommando` (2021) from `Kommandos` (2024). Same team,
-       two printings, and the match is on the name rather than on a guess.
 
-    A team that neither pass can place is left alone, on its own faction row.
-    It is reported rather than assigned, because the alternative is inventing
-    an allegiance and being fluently wrong about which — the one change to
-    this repo that would do real damage.
+def catalogue_names(directory):
+    """{singular key: {every catalogue name sharing it}}.
+
+    The 2021 and 2024 printings of a team are two catalogues and one team, so
+    grouping them here is what lets a placement found on either reach both.
+    """
+    out = {}
+    for filename in sorted(f for f in os.listdir(directory) if f.endswith('.cat')):
+        team = team_name_from_filename(filename)
+        out.setdefault(_singular(_key(team)), set()).add(team)
+    return out
+
+
+def real_factions(conn):
+    """{comparable name: row} for the 40,000 faction rows, never the kt- ones.
+
+    One definition, used by both the category rule and the name match. They
+    disagreed before: the name match compared raw strings, so the compendium
+    team `T'au Empire` missed the faction row `T’au Empire` on the apostrophe
+    alone and got a `kt-t-au-empire` row of its own — 24 operatives on a
+    duplicate the picker showed twice and no T'au filter reached.
+    """
+    return {_key(r['name']): r for r in conn.execute(
+        "SELECT id, name, slug FROM factions WHERE slug NOT LIKE 'kt-%'")}
+
+
+def match_faction(real, name):
+    """The faction row `name` refers to, tolerating punctuation and a plural.
+
+    `Space Marine` is the compendium team and `Space Marines` the faction;
+    `T'au Empire` and `T’au Empire` are the same words. Both are spelling
+    differences, and neither makes it a different army.
+    """
+    key = _key(name)
+    return (real.get(key) or real.get(key + 's')
+            or real.get(_singular(key)) or None)
+
+
+def load_reviewed(path=REVIEWED_PATH):
+    """Clay's reviewed team -> faction table, or None when it is not there.
+
+    Refuses a table with no provenance, exactly as the Combat Patrol seed
+    does: the whole reason this file may be trusted is that a person reviewed
+    it and said so. An unattributed table is indistinguishable from one a
+    model wrote from memory, which is the thing this repo will not import.
+    """
+    # `None` is not the same as missing by accident: it is how a caller says
+    # "derive only", which is what the tests of the category rule need in
+    # order to measure that rule rather than the table sitting beside it.
+    if not path or not os.path.exists(path):
+        return None
+    with open(path, encoding='utf-8') as fh:
+        data = yaml.safe_load(fh) or {}
+    source = data.get('source') or {}
+    if not source.get('reviewed_by') or not source.get('retrieved_on'):
+        raise ValueError(
+            f'{path}: refusing to import a faction table with no provenance — '
+            '`source.reviewed_by` and `source.retrieved_on` are both required.')
+    return data
+
+
+def reviewed_placements(reviewed, by_key, real, report=None):
+    """{catalogue team name: faction id} for the entries that resolve.
+
+    An entry resolves when its faction names a real 40,000 faction row *and*
+    its team names a catalogue. Neither is assumed: a faction name with no row
+    and a team name with no catalogue are both collected for the report rather
+    than approximated, because a team quietly assigned the wrong army is worse
+    than one visibly unassigned.
+    """
+    placed, no_faction, no_catalogue = {}, [], []
+    for entry in (reviewed or {}).get('teams') or []:
+        name, faction = entry.get('name'), entry.get('faction')
+        if not name or not faction:
+            continue
+        row = match_faction(real, faction)
+        if row is None:
+            no_faction.append((name, faction))
+            continue
+        fid = row['id']
+        # `catalogue` only appears when the names differ by more than a
+        # plural, which _singular already handles on its own.
+        lookup = entry.get('catalogue') or name
+        matches = by_key.get(_singular(_key(lookup)))
+        if not matches:
+            no_catalogue.append(name)
+            continue
+        for match in matches:
+            placed[match] = fid
+    if report is not None:
+        report['reviewed_no_faction'] = no_faction
+        report['reviewed_no_catalogue'] = no_catalogue
+    return placed
+
+
+def resolve_factions(conn, directory=KILLTEAM_DIR, reviewed_path=REVIEWED_PATH,
+                     report=None):
+    """{team name: 40,000 faction id} for every team that can be placed.
+
+    Three layers, in increasing order of authority:
+
+    1. **Derived.** The narrowest category a team claims that names a real
+       40,000 faction. Plurals are tolerated in one direction only — the
+       category is `Ork` and the faction is `Orks` — because that is a
+       spelling difference and not a different army.
+    2. **Reviewed.** Clay's table (`seed/data/killteam_factions.yaml`). It
+       wins, and where it disagrees with the derivation the disagreement is
+       reported rather than swallowed. Both current disagreements are the
+       table correcting the inference: Hand of the Archon are Drukhari, not
+       Aeldari, and Brood Brothers are Genestealer Cults, not Tyranids.
+    3. **Every printing.** A placement found on one catalogue reaches the
+       other printing of the same team: `Kommando` (2021) from `Kommandos`
+       (2024). The 2021 catalogues carry no categories at all, so without
+       this they could never be placed by derivation.
+
+    A team no layer can place is left alone, on its own faction row, and
+    named in the report. Assigning one from recall is the one change to this
+    repo that would do real damage.
     """
     claims, breadth = faction_categories(directory)
-    real = {_key(r['name']): r['id'] for r in conn.execute(
-        "SELECT id, name FROM factions WHERE slug NOT LIKE 'kt-%'")}
+    real = real_factions(conn)
+    by_key = catalogue_names(directory)
 
-    placed = {}
+    derived = {}
     for team, cats in claims.items():
         # Rarest first, then by name. The name is not decoration: `cats` is a
         # set, so breadth alone leaves ties to iteration order and two runs of
         # the same import could place a team differently.
         for cat in sorted(cats, key=lambda c: (breadth[c], c)):
-            for candidate in (_key(cat), _key(cat) + 's'):
-                if candidate in real:
-                    placed[team] = real[candidate]
-                    break
-            if team in placed:
+            row = match_faction(real, cat)
+            if row is not None:
+                derived[team] = row['id']
                 break
 
-    inherited = {}
-    for filename in sorted(f for f in os.listdir(directory) if f.endswith('.cat')):
-        team = team_name_from_filename(filename)
-        if team in placed:
-            continue
-        for other, fid in placed.items():
-            if _key(team) in (_key(other), _key(other).rstrip('s')) \
-                    or _key(team) + 's' == _key(other):
-                inherited[team] = fid
-                break
-    return {**placed, **inherited}
+    reviewed = reviewed_placements(
+        load_reviewed(reviewed_path), by_key, real, report)
+
+    if report is not None:
+        names = {r['id']: r['name'] for r in conn.execute(
+            'SELECT id, name FROM factions')}
+        report['disagreed'] = sorted(
+            (team, names.get(derived[team]), names.get(fid))
+            for team, fid in reviewed.items()
+            if team in derived and derived[team] != fid)
+
+    # Reviewed applied second so it overwrites the whole twin group, not just
+    # the printing it happened to name.
+    placed = {}
+    for layer in (derived, reviewed):
+        for team, fid in layer.items():
+            for name in by_key.get(_singular(_key(team)), {team}):
+                placed[name] = fid
+    return placed
 
 
-def import_all(conn, directory=KILLTEAM_DIR, dry_run=False):
+def import_all(conn, directory=KILLTEAM_DIR, dry_run=False,
+               reviewed_path=REVIEWED_PATH):
     report = {'catalogues': 0, 'teams': 0, 'inserted': 0, 'updated': 0,
               'by_edition': defaultdict(int), 'empty': [], 'unreadable': [],
-              'placed': 0, 'unplaced': []}
+              'placed': 0, 'unplaced': [], 'disagreed': [],
+              'reviewed_no_faction': [], 'reviewed_no_catalogue': []}
     seen_factions = set()
-    placed = resolve_factions(conn, directory)
+    real = real_factions(conn)
+    placed = resolve_factions(conn, directory, reviewed_path, report=report)
+
+    # A line the reviewed table names and this cannot use is a team Clay
+    # thinks is filed and is not. Recorded where the other import failures
+    # go, so it survives the scrollback.
+    for name, faction in report['reviewed_no_faction']:
+        db.record_unresolved(
+            conn, IMPORTER, 'team', name,
+            f'reviewed table says faction "{faction}", which names no row in '
+            '`factions` — left on its own row rather than approximated')
+    for name in report['reviewed_no_catalogue']:
+        db.record_unresolved(
+            conn, IMPORTER, 'team', name,
+            'named in the reviewed table, but no catalogue matches it')
 
     for filename in sorted(f for f in os.listdir(directory) if f.endswith('.cat')):
         path = os.path.join(directory, filename)
@@ -259,9 +404,7 @@ def import_all(conn, directory=KILLTEAM_DIR, dry_run=False):
         # and say so in their category links, but nothing about the string
         # "Kommandos" matches the string "Orks".
         derived = placed.get(team)
-        existing = conn.execute(
-            "SELECT id, slug FROM factions WHERE name = ? AND slug NOT LIKE 'kt-%'",
-            (team,)).fetchone()
+        existing = match_faction(real, team)
         if derived:
             faction_id = derived
             slug = conn.execute('SELECT slug FROM factions WHERE id = ?',
@@ -337,6 +480,25 @@ def print_report(report, dry_run=False):
         for name, err in r['unreadable']:
             print(f'     {name}\n       {err}')
     print(f"\n  teams placed on a 40,000 faction  {r['placed']:>6}")
+    if r.get('disagreed'):
+        # Never swallowed. The reviewed table wins, but a place where a person
+        # and the category rule reach different answers is the most
+        # interesting line in this report: one of the two is wrong, and which
+        # is worth knowing before the next team is added.
+        print(f"\n  {len(r['disagreed'])} team(s) where the reviewed table "
+              'overrode what the catalogue derived:')
+        for team, was, now in r['disagreed']:
+            print(f'     {team}: derived {was} -> reviewed {now}')
+    if r.get('reviewed_no_faction'):
+        print(f"\n  {len(r['reviewed_no_faction'])} reviewed entr(y/ies) name "
+              'a faction with no row (each is a row in unresolved_imports):')
+        for name, faction in r['reviewed_no_faction']:
+            print(f'     {name}  ->  "{faction}"')
+    if r.get('reviewed_no_catalogue'):
+        print(f"\n  {len(r['reviewed_no_catalogue'])} reviewed entr(y/ies) "
+              'match no catalogue:')
+        for name in r['reviewed_no_catalogue']:
+            print(f'     {name}')
     if r['unplaced']:
         # Named, never guessed. A team here is one whose catalogue claims no
         # allegiance the data can resolve — the 2021 printings mostly, which

@@ -225,11 +225,39 @@ claim it, so Drukhari at one beats Aeldari at six — and lets a 2021 printing
 inherit from its 2024 twin by name. 34 teams placed, 679 operatives on real
 factions, Ork operatives visible under an Orks filter 23 → 53.
 
-**The 62 it cannot place keep their own row and are named in the report.** The
-2021 catalogues carry no categories at all, and an alliance like `Imperium`
-covers nineteen teams while naming no faction. Assigning those from recall is
-the forbidden change: fluent, plausible, and wrong in places with no signal
-about which.
+**That rule tops out at 34 teams, and the rest are a reviewed decision, not a
+better inference.** `seed/data/killteam_factions.yaml` is Clay's own table of
+the 2024 bespoke teams. It layers over the derivation and wins, because the
+inference is the fallback and the person is the authority — and it caught two
+places where the category rule was confidently wrong: Hand of the Archon
+derived to Aeldari (they are Drukhari) and Brood Brothers to Tyranids (they are
+Genestealer Cults). Both are printed in the report rather than applied
+silently, since a disagreement means one of the two is wrong and which is worth
+knowing. 67 teams placed, 1023 operatives on real factions.
+
+The file is trusted for exactly one reason — a person reviewed it and
+`source.reviewed_by` says so — so `load_reviewed` refuses a table without
+provenance, the same bargain `seed/data/combat_patrol_issues.yaml` makes. An
+entry naming a faction with no row, or a team with no catalogue, is reported
+and written to `unresolved_imports` rather than approximated to the nearest
+thing.
+
+**The 36 still unplaced keep their own row and are named in the report.** The
+2021 Compendium teams are legacy and Clay's table deliberately does not cover
+them; an alliance like `Imperium` covers nineteen teams while naming no
+faction. Assigning those from recall is the forbidden change: fluent,
+plausible, and wrong in places with no signal about which. Seven more are
+blocked on a faction name with no row — `Agents of the Imperium`, `Chaos`,
+`Imperial Navy` — which is a decision about the `factions` table, not about
+those teams.
+
+**The name match compares normalised names, never raw strings.** It used to use
+`name = ?`, so the compendium team `T'au Empire` missed the faction row `T’au
+Empire` on the apostrophe alone and got a `kt-t-au-empire` row of its own: 24
+operatives on a duplicate the army picker offered twice and no T'au filter
+reached. `match_faction` tolerates punctuation and a plural (`Space Marine` →
+`Space Marines`) and nothing else — widening it to a fuzzy match is how a team
+gets filed under an army it does not belong to.
 
 Two columns exist to survive re-sync: `datasheet_points.manual_override` and
 `datasheets.effort_is_override`. The importer reports them and leaves them
