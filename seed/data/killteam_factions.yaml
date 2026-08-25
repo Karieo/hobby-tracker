@@ -1,0 +1,109 @@
+# Which 40,000 faction each Kill Team belongs to — the reviewed table.
+#
+# ────────────────────────────────────────────────────────────────────────
+# THIS FILE IS A REVIEWED DECISION, NOT AN INFERENCE.
+#
+# The importer already derives what it can from the catalogues themselves
+# (`resolve_factions` reads the category entries the 2024 game system
+# defines). That reaches 34 teams and stops, because an alliance like
+# `Imperium` covers nineteen teams while naming no faction, and the 2021
+# catalogues carry no categories at all.
+#
+# The rest cannot be inferred, and writing them from a model's recall is the
+# one change to this repo that would do real damage — fluent, plausible, and
+# wrong in places with no signal about which. So they are not inferred here
+# either. This table came from Clay, who reviewed it and handed it over.
+#
+# Two entries below correct the derivation rather than extend it, and both
+# are the reviewed answer winning over the inferred one:
+#   Hand of the Archon  category rule said Aeldari   -> Drukhari
+#   Brood Brothers      category rule said Tyranids  -> Genestealer Cults
+#
+# Anything this file names that the importer cannot match — a team with no
+# catalogue, a faction with no row — is reported and written to
+# `unresolved_imports`. Nothing here is quietly dropped and nothing is
+# quietly guessed.
+# ────────────────────────────────────────────────────────────────────────
+
+# Provenance travels with the data. The importer refuses to run without it.
+source:
+  retrieved_on: 2026-08-24
+  confidence: high
+  reviewed_by: Clay
+  note: >
+    Supplied by Clay as a reviewed table of the bespoke Kill Team teams for
+    the 2024 edition. The 2021 Compendium teams are legacy and are not
+    covered here; they stay on their own rows and are named in the report.
+
+# `name` is the team as Clay names it. `catalogue` is only needed when the
+# BSData catalogue spells it differently by more than a plural — the importer
+# tolerates singular/plural on its own (Novitiate/Novitiates,
+# Legionary/Legionaries), so an entry here means a genuinely different name.
+#
+# `alliance` and `subfaction` are carried for provenance and are not consumed:
+# there is no column for either, and inventing one to hold them would be a
+# schema decision rather than a data one.
+teams:
+  # ── Imperium ──────────────────────────────────────────
+  - {name: Angels of Death,         alliance: Imperium, faction: Space Marines}
+  - {name: Phobos Strike Team,      alliance: Imperium, faction: Space Marines}
+  - {name: Scout Squad,             alliance: Imperium, faction: Space Marines}
+  - {name: Deathwatch,              alliance: Imperium, faction: Space Marines, subfaction: Deathwatch}
+  - {name: Wolf Scouts,             alliance: Imperium, faction: Space Marines, subfaction: Space Wolves}
+  - {name: Kasrkin,                 alliance: Imperium, faction: Astra Militarum, subfaction: Cadian}
+  - {name: Spectre Squad,           alliance: Imperium, faction: Astra Militarum, subfaction: Cadian}
+  - {name: Death Korps,             alliance: Imperium, faction: Astra Militarum, subfaction: Death Korps of Krieg}
+  - {name: Tempestus Aquilons,      alliance: Imperium, faction: Astra Militarum, subfaction: Militarum Tempestus}
+  - {name: Ratlings,                alliance: Imperium, faction: Astra Militarum}
+  # Clay, 2026-08-25, asked directly: Navy Breachers are an Imperium force with
+  # no army of their own, so they go on Imperial Agents. `Imperial Navy` names
+  # no row and this is his call, not a nearest-match.
+  - {name: Imperial Navy Breachers, alliance: Imperium, faction: Imperial Agents}
+  - {name: Novitiates,              alliance: Imperium, faction: Adepta Sororitas}
+  - {name: Sanctifiers,             alliance: Imperium, faction: Adepta Sororitas, subfaction: Ecclesiarchy}
+  - {name: Celestian Insidiants,    alliance: Imperium, faction: Adepta Sororitas}
+  - {name: Hunter Clade,            alliance: Imperium, faction: Adeptus Mechanicus, subfaction: Skitarii}
+  - {name: Battleclade,             alliance: Imperium, faction: Adeptus Mechanicus}
+  # Clay's table called this faction `Agents of the Imperium`; BSData calls the
+  # same army `Imperial Agents`. Reading two names and deciding they match is a
+  # judgement, so it was put to Clay rather than assumed — 2026-08-25, his call.
+  - {name: Inquisitorial Agents,    alliance: Imperium, faction: Imperial Agents, subfaction: Inquisition}
+  - {name: Exaction Squad,          alliance: Imperium, faction: Imperial Agents, subfaction: Adeptus Arbites}
+  - {name: Elucidian Starstriders,  alliance: Imperium, faction: Imperial Agents, subfaction: Rogue Trader}
+
+  # ── Chaos ─────────────────────────────────────────────
+  - {name: Legionary,               alliance: Chaos, faction: Chaos Space Marines}
+  - {name: Nemesis Claw,            alliance: Chaos, faction: Chaos Space Marines, subfaction: Night Lords}
+  - {name: Murderwing,              alliance: Chaos, faction: Chaos Space Marines, subfaction: Night Lords}
+  - {name: Plague Marines,          alliance: Chaos, faction: Death Guard}
+  - {name: Gellerpox Infected,      alliance: Chaos, faction: Death Guard, subfaction: Nurgle}
+  - {name: Warpcoven,               alliance: Chaos, faction: Thousand Sons}
+  - {name: Goremongers,             alliance: Chaos, faction: World Eaters, subfaction: Khorne}
+  # These three keep `Chaos`, which names no row, and so stay unplaced on
+  # purpose. Asked and answered — Clay, 2026-08-25: leave them rather than file
+  # them under Chaos Space Marines, since Blooded are Traitor Guard and Fellgor
+  # are Beastmen and neither is a Chaos Marine. The importer reports them every
+  # run; that is the intended state, not an outstanding gap to close.
+  - {name: Fellgor Ravagers,        alliance: Chaos, faction: Chaos, subfaction: Beastmen}
+  - {name: Chaos Cult,              alliance: Chaos, faction: Chaos}
+  - {name: Blooded,                 alliance: Chaos, faction: Chaos, subfaction: Traitor Guard}
+
+  # ── Xenos ─────────────────────────────────────────────
+  - {name: Blades of Khaine,        alliance: Xenos, faction: Aeldari, subfaction: Aspect Warriors}
+  - {name: Void-Dancer Troupe,      alliance: Xenos, faction: Aeldari, subfaction: Harlequins}
+  - {name: Corsair Voidscarred,     alliance: Xenos, faction: Aeldari, subfaction: Corsairs}
+  - {name: Hand of the Archon,      alliance: Xenos, faction: Drukhari}
+  - {name: Mandrakes,               alliance: Xenos, faction: Drukhari}
+  - {name: Hierotek Circle,         alliance: Xenos, faction: Necrons}
+  - {name: Canoptek Circle,         alliance: Xenos, faction: Necrons}
+  - {name: Kommandos,               alliance: Xenos, faction: Orks}
+  - {name: Wrecka Krew,             alliance: Xenos, faction: Orks}
+  - {name: Pathfinders,             alliance: Xenos, faction: T'au Empire}
+  - {name: Farstalker Kinband,      alliance: Xenos, faction: T'au Empire, subfaction: Kroot}
+  - {name: Vespid Stingwings,       alliance: Xenos, faction: T'au Empire, subfaction: Vespid}
+  - {name: XV26 Stealth Battlesuits, alliance: Xenos, faction: T'au Empire, catalogue: XV26 Battlesuits}
+  - {name: Raveners,                alliance: Xenos, faction: Tyranids}
+  - {name: Wyrmblade,               alliance: Xenos, faction: Genestealer Cults}
+  - {name: Brood Brothers,          alliance: Xenos, faction: Genestealer Cults}
+  - {name: Hearthkyn Salvagers,     alliance: Xenos, faction: Leagues of Votann}
+  - {name: Hernkyn Yaegirs,         alliance: Xenos, faction: Leagues of Votann}
