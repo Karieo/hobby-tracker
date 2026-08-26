@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}What to part with · Collection Tracker{% endblock %}
+{% block body %}
+  <header class="page">
+    <div>
+      <h1>What to part with</h1>
+    </div>
+    <a class="ghost" href="/collection?own=sell">The shortlist →</a>
+  </header>
+
+  {# The caveat goes above everything, not in a footnote. An unresolved list
+     row could be asking for the very thing below it, and being wrong on this
+     screen costs models Clay cannot buy back at the price he paid. #}
+  {% if unresolved %}
+    <div class="panel warn">
+      <p>
+        <b>{{ unresolved }} list row{{ '' if unresolved == 1 else 's' }}</b>
+        never matched a datasheet, so everything here is a <i>possible</i>
+        surplus — one of them could be asking for what you are about to sell.
+      </p>
+      <p class="muted">
+        Resolve them on the list they came from and these numbers become
+        certain.
+      </p>
+    </div>
+  {% endif %}
+
+  <p class="hint">
+    <b>{{ totals.boxes }}</b> sealed box{{ '' if totals.boxes == 1 else 'es' }} ·
+    <b>{{ totals.models }}</b> spare model{{ '' if totals.models == 1 else 's' }}
+    across <b>{{ totals.datasheets }}</b>
+    unit{{ '' if totals.datasheets == 1 else 's' }}
+  </p>
+
+  {% if not boxes and not surplus and not held_back %}
+    <div class="panel empty">
+      <p>Nothing to spare.</p>
+      <p class="muted">
+        Every model you own is wanted by a list, or you have no lists yet —
+        this screen works out what to part with by asking what your games
+        actually need.
+      </p>
+    </div>
+  {% endif %}
+
+  {# ── Sealed boxes ──────────────────────────────────────
+     The one case where the box is the thing you act on: `box_state` exists
+     because a sealed box carries a resale premium an opened one does not, and
+     opening is irreversible. #}
+  {% if boxes %}
+    <h2>Still sealed <span class="muted">{{ boxes|length }}</span></h2>
+    <p class="hint">Never opened, and nothing on your lists wants what is inside.</p>
+    <ul class="units">
+      {% for b in boxes %}
+        <li>
+          <div class="what">
+            <b>{{ b.name }}</b>
+            <span class="muted">
+              {{ b.faction_name or 'no faction' }}
+              {% if b.year %} · {{ b.year }}{% endif %}
+            </span>
+          </div>
+          <p class="counts">
+            {% for c in b.contents %}{{ c.name }}{{ '' if loop.last else ' · ' }}{% endfor %}
+            {% if b.acquired_on %}
+              <span class="muted"> · had since {{ b.acquired_on }}</span>
+            {% endif %}
+            {% if b.cost_cents %}
+              <span class="muted"> · paid {{ b.cost_cents | money }}</span>
+            {% endif %}
+          </p>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {# Named rather than dropped. "Nothing sealed worth selling" and "four sealed
+     boxes and every one is spoken for" are different facts, and only one of
+     them means stop looking. #}
+  {% if held_back %}
+    <h2>Sealed, but spoken for <span class="muted">{{ held_back|length }}</span></h2>
+    <p class="hint">A list asks for something inside these, and a sealed box is sold shut.</p>
+    <ul class="units">
+      {% for b in held_back %}
+        <li>
+          <div class="what">
+            <b>{{ b.name }}</b>
+            <span class="muted">{{ b.faction_name or 'no faction' }}</span>
+          </div>
+          <p class="counts">
+            Wanted for
+            {% for n in b.wanted_by_a_list %}{{ n }}{{ '' if loop.last else ' · ' }}{% endfor %}
+          </p>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {# ── Surplus models ────────────────────────────────────
+     Per datasheet, because once the models are out of the box the box stops
+     being a thing you do anything with. #}
+  {% if surplus %}
+    <h2>More than any list needs <span class="muted">{{ surplus|length }}</span></h2>
+
+    <nav class="chips" aria-label="Sort by">
+      {% for key, label in sorts %}
+        <a class="chip {% if sort == key %}on{% endif %}"
+           href="/sale?sort={{ key }}">{{ label }}</a>
+      {% endfor %}
+    </nav>
+
+    <ul class="units">
+      {% for r in surplus %}
+        <li>
+          <div class="what">
+            <b>
+              <a href="{% if r.unit_id %}/units/{{ r.unit_id }}{% else %}/collection?q={{ r.name | urlencode }}{% endif %}">{{ r.name }}</a>
+            </b>
+            <span class="muted">{{ r.faction_name or 'no faction' }}</span>
+          </div>
+          <p class="counts">
+            {# Own, need, spare — in that order, because the third number only
+               means anything once you can see the two it came from. #}
+            <b>{{ r.owned }}</b> owned ·
+            {{ r.needed }} needed ·
+            <b>{{ r.surplus }}</b> spare
+            {% if r.listed %}
+              <span class="muted"> · {{ r.listed }} already on the shortlist</span>
+            {% endif %}
+            {% if r.unstarted %}
+              <span class="muted"> · {{ r.unstarted }} still on sprue</span>
+            {% endif %}
+            {% if r.oldest %}
+              <span class="muted"> · had since {{ r.oldest }}</span>
+            {% endif %}
+          </p>
+        </li>
+      {% endfor %}
+    </ul>
+
+    <p class="hint">
+      "Needed" is the most any <i>single</i> list asks for, not the total across
+      them — the same twenty Boyz field on Saturday and Sunday both.
+      Nothing here is sold or moved; open a unit to add models to the shortlist.
+    </p>
+  {% endif %}
+{% endblock %}

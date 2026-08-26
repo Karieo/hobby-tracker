@@ -142,6 +142,16 @@
     {% endif %}
   </nav>
 
+  {# The shortlist says what is going; this is the screen that proposes what
+     could — the same pairing the wishlist has with /shopping. Only in this
+     view, because the nav is five items on a phone already. #}
+  {% if own == 'sell' %}
+    <p class="hint">
+      <a href="/sale">What could I part with? →</a>
+      Works it out from what your lists actually need.
+    </p>
+  {% endif %}
+
   {# Three tiles, not four. The accent means done and nothing else, so only
      "battle ready" is filled; the wishlist is the only rust. "Built or beyond"
      lost its tile because the stage bar above already says where the mass is. #}
