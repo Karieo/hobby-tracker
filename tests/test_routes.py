@@ -86,7 +86,8 @@ def army_with_unit(db_path):
 
 # ── Auth ─────────────────────────────────────────────────
 
-@pytest.mark.parametrize('path', ['/', '/collection', '/paint', '/reference'])
+@pytest.mark.parametrize('path', ['/', '/collection', '/paint', '/backlog',
+                                  '/reference'])
 def test_pages_require_login(db_path, monkeypatch, path):
     import app as appmod
     monkeypatch.setattr(appmod.db, 'DB_PATH', db_path)
@@ -111,7 +112,8 @@ def test_healthz_is_public(db_path, monkeypatch):
 
 # ── Pages render ─────────────────────────────────────────
 
-@pytest.mark.parametrize('path', ['/', '/collection', '/paint', '/reference'])
+@pytest.mark.parametrize('path', ['/', '/collection', '/paint', '/backlog',
+                                  '/reference'])
 def test_pages_render(client, army_with_unit, path):
     assert client.get(path).status_code == 200
 
@@ -2017,3 +2019,28 @@ def test_a_selected_faction_survives_even_when_it_is_empty(
     page = client.get(f'/collection?faction_id={fid}').get_data(as_text=True)
 
     assert 'Greenskin' in page
+
+
+# ── The backlog ──────────────────────────────────────────
+
+def test_the_backlog_offers_every_way_of_sorting_it(client, army_with_unit):
+    """The sorting *is* the feature — "a big push or a quick win" is a question
+    about order. A chip missing here is an ordering Clay cannot reach."""
+    import backlog as bl
+    page = client.get('/backlog').get_data(as_text=True)
+
+    for _key, label in bl.SORTS:
+        assert label in page, label
+
+
+def test_an_unknown_sort_does_not_break_the_backlog(client, army_with_unit):
+    """It comes off a query string, so it is whatever was typed or bookmarked."""
+    assert client.get('/backlog?sort=nonsense').status_code == 200
+
+
+def test_the_backlog_is_reachable_without_a_nav_entry(client, army_with_unit):
+    """The nav is already five items on a phone and Clay has complained about
+    clutter. It is linked from the two places the question gets asked instead:
+    the home screen, and the paint picker."""
+    assert '/backlog' in client.get('/').get_data(as_text=True)
+    assert '/backlog' in client.get('/paint').get_data(as_text=True)

@@ -83,6 +83,22 @@ unpriced is `review`, because the missing number could take it over.
 increments — ten or twenty Boyz, never fifteen — and two columns cannot express
 that, so fifteen passes. Detachments and enhancements are not modelled at all.
 
+**The backlog measures work left, not models left.** `backlog.py` and
+`/backlog`: `effort_left = effort × steps still ahead / steps from the start`.
+Ten Boyz on sprue is 10.0, the same ten needing only a final check is 1.7, and
+one untouched Knight is 8.0 and beats both. Counting miniatures would rank
+those backwards, which is the whole reason this app weights by effort. The
+ladder is per model — `stages_for` — so a Trukk is four steps from done and not
+six, and vehicles do not look permanently unfinished. Wishlist models are not
+backlog: they are not on the shelf.
+
+**`/paint` and `/backlog` are different moments and stay separate.**
+`paintable_units` is freshest-first with no sorting because what Clay touched
+last night is what he is about to pick up, and sorting controls are useless
+with a wet brush. Deciding *what to start* wants the opposite. `/backlog` has
+no nav entry — the nav is five items on a phone and Clay has complained about
+clutter — so it is reached from the home tile and from the paint picker.
+
 **One name-similarity function, `list_resolve.similarity`**, used by both paste
 doors. It sorts the words before comparing (rapidfuzz calls that
 `token_sort_ratio`) rather than using §8's `token_set_ratio`, which scores any

@@ -24,8 +24,16 @@
   {# Clay: "I want to have a quick glance on the homepage that lets me get to
      these list quickly." Two counts and two taps. They only appear when there
      is something in them — a row of zeroes is furniture. #}
-  {% if summary.wanted or summary.for_sale %}
+  {% set unfinished = summary.models - summary.done %}
+  {% if unfinished or summary.wanted or summary.for_sale %}
     <div class="piles quick">
+      {# The pile you can actually do something about tonight. Same number the
+         backlog screen totals: models you own that are not battle ready. #}
+      {% if unfinished %}
+        <a href="/backlog">
+          <b>{{ unfinished }}</b><span>in the backlog</span>
+        </a>
+      {% endif %}
       {% if summary.wanted %}
         <a href="/collection?own=wanted">
           <b>{{ summary.wanted }}</b><span>on the wishlist</span>

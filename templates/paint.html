@@ -8,7 +8,12 @@
    the last tracker died. #}
 {% if not unit %}
   <h1>Paint session</h1>
-  <p class="hint">Pick what you're working on. Most recent first.</p>
+  {# Freshest first, deliberately: what you worked on last night is what you
+     are about to pick up. Deciding what to *start* is a different question and
+     a different screen — sorting and acquisition dates are no use with paint
+     on your hands. #}
+  <p class="hint">Pick what you're working on. Most recent first.
+    <a href="/backlog">See the whole backlog →</a></p>
   {% if not units %}
     <div class="panel empty">
       <p>Nothing left to paint.</p>

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Backlog · Collection Tracker{% endblock %}
+{% block body %}
+  <header class="page">
+    <div>
+      <h1>Backlog</h1>
+    </div>
+    <a class="ghost" href="/paint">Paint session →</a>
+  </header>
+
+  {# Three numbers, and the weighted one is not alone. A percentage of models
+     means nothing when a Knight and a Termagant are both "1 model", so the raw
+     count sits beside the effort rather than instead of it. #}
+  <p class="hint">
+    <b>{{ totals.units }}</b> unit{{ '' if totals.units == 1 else 's' }} ·
+    <b>{{ totals.models_left }}</b> model{{ '' if totals.models_left == 1 else 's' }} left ·
+    <b>{{ totals.effort_left }}</b> effort still to spend
+  </p>
+
+  {% if not rows %}
+    <div class="panel empty">
+      <p>Nothing in the backlog.</p>
+      <p class="muted">Every model you own is battle ready. Genuinely, well done.</p>
+    </div>
+  {% else %}
+    {# Sorting is the whole feature — "a big push or a quick win" is a question
+       about order, not about filtering. Chips rather than a select: one tap,
+       and you can see which way it is sorted without opening anything. #}
+    <nav class="chips" aria-label="Sort by">
+      {% for key, label in sorts %}
+        <a class="chip {% if sort == key %}on{% endif %}"
+           href="/backlog?sort={{ key }}{% if army_id %}&army_id={{ army_id }}{% endif %}">{{ label }}</a>
+      {% endfor %}
+    </nav>
+
+    {% if armies|length > 1 %}
+      <nav class="chips" aria-label="Army">
+        <a class="chip {% if not army_id %}on{% endif %}"
+           href="/backlog?sort={{ sort }}">All armies</a>
+        {% for a in armies if a.id %}
+          <a class="chip {% if army_id == a.id %}on{% endif %}"
+             href="/backlog?sort={{ sort }}&army_id={{ a.id }}">{{ a.name }}</a>
+        {% endfor %}
+      </nav>
+    {% endif %}
+
+    <ul class="cards backlog">
+      {% for r in rows %}
+        <li class="card">
+          <a href="/paint/{{ r.id }}">
+            <div class="card-head">
+              <h2>{{ r.display_name }}</h2>
+              {# The number the sort is about, so it has to be the one you can
+                 read at a glance. #}
+              <span class="pct">{{ r.effort_left }}</span>
+            </div>
+            <p class="muted">
+              {{ r.army_name or 'Unassigned' }} ·
+              {{ r.models_left }} model{{ '' if r.models_left == 1 else 's' }} left
+              {% if r.acquired_on %} · had since {{ r.acquired_on }}{% endif %}
+            </p>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+{% endblock %}
