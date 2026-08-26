@@ -493,6 +493,34 @@ costs nothing while a destructive migration for tidiness costs a restore if it
 goes wrong. The `m.disposed_on IS NULL` filters in the ownership queries stay
 with them, correct and currently inert.
 
+**Deleting a list re-points its wishlist models rather than clearing them.**
+Clay: *"No way to delete list."* `DELETE /api/lists/<id>` and
+`lists.delete_list` had both shipped and nothing called either — the
+endpoint-with-no-caller pattern again, and the third instance of it.
+
+Wiring the button up first meant fixing what it would have done.
+`delete_list` predates migration 012 and cleared
+`wishlist_source_list_id` for every model the list raised, which marks *the
+pool* — so deleting one list dropped models **another live list still
+claimed** out of the pool, and the next raise bought them again. Measured:
+Saturday raises 20, Sunday claims the same 20, delete Saturday and the pool is
+empty with Sunday's 20 claims still standing; Monday raising the same 20 took
+the wishlist to 40. The exact over-buying `wishlist_claims` exists to stop,
+through the delete door.
+
+It cannot simply keep the old id — `models.wishlist_source_list_id` is a plain
+`REFERENCES army_lists(id)` with no `ON DELETE`, so a surviving reference
+restricts the delete outright, which is *why* the blanket clear was there. So
+the column is re-pointed to another list that still claims the model, or to
+NULL when none does. The column means "this row exists because *a* list asked
+for it", and while a list is still claiming it that stays true.
+
+**The delete control is the one place in the app that asks first**, because it
+is the one control with no opposite beside it. It sits at the bottom of
+`/lists/<id>`, outlined rather than filled, and names the list in the prompt —
+the button is a long way below the heading on a phone. Not offered from the
+list index: one deliberate place to do it beats a row of them to mis-tap.
+
 **Every button has its opposite beside it**, which is why nothing here asks for
 confirmation. `undispose_models` and `unwishlist_models` are those undos.
 

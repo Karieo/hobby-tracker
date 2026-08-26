@@ -53,6 +53,27 @@ document.addEventListener('click', async (e) => {
     return;
   }
 
+  const del = e.target.closest('#delete-list');
+  if (del) {
+    // The one control on this screen with no opposite beside it, so it is the
+    // one that asks. Naming the list in the prompt rather than saying "this
+    // list": the button sits at the bottom of a long page, and by the time you
+    // reach it the heading is well off-screen.
+    if (!window.confirm(
+        `Delete "${del.dataset.name}"? This cannot be undone.\n\n` +
+        'Anything it put on your wishlist stays there.')) return;
+    del.disabled = true;
+    try {
+      await post(`/api/lists/${del.dataset.list}`, null, 'DELETE');
+      // Straight to the index, not a reload: this page no longer exists.
+      location.href = '/lists';
+    } catch (err) {
+      del.disabled = false;
+      toast(err.message, 'error');
+    }
+    return;
+  }
+
   const reparse = e.target.closest('#reparse');
   if (reparse) {
     reparse.disabled = true;

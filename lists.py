@@ -90,9 +90,44 @@ def list_lists(conn):
 
 def delete_list(conn, list_id):
     """Entries cascade. Wishlist models raised from this list do not — Clay
-    still wants them, and they are his to clear."""
-    conn.execute('UPDATE models SET wishlist_source_list_id = NULL '
-                 'WHERE wishlist_source_list_id = ?', (list_id,))
+    still wants them, and they are his to clear.
+
+    But only the ones nothing else is waiting on. `wishlist_source_list_id`
+    marks *the pool* rather than an owner (see `_raised_pool`), and one raised
+    model can answer several lists at once — so clearing the column for every
+    model this list happened to raise first would drop models **another live
+    list still claims** straight out of the pool. The next `raise_wishlist`
+    would then find an empty pool and buy them all again: exactly the
+    over-buying the shared pool exists to stop, arriving through the delete
+    door instead.
+
+    Measured before it was fixed: A raises 20 Boyz, B claims the same 20,
+    deleting A left the pool empty with B's 20 claims still standing, and C
+    raising the same 20 took the wishlist to 40.
+
+    So the column is **re-pointed** rather than cleared: to another list that
+    still claims the model, or to NULL when there is none. It cannot simply
+    keep the old id — `models.wishlist_source_list_id` is a plain
+    `REFERENCES army_lists(id)` with no `ON DELETE`, so a surviving reference
+    restricts the delete outright, which is why the blanket clear was here in
+    the first place.
+
+    Re-pointing keeps the column honest either way. What it means is "this row
+    exists because *a* list asked for it", and while another list is still
+    claiming the model that is still true — naming that list says so. `MIN` for
+    no reason beyond determinism: the pool does not care which list is named,
+    only that one is.
+
+    `wishlist_claims` cascades on the DELETE below, so this runs first and
+    reads the other lists' claims while they are all still there.
+    """
+    conn.execute(
+        'UPDATE models '
+        '   SET wishlist_source_list_id = ('
+        '        SELECT MIN(list_id) FROM wishlist_claims '
+        '         WHERE model_id = models.id AND list_id <> ?) '
+        ' WHERE wishlist_source_list_id = ?',
+        (list_id, list_id))
     conn.execute('DELETE FROM army_lists WHERE id = ?', (list_id,))
 
 

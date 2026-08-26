@@ -2088,3 +2088,44 @@ def test_the_shopping_page_never_shows_a_total_it_cannot_stand_behind(
     body = client.get('/shopping').get_data(as_text=True)
 
     assert 'No prices recorded' in body
+
+
+def test_the_list_page_offers_a_way_to_delete_the_list(client, db_path):
+    """Clay, on an empty list he could not get rid of: "No way to delete
+    list." `DELETE /api/lists/<id>` and `lists.delete_list` both already
+    existed and nothing called either — the endpoint-with-no-caller pattern
+    `CLAUDE.md` names. This asserts the control is on the page, because that
+    is the half that was missing."""
+    with db.connect(db_path) as conn:
+        list_id = lists_mod.create_list(conn, 'Imperial Knights')
+
+    body = client.get(f'/lists/{list_id}').get_data(as_text=True)
+
+    assert 'id="delete-list"' in body
+    assert f'data-list="{list_id}"' in body
+
+
+def test_deleting_a_list_from_the_route_removes_it(client, db_path):
+    with db.connect(db_path) as conn:
+        list_id = lists_mod.create_list(conn, 'Imperial Knights')
+
+    assert client.delete(f'/api/lists/{list_id}').status_code == 200
+    assert client.get(f'/lists/{list_id}').status_code == 404
+    with db.connect(db_path) as conn:
+        assert lists_mod.list_lists(conn) == []
+
+
+def test_deleting_a_list_leaves_the_wishlist_it_raised(client, db_path,
+                                                       army_with_unit):
+    """The reason this button is safe to offer at all. Models a list put on
+    the wishlist are still wanted after it is gone."""
+    with db.connect(db_path) as conn:
+        list_id = lists_mod.create_list(conn, 'Saturday')
+        lists_mod.add_entry(conn, list_id, army_with_unit['datasheet_id'], 30)
+        lists_mod.raise_wishlist(conn, list_id)
+        before = lists_mod.wishlist(conn)[0]['wanted']
+
+    client.delete(f'/api/lists/{list_id}')
+
+    with db.connect(db_path) as conn:
+        assert lists_mod.wishlist(conn)[0]['wanted'] == before

@@ -240,6 +240,78 @@ def test_deleting_a_list_leaves_its_wants_alone(conn, sheets):
     assert want['from_lists'] == 0, 'no longer attributed to a list that is gone'
 
 
+def test_deleting_a_list_does_not_eject_models_another_list_needs(conn, sheets):
+    """The bug this guards is the over-buying that `wishlist_claims` exists to
+    stop, arriving through the delete door.
+
+    `wishlist_source_list_id` marks *the pool*, and clearing it for every model
+    the deleted list happened to raise first drops models a live list is still
+    waiting on. Measured before the fix: Saturday raises 20, Sunday claims the
+    same 20, deleting Saturday left the pool empty with Sunday's claims still
+    standing, and the next raise took the wishlist to 40.
+    """
+    saturday = lists.create_list(conn, 'Saturday')
+    sunday = lists.create_list(conn, 'Sunday')
+    for list_id in (saturday, sunday):
+        lists.add_entry(conn, list_id, sheets['Boyz'], 20)
+        lists.raise_wishlist(conn, list_id)
+
+    lists.delete_list(conn, saturday)
+
+    pooled = conn.execute(
+        'SELECT COUNT(*) FROM models '
+        ' WHERE wishlist_source_list_id IS NOT NULL').fetchone()[0]
+    assert pooled == 20, 'Sunday is still waiting on these — they stay pooled'
+
+    monday = lists.create_list(conn, 'Monday')
+    lists.add_entry(conn, monday, sheets['Boyz'], 20)
+    lists.raise_wishlist(conn, monday)
+
+    assert lists.wishlist(conn)[0]['wanted'] == 20, \
+        'three lists wanting the same twenty is still twenty to buy'
+
+
+def test_the_pool_marker_never_names_a_list_that_is_gone(conn, sheets):
+    """`models.wishlist_source_list_id` is a plain REFERENCES with no ON
+    DELETE, so a surviving reference does not dangle — it restricts the delete
+    outright. Re-pointing has to land on a real row or on NULL."""
+    saturday = lists.create_list(conn, 'Saturday')
+    sunday = lists.create_list(conn, 'Sunday')
+    for list_id in (saturday, sunday):
+        lists.add_entry(conn, list_id, sheets['Boyz'], 20)
+        lists.raise_wishlist(conn, list_id)
+
+    lists.delete_list(conn, saturday)
+
+    sources = {r[0] for r in conn.execute(
+        'SELECT DISTINCT wishlist_source_list_id FROM models '
+        ' WHERE wishlist_source_list_id IS NOT NULL')}
+    assert sources == {sunday}
+    assert not conn.execute('PRAGMA foreign_key_check').fetchall()
+
+
+def test_the_last_list_to_go_hands_its_models_over_as_standing_wants(conn, sheets):
+    """The other half, and the older behaviour: once no list is waiting on
+    them, they stop being a list's shortfall and become a thing Clay simply
+    wants. He keeps them either way."""
+    saturday = lists.create_list(conn, 'Saturday')
+    sunday = lists.create_list(conn, 'Sunday')
+    for list_id in (saturday, sunday):
+        lists.add_entry(conn, list_id, sheets['Boyz'], 20)
+        lists.raise_wishlist(conn, list_id)
+
+    lists.delete_list(conn, saturday)
+    lists.delete_list(conn, sunday)
+
+    want = lists.wishlist(conn)[0]
+    assert want['wanted'] == 20, 'still his'
+    assert want['from_lists'] == 0
+    pooled = conn.execute(
+        'SELECT COUNT(*) FROM models '
+        ' WHERE wishlist_source_list_id IS NOT NULL').fetchone()[0]
+    assert pooled == 0, 'no list is asking any more'
+
+
 def test_list_summaries_carry_readiness(conn, sheets, stages):
     own(conn, stages, sheets['Boyz'], 20, 'Battle ready')
     ready = lists.create_list(conn, 'Ready')
