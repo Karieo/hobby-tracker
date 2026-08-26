@@ -87,7 +87,7 @@ def army_with_unit(db_path):
 # ── Auth ─────────────────────────────────────────────────
 
 @pytest.mark.parametrize('path', ['/', '/collection', '/paint', '/backlog',
-                                  '/reference'])
+                                  '/shopping', '/reference'])
 def test_pages_require_login(db_path, monkeypatch, path):
     import app as appmod
     monkeypatch.setattr(appmod.db, 'DB_PATH', db_path)
@@ -113,7 +113,7 @@ def test_healthz_is_public(db_path, monkeypatch):
 # ── Pages render ─────────────────────────────────────────
 
 @pytest.mark.parametrize('path', ['/', '/collection', '/paint', '/backlog',
-                                  '/reference'])
+                                  '/shopping', '/reference'])
 def test_pages_render(client, army_with_unit, path):
     assert client.get(path).status_code == 200
 
@@ -2044,3 +2044,47 @@ def test_the_backlog_is_reachable_without_a_nav_entry(client, army_with_unit):
     the home screen, and the paint picker."""
     assert '/backlog' in client.get('/').get_data(as_text=True)
     assert '/backlog' in client.get('/paint').get_data(as_text=True)
+
+
+def test_the_shopping_page_renders_a_real_plan(client, army_with_unit, db_path):
+    """The empty page is the easy half. This one exercises the branches that
+    can actually throw: a box line with a quantity and a price, the à la carte
+    comparison, and the uncovered panel — all on one render."""
+    import kit_templates as kt
+    with db.connect(db_path) as conn:
+        boyz = army_with_unit['datasheet_id']
+        warboss = conn.execute(
+            'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+            'created_at, updated_at) VALUES (?,?,?,1,?,?)',
+            ('wb', 'Warboss', army_with_unit['faction_id'],
+             db.now(), db.now())).lastrowid
+        stages = {s['name']: s['id'] for s in col.stage_ladder(conn)}
+        col.create_unit(conn, boyz, 20, stage_id=stages['Wishlist'])
+        col.create_unit(conn, warboss, 1, stage_id=stages['Wishlist'])
+        kt.create_template(conn, 'Boyz',
+                           [{'datasheet_id': boyz, 'model_count': 10}],
+                           rrp_cents=3750)
+
+    res = client.get('/shopping')
+    body = res.get_data(as_text=True)
+
+    assert res.status_code == 200
+    assert '2 × ' in body, 'twenty against a box of ten is two boxes'
+    assert 'Warboss' in body, 'the uncovered want must never be dropped'
+
+
+def test_the_shopping_page_never_shows_a_total_it_cannot_stand_behind(
+        client, army_with_unit, db_path):
+    """A total that quietly skips the unpriced boxes reads low, which is the
+    one direction a shopping total must not be wrong in."""
+    import kit_templates as kt
+    with db.connect(db_path) as conn:
+        boyz = army_with_unit['datasheet_id']
+        stages = {s['name']: s['id'] for s in col.stage_ladder(conn)}
+        col.create_unit(conn, boyz, 10, stage_id=stages['Wishlist'])
+        kt.create_template(conn, 'Boyz',
+                           [{'datasheet_id': boyz, 'model_count': 10}])
+
+    body = client.get('/shopping').get_data(as_text=True)
+
+    assert 'No prices recorded' in body

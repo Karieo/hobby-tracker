@@ -67,6 +67,7 @@ import journey
 import lists as army_lists
 import photos
 import rules_data  # noqa: E402
+import shopping
 import database as db  # noqa: E402
 import kit_templates as templates  # noqa: E402
 
@@ -1144,6 +1145,22 @@ def backlog_page():
             'backlog.html', rows=rows, totals=backlog_mod.totals(rows),
             sorts=backlog_mod.SORTS, sort=sort, army_id=army_id,
             armies=col.list_armies(conn))
+
+
+@app.route('/shopping')
+def shopping_page():
+    """The wishlist, answered in boxes rather than datasheets.
+
+    Reached from the wishlist on `/lists`, not from the nav — that is five
+    items on a phone already and Clay has complained about clutter. This is
+    also a screen with nothing to say until something is on the wishlist.
+
+    Computed live like the gap report and the backlog. Buy a box, define it,
+    and the plan is different on the next load, which is the feedback the other
+    two exist for.
+    """
+    with _read() as conn:
+        return render_template('shopping.html', **shopping.plan(conn))
 
 
 @app.route('/paint')
