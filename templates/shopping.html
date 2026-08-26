@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}What to buy · Collection Tracker{% endblock %}
+{% block body %}
+  <header class="page">
+    <div>
+      <h1>What to buy</h1>
+    </div>
+    <a class="ghost" href="/lists">Wishlist →</a>
+  </header>
+
+  {% if not wanted %}
+    <div class="panel empty">
+      <p>Nothing on the wishlist.</p>
+      <p class="muted">
+        Raise a list's shortfall from <a href="/lists">Lists</a>, or want a box
+        from <a href="/templates">Boxes</a>, and this says what to buy.
+      </p>
+    </div>
+  {% else %}
+    {# The headline is the count of boxes, not of models. This is the screen you
+       read standing in a shop, and "four boxes" is the thing you can act on. #}
+    <p class="hint">
+      <b>{{ best.boxes }}</b> box{{ '' if best.boxes == 1 else 'es' }}
+      for <b>{{ wanted|length }}</b> unit{{ '' if wanted|length == 1 else 's' }} wanted
+      {% if best.spare %}
+        · <span class="muted">{{ best.spare }} spare model{{ '' if best.spare == 1 else 's' }}</span>
+      {% endif %}
+    </p>
+
+    {% if best.lines %}
+      <ul class="units">
+        {% for line in best.lines %}
+          <li>
+            <div class="what">
+              <b>
+                {% if line.qty > 1 %}{{ line.qty }} × {% endif %}
+                <a href="/templates/{{ line.box.id }}">{{ line.box.name }}</a>
+              </b>
+              <span class="muted">
+                {{ line.box.faction_name or 'no faction' }}
+                {% if line.box.year %} · {{ line.box.year }}{% endif %}
+              </span>
+            </div>
+            <p class="counts">
+              {# Naming what the box is for. "Combat Patrol" on its own leaves
+                 you to work out what it was covering. #}
+              {% for c in line.names %}
+                {{ c.n }} {{ c.name }}{{ '' if loop.last else ' · ' }}
+              {% endfor %}
+              {% if line.spare %}
+                <span class="muted"> · {{ line.spare }} spare</span>
+              {% endif %}
+              {% if line.cents %}
+                <span class="muted"> · {{ line.cents | money }}</span>
+              {% else %}
+                <span class="muted"> · no price recorded</span>
+              {% endif %}
+            </p>
+          </li>
+        {% endfor %}
+      </ul>
+
+      {# Money, and how much of it the app can actually stand behind. A total
+         that quietly skipped the unpriced boxes would read low, which is the
+         one direction a shopping total must never be wrong in. #}
+      <div class="panel {% if best.state != 'priced' %}warn{% endif %}">
+        {% if best.state == 'priced' %}
+          <p><b>{{ best.cents | money }}</b> for the lot.</p>
+        {% elif best.state == 'partial' %}
+          <p><b>At least {{ best.cents | money }}</b> for the lot.</p>
+          <p class="muted">
+            Some of these boxes have no recorded price, so the real total is
+            higher. Add an RRP on a box's page and this settles.
+          </p>
+        {% else %}
+          <p>No prices recorded for any of these boxes.</p>
+          <p class="muted">
+            Add an RRP on a box's page and this becomes a total.
+          </p>
+        {% endif %}
+
+        {% if saving is not none %}
+          <p class="hint">
+            {% if saving > 0 %}
+              Buying them separately would be {{ alacarte.cents | money }} —
+              <b>{{ saving | money }} more</b>.
+            {% elif saving < 0 %}
+              Buying them separately would be {{ alacarte.cents | money }} —
+              <b>{{ (-saving) | money }} less</b>. The bundle is not a saving here.
+            {% else %}
+              Buying them separately costs the same.
+            {% endif %}
+          </p>
+        {% elif not uncovered and alacarte.lines %}
+          {# Only worth saying once the plan above actually covers the
+             wishlist. While something is uncovered, neither side can buy the
+             whole list, and blaming the single-unit boxes for a gap the bundle
+             has too would point at the wrong thing — the panel below is
+             already saying what is really missing. #}
+          <p class="hint muted">
+            No à la carte comparison: the single-unit boxes
+            {% if alacarte.uncovered %}don't cover all of this{% else %}aren't all priced{% endif %}.
+          </p>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    {# Never drop a line. A want no box contains is the shortfall Clay would
+       otherwise discover at the till. #}
+    {% if uncovered %}
+      <div class="panel warn">
+        <h2>No box in the catalogue holds these</h2>
+        <ul>
+          {% for u in uncovered %}
+            <li><b>{{ u.short }} {{ u.name }}</b></li>
+          {% endfor %}
+        </ul>
+        <p class="muted">
+          Either nothing is defined that contains them, or what is defined does
+          not say so. Define the box on <a href="/templates">Boxes</a> and it
+          will be planned for next time.
+        </p>
+      </div>
+    {% endif %}
+  {% endif %}
+{% endblock %}

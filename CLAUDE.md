@@ -83,6 +83,42 @@ unpriced is `review`, because the missing number could take it over.
 increments — ten or twenty Boyz, never fifteen — and two columns cannot express
 that, so fifteen passes. Detachments and enhancements are not modelled at all.
 
+**The shopping list answers in boxes, because a shop does not sell seven
+Boyz.** `shopping.py` and `/shopping`: the wishlist names datasheets and model
+counts, which is the right answer to "what am I short" and the wrong one to the
+question asked standing in a shop. The cover is greedy and deliberately dull —
+most still-missing models first, ties to the smaller overage — and buys one box
+at a time, so twenty Boyz against a box of ten is that box twice with no
+reasoning about multiples. It is **not an optimiser**: a real minimum-cost cover
+needs a price on every box, most have none, and optimising against `rrp_cents`
+would mean optimising against whichever boxes Clay happened to have priced.
+
+**The overage is carried because it is the cost nothing else would show.** Four
+boxes covering the list with forty spare models is worse than five with six, and
+`spare` is the only number on the screen that says so.
+
+**Bundle against à la carte is one function run twice** — once over every box,
+once over only the single-unit ones. A comparison computed by different code
+from the thing it compares to is a comparison that drifts. No saving is claimed
+unless both sides are fully priced *and* both cover the ground; a negative one
+is reported as it stands, since a comparison that only ever flatters the bundle
+is not a comparison.
+
+**Prices are three-state for the same reason list validation is.** A total that
+quietly skipped the unpriced boxes would read **low**, which is the one
+direction a shopping total must never be wrong in. `priced` is a figure,
+`partial` is a floor the screen shows as "at least", `unpriced` shows none —
+and `partial` is the honest common case. Anything no box in the catalogue
+contains is named on the page rather than dropped, the same rule the importers
+keep.
+
+**`_cover` has two guards against picking a box that covers nothing, and that
+is deliberate.** The loop terminates because each pass reduces what is
+outstanding, so a zero-coverage pick does not produce a bad plan — it produces
+a page that never loads. Either guard alone holds it;
+`test_a_box_that_covers_nothing_does_not_hang_the_plan` pins the behaviour
+rather than either mechanism.
+
 **The backlog measures work left, not models left.** `backlog.py` and
 `/backlog`: `effort_left = effort × steps still ahead / steps from the start`.
 Ten Boyz on sprue is 10.0, the same ten needing only a final check is 1.7, and

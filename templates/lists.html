@@ -60,7 +60,12 @@
 
   {% if wants %}
     <h2>Wishlist <span class="muted">{{ wants|length }}</span></h2>
-    <p class="hint">What to buy. Raised from a list, or wanted on its own.</p>
+    <p class="hint">
+      What is missing. Raised from a list, or wanted on its own.
+      {# The wishlist answers in datasheets; a shop sells boxes. This is the
+         door to the half that says which box. #}
+      <a href="/shopping">What to buy →</a>
+    </p>
     <ul class="units">
       {% for w in wants %}
         <li>
