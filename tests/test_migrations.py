@@ -223,3 +223,126 @@ def test_the_merge_survives_a_re_import(tmp_path):
 
     assert existing is not None and existing['id'] == keep
     conn.close()
+
+
+def _apply_012(path):
+    """Run the claims migration's own SQL against a database holding wishlist
+    models that only the old single column knows about."""
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sql = open(os.path.join(root, 'migrations', '012_wishlist_claims.sql'),
+               encoding='utf-8').read()
+    conn = db.connect(path)
+    conn.executescript(sql)
+    conn.commit()
+    conn.close()
+
+
+def test_012_backfills_a_claim_for_every_list_raised_model(tmp_path):
+    """Clay has a live database with a raised wishlist in it. Arriving with an
+    empty claims table would make the collection forget which lists raised the
+    wishlist it is already showing — and the first raise after deploying would
+    read an empty pool and stack a second copy on top of what is there, which
+    is the over-buying this migration exists to stop."""
+    path = str(tmp_path / 'claims.db')
+    db.migrate(path)
+    conn = db.connect(path)
+    faction = _faction(conn, 'Orks', 'orks')
+    sheet = conn.execute(
+        'INSERT INTO datasheets (bsdata_id, name, faction_id, min_models, '
+        "max_models, game_system, created_at, updated_at) VALUES ('x', 'Boyz', "
+        "?, 10, 20, 'wh40k', ?, ?)", (faction, db.now(), db.now())).lastrowid
+    saturday = conn.execute(
+        'INSERT INTO army_lists (name, created_at) VALUES (?, ?)',
+        ('Saturday', db.now())).lastrowid
+    unit = conn.execute(
+        'INSERT INTO units (datasheet_id, created_at, updated_at) '
+        'VALUES (?, ?, ?)', (sheet, db.now(), db.now())).lastrowid
+    wishlist = db.wishlist_stage(conn)['id']
+    raised = [conn.execute(
+        'INSERT INTO models (unit_id, stage_id, wishlist_source_list_id, '
+        'created_at, stage_changed_at) VALUES (?, ?, ?, ?, ?)',
+        (unit, wishlist, saturday, db.now(), db.now())).lastrowid
+        for _ in range(10)]
+    # A standing want of Clay's own, which no list raised.
+    own = conn.execute(
+        'INSERT INTO models (unit_id, stage_id, created_at, stage_changed_at) '
+        'VALUES (?, ?, ?, ?)', (unit, wishlist, db.now(), db.now())).lastrowid
+    conn.execute('DELETE FROM wishlist_claims')
+    conn.commit()
+    conn.close()
+
+    _apply_012(path)
+
+    conn = db.connect(path)
+    claimed = [r['model_id'] for r in conn.execute(
+        'SELECT model_id FROM wishlist_claims WHERE list_id = ? '
+        'ORDER BY model_id', (saturday,))]
+    assert claimed == raised
+    assert own not in claimed, 'a standing want belongs to no list'
+    conn.close()
+
+
+def test_012_leaves_the_models_when_a_claimed_list_goes(tmp_path):
+    """The claim cascades, the model does not. Clay still wants what he was
+    told to buy, and it is his to clear — which is what `delete_list` has
+    always done with the single column it is replacing."""
+    path = str(tmp_path / 'cascade.db')
+    db.migrate(path)
+    conn = db.connect(path)
+    faction = _faction(conn, 'Orks', 'orks')
+    sheet = conn.execute(
+        'INSERT INTO datasheets (bsdata_id, name, faction_id, min_models, '
+        "max_models, game_system, created_at, updated_at) VALUES ('x', 'Boyz', "
+        "?, 10, 20, 'wh40k', ?, ?)", (faction, db.now(), db.now())).lastrowid
+    lid = conn.execute('INSERT INTO army_lists (name, created_at) VALUES (?, ?)',
+                       ('Saturday', db.now())).lastrowid
+    unit = conn.execute(
+        'INSERT INTO units (datasheet_id, created_at, updated_at) '
+        'VALUES (?, ?, ?)', (sheet, db.now(), db.now())).lastrowid
+    model = conn.execute(
+        'INSERT INTO models (unit_id, stage_id, created_at, stage_changed_at) '
+        'VALUES (?, ?, ?, ?)',
+        (unit, db.wishlist_stage(conn)['id'], db.now(), db.now())).lastrowid
+    conn.execute('INSERT INTO wishlist_claims (model_id, list_id) VALUES (?, ?)',
+                 (model, lid))
+    conn.commit()
+
+    conn.execute('DELETE FROM army_lists WHERE id = ?', (lid,))
+    conn.commit()
+
+    assert conn.execute('SELECT COUNT(*) FROM wishlist_claims').fetchone()[0] == 0
+    assert conn.execute('SELECT COUNT(*) FROM models WHERE id = ?',
+                        (model,)).fetchone()[0] == 1
+    conn.close()
+
+
+def test_012_drops_a_claim_when_its_model_goes(tmp_path):
+    """`unwant_template` and `remove_models` delete model rows outright. The
+    cascade is why neither needs to learn about claims."""
+    path = str(tmp_path / 'modelgone.db')
+    db.migrate(path)
+    conn = db.connect(path)
+    faction = _faction(conn, 'Orks', 'orks')
+    sheet = conn.execute(
+        'INSERT INTO datasheets (bsdata_id, name, faction_id, min_models, '
+        "max_models, game_system, created_at, updated_at) VALUES ('x', 'Boyz', "
+        "?, 10, 20, 'wh40k', ?, ?)", (faction, db.now(), db.now())).lastrowid
+    lid = conn.execute('INSERT INTO army_lists (name, created_at) VALUES (?, ?)',
+                       ('Saturday', db.now())).lastrowid
+    unit = conn.execute(
+        'INSERT INTO units (datasheet_id, created_at, updated_at) '
+        'VALUES (?, ?, ?)', (sheet, db.now(), db.now())).lastrowid
+    model = conn.execute(
+        'INSERT INTO models (unit_id, stage_id, created_at, stage_changed_at) '
+        'VALUES (?, ?, ?, ?)',
+        (unit, db.wishlist_stage(conn)['id'], db.now(), db.now())).lastrowid
+    conn.execute('INSERT INTO wishlist_claims (model_id, list_id) VALUES (?, ?)',
+                 (model, lid))
+    conn.commit()
+
+    conn.execute('DELETE FROM models WHERE id = ?', (model,))
+    conn.commit()
+
+    assert conn.execute('SELECT COUNT(*) FROM wishlist_claims').fetchone()[0] == 0
+    conn.close()

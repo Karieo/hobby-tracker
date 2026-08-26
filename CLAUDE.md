@@ -47,6 +47,25 @@ the fix too: `raise_wishlist` was reading the same double-counted numbers and
 under-asking for exactly the models Clay would have found missing at the
 table.
 
+**The wishlist deduplicates across lists on the maximum, never the sum.** Ten
+Boyz for Saturday and twenty for Sunday is twenty to buy — the same twenty
+field either game, one at a time. It said thirty for months, with a test
+asserting it and a comment admitting the test pinned the behaviour rather than
+blessing it. `raise_wishlist` tops up `_raised_pool` and then claims out of it.
+
+That makes one model answer several lists, which a single
+`models.wishlist_source_list_id` cannot express, so **migration 012 adds
+`wishlist_claims`** and the two split the work: the column marks *the pool* —
+this row exists because a list asked, as opposed to a standing want of Clay's —
+and the table records *which lists need it now*. Keying the pool on the column
+rather than on a live claim is what stops a list that shrinks from ejecting
+models from the pool and having the next raise buy them again. Both foreign
+keys cascade, so `unwant_template` and `remove_models` need no new cleanup.
+
+**Standing wants and box wants stay outside the pool on purpose.** A list's
+shortfall and a thing Clay simply wants are different facts; collapsing them
+would quietly under-order.
+
 **One name-similarity function, `list_resolve.similarity`**, used by both paste
 doors. It sorts the words before comparing (rapidfuzz calls that
 `token_sort_ratio`) rather than using §8's `token_set_ratio`, which scores any
