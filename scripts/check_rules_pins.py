@@ -3,8 +3,12 @@
 
     python3 scripts/check_rules_pins.py
 
-Exits 1 when anything has moved, so the weekly sweep can notice without
-parsing this output.
+Exits 1 when there is something to **take** — not merely when a repository has
+moved. Those are different, and conflating them made this cry wolf. Measured
+2026-08-26: the MFM pin had moved on a `chore(deps)` CI bump with the points
+files byte-identical, and BSData had moved by 35 genuine data commits that
+changed exactly two rows of what this app imports, both keyword-only. A weekly
+alarm for either is a nag, and a nag becomes wallpaper.
 
 Nothing here bumps a pin. Points changing under a list is exactly the kind of
 thing Clay should decide to accept rather than wake up to: a balance dataslate
@@ -55,26 +59,46 @@ def main(argv=None):
         print('     python3 scripts/import_bsdata.py')
 
     print('\nPins:')
-    moved = []
+    stale, moved = [], []
     for row in rules_data.check_pins(timeout=args.timeout):
         if not row['reachable']:
             print(f'  {row["label"]:<22} could not reach {row["repo"]}')
             continue
-        if row['moved']:
+        if row['stale']:
+            stale.append(row)
+            print(f'  {row["label"]:<22} NEW DATA  v{row["dataset"]["version"]} '
+                  f'({row["dataset"]["date"]}) is out — take it')
+        elif row['dataset']:
+            # The one source that publishes a dated dataset, so this is a real
+            # answer rather than an inference from a commit id.
+            print(f'  {row["label"]:<22} current — v{row["dataset"]["version"]} '
+                  f'({row["dataset"]["date"]}) is the newest published')
+        elif row['moved']:
             moved.append(row)
-            where = 'vendored in data/mfm/' if row['vendored'] else 'fetched'
-            print(f'  {row["label"]:<22} MOVED  {row["sha"][:12]} → '
-                  f'{row["head"][:12]}  ({where})')
+            print(f'  {row["label"]:<22} {row["sha"][:12]} → {row["head"][:12]}, '
+                  'commits ahead')
         else:
             print(f'  {row["label"]:<22} current at {row["sha"][:12]}')
 
-    if not moved:
-        print('\nEverything is on its pin.')
+    if moved:
+        # Reported, never exit-worthy on its own. Measured 2026-08-26: BSData
+        # was 35 commits ahead, every one a real data fix, and re-importing
+        # changed two rows — both keyword-only. Its JSON carries the whole
+        # BattleScribe model and this app reads a narrow slice, so most fixes
+        # upstream are invisible here. Exiting 1 on that turns the weekly sweep
+        # into a warning nobody reads.
+        print('\n  Commits ahead is not the same as out of date: this app '
+              'imports a narrow\n  slice of BSData, so most upstream fixes '
+              'change nothing here. Re-import\n  to find out for certain.')
+
+    if not stale:
+        print('\nNothing to take. Points are current.')
         return 0
 
-    print(f'\n{len(moved)} source(s) have moved. Nothing has been changed.')
+    print(f'\n{len(stale)} source(s) have published new data. '
+          'Nothing has been changed.')
     print('To take an update, edit the SHA in rules_data.py, then:')
-    for row in moved:
+    for row in stale:
         if row['key'] == 'mfm':
             print('  MFM     — replace data/mfm/ from the new commit, update '
                   'data/SOURCES.md,\n            then python3 '

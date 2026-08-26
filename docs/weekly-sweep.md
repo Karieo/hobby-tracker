@@ -24,9 +24,24 @@ What is left is the half that was always separate.
 python3 scripts/check_rules_pins.py
 ```
 
-It compares each pinned upstream — the Munitorum Field Manual, BSData's
-datasheets, BSData's Kill Team catalogues — against its current HEAD and exits
-1 if any has moved. It writes nothing.
+It writes nothing, and it exits 1 only when there is something to **take** —
+not merely when a repository has moved. Those are different, and conflating
+them made this cry wolf.
+
+Measured 2026-08-26. The MFM pin had moved, and the one commit was
+`chore(deps): Bump pnpm/setup from 1 to 2`; the points files were
+byte-identical. BSData had moved by 35 commits, every one a genuine data fix
+including 805 inserted lines in `Orks.json`, and re-importing changed **two
+rows** of what this app stores — both keyword-only, on units in armies Clay
+does not play. BSData's JSON carries the whole BattleScribe model and this app
+reads a narrow slice of it.
+
+So the check asks the one source that publishes a dated, versioned dataset —
+the MFM — what its newest release is, and compares that to what is imported.
+For BSData and Kill Team it reports "commits ahead" and says plainly that this
+is not the same as out of date. `stale` is None there rather than False:
+"not established" and "no" are different answers, and only one of them is
+honest.
 
 **Do not bump a pin.** Report it. Games Workshop reprices with every balance
 dataslate, and a list that was legal on Saturday quietly becoming illegal on
