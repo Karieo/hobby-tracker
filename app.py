@@ -55,6 +55,7 @@ from flask import (Flask, Response, abort, jsonify, redirect,  # noqa: E402
                    render_template, request, send_file, session)
 from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 
+import backlog as backlog_mod  # noqa: E402
 import bulk_add  # noqa: E402
 import collection as col
 import list_allocate
@@ -1111,6 +1112,27 @@ def serve_photo(filename):
 
 
 # ── Painting session ─────────────────────────────────────
+
+@app.route('/backlog')
+def backlog_page():
+    """What to work on next, and how much of an evening it is.
+
+    Separate from `/paint` on purpose. That screen is for a wet brush — big
+    targets, freshest first, no thinking. This one is the deciding beforehand,
+    which wants sorting and numbers and is no use at all with paint on your
+    hands.
+    """
+    sort = request.args.get('sort') or backlog_mod.DEFAULT_SORT
+    if sort not in dict(backlog_mod.SORTS):
+        sort = backlog_mod.DEFAULT_SORT
+    army_id = _int(request.args.get('army_id'))
+    with _read() as conn:
+        rows = backlog_mod.backlog(conn, army_id=army_id, sort=sort)
+        return render_template(
+            'backlog.html', rows=rows, totals=backlog_mod.totals(rows),
+            sorts=backlog_mod.SORTS, sort=sort, army_id=army_id,
+            armies=col.list_armies(conn))
+
 
 @app.route('/paint')
 @app.route('/paint/<int:unit_id>')
