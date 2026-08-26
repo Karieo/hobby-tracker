@@ -358,11 +358,69 @@ def test_two_lists_short_of_the_same_unit_share_one_line(conn, sheets, stages):
     assert units == 1
     row = next(r for r in lists.wishlist(conn) if r['name'] == 'Boyz')
     assert 'Saturday' in row['list_names'] and 'Sunday' in row['list_names']
-    # 30, not 20: each list raises its own whole shortfall, because nothing in
-    # the app yet says the same ten Boyz could serve both. Sharing models
-    # between competing lists is unbuilt and out of scope here — this pins the
-    # behaviour rather than blessing it, so a later fix has to face the test.
-    assert row['wanted'] == 30
+    # 20, not 30. Deduplicated on the maximum, per the original spec §7: the
+    # same twenty Boyz field either game, one at a time. This asserted 30 for
+    # months, with a comment saying it pinned the behaviour rather than
+    # blessing it — ten models of over-buying on the one screen whose whole job
+    # is saying what to buy.
+    assert row['wanted'] == 20
+
+
+def test_the_shared_line_is_the_same_whichever_list_was_raised_first(
+        conn, sheets, stages):
+    """The reverse of the test above, and the reason claims are a table rather
+    than a column. With one `wishlist_source_list_id` per model, whichever list
+    ran first owned all of them and the other was invisible on the line while
+    still waiting on those exact models."""
+    sunday = lists.create_list(conn, 'Sunday')
+    lists.add_entry(conn, sunday, sheets['Boyz'], 20)
+    lists.raise_wishlist(conn, sunday)
+    saturday = lists.create_list(conn, 'Saturday')
+    lists.add_entry(conn, saturday, sheets['Boyz'], 10)
+    lists.raise_wishlist(conn, saturday)
+
+    row = next(r for r in lists.wishlist(conn) if r['name'] == 'Boyz')
+    assert row['wanted'] == 20
+    assert 'Saturday' in row['list_names'] and 'Sunday' in row['list_names']
+
+
+def test_a_standing_want_is_not_swallowed_by_a_list(conn, sheets, stages):
+    """Five Boyz Clay wishlisted himself and ten a list is short of are
+    different facts. Deduplicating is across *lists*; collapsing his own want
+    into a list's shortfall would quietly under-order."""
+    col.add_or_extend_unit(conn, sheets['Boyz'], 5,
+                           stage_id=db.wishlist_stage(conn)['id'])
+    saturday = lists.create_list(conn, 'Saturday')
+    lists.add_entry(conn, saturday, sheets['Boyz'], 10)
+    lists.raise_wishlist(conn, saturday)
+
+    row = next(r for r in lists.wishlist(conn) if r['name'] == 'Boyz')
+    assert row['wanted'] == 15
+    assert row['from_lists'] == 10
+
+
+def test_a_list_that_shrinks_releases_its_claim_without_buying_twice(
+        conn, sheets, stages):
+    """The pool is keyed on having been raised by a list, not on a live claim.
+    Keyed on the claim, a list cutting its needs would eject those models from
+    the pool and the next raise would read it short and buy the same plastic
+    again — the bug, one release later."""
+    sunday = lists.create_list(conn, 'Sunday')
+    entry = lists.add_entry(conn, sunday, sheets['Boyz'], 20)
+    lists.raise_wishlist(conn, sunday)
+    conn.execute('UPDATE list_entries SET model_count = 5 WHERE id = ?', (entry,))
+    lists.raise_wishlist(conn, sunday)
+
+    row = next(r for r in lists.wishlist(conn) if r['name'] == 'Boyz')
+    assert (row['wanted'], row['from_lists']) == (20, 5), \
+        'the rows stay — Clay was told to buy them — but only five are claimed'
+
+    saturday = lists.create_list(conn, 'Saturday')
+    lists.add_entry(conn, saturday, sheets['Boyz'], 10)
+    lists.raise_wishlist(conn, saturday)
+
+    row = next(r for r in lists.wishlist(conn) if r['name'] == 'Boyz')
+    assert row['wanted'] == 20, 'the released models are reused, never rebought'
 
 
 def test_dropping_one_list_leaves_the_shared_line_standing(conn, sheets, stages):
@@ -379,8 +437,21 @@ def test_dropping_one_list_leaves_the_shared_line_standing(conn, sheets, stages)
     stamped = dict(conn.execute("""
         SELECT wishlist_source_list_id, COUNT(*) FROM models
          GROUP BY wishlist_source_list_id""").fetchall())
-    assert stamped == {saturday: 10, sunday: 20}, \
-        'each list keeps its own models inside the shared line'
+    assert stamped == {saturday: 10, sunday: 10}, \
+        'each list paid for the rows it added and no others — twenty in total'
+
+    # Which lists *need* them is the other question, and it overlaps: Sunday
+    # waits on all twenty, Saturday on ten of the same twenty.
+    claimed = dict(conn.execute("""
+        SELECT list_id, COUNT(*) FROM wishlist_claims
+         GROUP BY list_id""").fetchall())
+    assert claimed == {saturday: 10, sunday: 20}
+
+    lists.delete_list(conn, sunday)
+
+    row = next(r for r in lists.wishlist(conn) if r['name'] == 'Boyz')
+    assert row['wanted'] == 20, 'Clay still wants them; they are his to clear'
+    assert row['from_lists'] == 10 and row['list_names'] == 'Saturday'
 
 
 def test_entries_are_numbered_in_the_order_they_were_added(conn, sheets):

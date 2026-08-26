@@ -296,20 +296,24 @@ def raise_wishlist(conn, list_id):
 
     Idempotent per list: re-running tops up to the shortfall rather than
     stacking a second copy on top of the first.
+
+    **Deduplicated across lists on the maximum, per the original spec §7.** Ten
+    Boyz for Saturday and twenty for Sunday is twenty Boyz to buy, not thirty:
+    the same twenty field either game, one at a time. It used to be thirty,
+    because each list counted only the models it had raised itself and topped
+    up from zero. That is ten models of over-buying on the one screen whose
+    whole job is saying what to buy.
+
+    So a raise tops up a *shared pool* and then claims what it needs out of it.
+    Standing wants — models Clay wishlisted himself, or that came from a box —
+    are not in the pool and are never claimed, because a list's shortfall and a
+    thing he simply wants are different facts and collapsing them would quietly
+    under-order.
     """
     gap = list_gap(conn, list_id)
     wishlist = db.wishlist_stage(conn)
     if not wishlist:
         raise ValueError('no wishlist stage — migration 002 did not run?')
-
-    raised = {}
-    for row in conn.execute("""
-        SELECT u.datasheet_id, COUNT(m.id) AS n
-          FROM models m JOIN units u ON u.id = m.unit_id
-         WHERE m.wishlist_source_list_id = ?
-         GROUP BY u.datasheet_id
-    """, (list_id,)):
-        raised[row['datasheet_id']] = row['n']
 
     added = 0
     for entry in gap['entries']:
@@ -318,19 +322,60 @@ def raise_wishlist(conn, list_id):
         # for what is genuinely missing rather than for everything unbuilt.
         if not entry['datasheet_id']:
             continue
-        want = entry['short'] - raised.get(entry['datasheet_id'], 0)
-        if want <= 0:
-            continue
-        # Two lists wanting the same unit join one wishlist line rather than
-        # stacking two identical ones on the collection. The stamp goes on the
-        # models this call added and no others, so taking one list back off the
-        # wishlist cannot take the other list's models with it.
-        raised_now = col.add_or_extend_unit(conn, entry['datasheet_id'], want,
-                                            stage_id=wishlist['id'])
-        _stamp(conn, 'wishlist_source_list_id', list_id,
-               raised_now['model_ids'])
-        added += want
+        pool = _raised_pool(conn, entry['datasheet_id'])
+        want = entry['short'] - len(pool)
+        if want > 0:
+            # The stamp goes on the models this call added and no others, so
+            # taking one list back off the wishlist cannot take another list's
+            # models with it.
+            raised_now = col.add_or_extend_unit(
+                conn, entry['datasheet_id'], want, stage_id=wishlist['id'])
+            _stamp(conn, 'wishlist_source_list_id', list_id,
+                   raised_now['model_ids'])
+            pool += raised_now['model_ids']
+            added += want
+        _claim(conn, list_id, entry['datasheet_id'], pool[:entry['short']])
     return added
+
+
+def _raised_pool(conn, datasheet_id):
+    """Wishlist models for a datasheet that some list asked for, oldest first.
+
+    The pool a raise tops up rather than adds alongside. Keyed on
+    `wishlist_source_list_id` being set rather than on a live claim, so a list
+    that shrinks releases its claim without ejecting the models from the pool —
+    otherwise the next raise would read a short pool and buy the same plastic
+    twice, which is the bug this whole function exists to fix.
+    """
+    return [r['id'] for r in conn.execute("""
+        SELECT m.id
+          FROM models m
+          JOIN stages s ON s.id = m.stage_id AND s.is_owned = 0
+          JOIN units u  ON u.id = m.unit_id
+         WHERE u.datasheet_id = ?
+           AND m.wishlist_source_list_id IS NOT NULL
+         ORDER BY m.id
+    """, (datasheet_id,))]
+
+
+def _claim(conn, list_id, datasheet_id, model_ids):
+    """Say which wishlist models this list is currently waiting on.
+
+    Rewritten whole for the datasheet rather than added to, so a list that
+    needs fewer than it did releases the difference. A released model keeps its
+    row and its `wishlist_source_list_id`: Clay was told to buy it, and a list
+    changing its mind is not the app deciding he no longer wants it.
+    """
+    conn.execute("""
+        DELETE FROM wishlist_claims
+         WHERE list_id = ?
+           AND model_id IN (SELECT m.id FROM models m
+                              JOIN units u ON u.id = m.unit_id
+                             WHERE u.datasheet_id = ?)
+    """, (list_id, datasheet_id))
+    conn.executemany(
+        'INSERT OR IGNORE INTO wishlist_claims (model_id, list_id) VALUES (?,?)',
+        [(mid, list_id) for mid in model_ids])
 
 
 def wishlist(conn):
@@ -340,13 +385,27 @@ def wishlist(conn):
     *why* Clay wants it — seven Boyz short for Saturday. A kit template says
     *what to buy*: "11 Boyz, 1 Trukk" is a parts list, "Orks: Trukk Boyz" is a
     thing on a shelf in a shop with a price on it.
+
+    The list names come from `wishlist_claims`, not from the model's single
+    `wishlist_source_list_id`. One shared line answers several lists at once
+    now, and a single column could only ever name whichever raised it first —
+    so the line read "for Sunday" while Saturday sat waiting on those very
+    models. Which list bought the row and which lists need it are different
+    questions, and only the second is worth showing.
+
+    `COUNT(DISTINCT m.id)` rather than `COUNT(m.id)`: the claims join
+    multiplies a model's row by the number of lists claiming it, and a shared
+    line is exactly where that happens. Counted the old way, two lists wanting
+    the same twenty Boyz would report forty wanted — the bug this function is
+    being fixed to stop, reintroduced one join later.
     """
     return [dict(r) for r in conn.execute("""
         SELECT d.id AS datasheet_id, d.name, d.game_system,
                f.name AS faction_name,
-               COUNT(m.id)                                  AS wanted,
-               COUNT(m.wishlist_source_list_id)             AS from_lists,
-               COUNT(m.wishlist_source_template_id)         AS from_boxes,
+               COUNT(DISTINCT m.id)                         AS wanted,
+               COUNT(DISTINCT c.model_id)                   AS from_lists,
+               COUNT(DISTINCT CASE WHEN m.wishlist_source_template_id
+                     IS NOT NULL THEN m.id END)             AS from_boxes,
                GROUP_CONCAT(DISTINCT l.name)                AS list_names,
                GROUP_CONCAT(DISTINCT t.name)                AS box_names
           FROM models m
@@ -354,7 +413,8 @@ def wishlist(conn):
           JOIN units u         ON u.id = m.unit_id
           JOIN datasheets d    ON d.id = u.datasheet_id
           LEFT JOIN factions f ON f.id = d.faction_id
-          LEFT JOIN army_lists l ON l.id = m.wishlist_source_list_id
+          LEFT JOIN wishlist_claims c ON c.model_id = m.id
+          LEFT JOIN army_lists l ON l.id = c.list_id
           LEFT JOIN kit_templates t ON t.id = m.wishlist_source_template_id
          GROUP BY d.id
          ORDER BY d.name
