@@ -262,11 +262,37 @@ entry naming a faction with no row, or a team with no catalogue, is reported
 and written to `unresolved_imports` rather than approximated to the nearest
 thing.
 
-**The 32 still unplaced keep their own row and are named in the report.** The
-2021 Compendium teams are legacy and Clay's table deliberately does not cover
-them; an alliance like `Imperium` covers nineteen teams while naming no
-faction. Assigning those from recall is the forbidden change: fluent,
-plausible, and wrong in places with no signal about which.
+**A third layer reads the categories a catalogue defines itself.** The 2021
+Compendium catalogues were written against a different game system and declare
+their categories inline instead of referencing the 2024 ones, so
+`faction_categories` saw nothing in them — `2021 - Greenskin.cat` says
+`<categoryEntry name="Ork"/>` in its own body and nothing was reading it.
+`self_categories` does, for teams the game system could not place, and **only
+when exactly one real faction is named**: `Heretic Astartes` lists Iron
+Warriors, Night Lords and World Eaters beside Chaos Space Marine, and choosing
+the allegiance out of its own legions takes knowledge the data does not carry.
+One match is a reading, several is a guess, and a guess is reported instead.
+
+**One row per team, not one per printing.** `2021 - Fellgor Ravager` and
+`2024 - Fellgor Ravagers` were making a faction row each — eleven operatives on
+one and twelve on the other, so filtering for either showed half the team.
+`canonical_names` files every printing under the newest spelling, which is the
+box still on sale. Only unplaced teams could split this way; a placed team's
+printings already meet on the faction they share.
+
+**The 22 still unplaced keep their own row, and Clay chose that on
+2026-08-26.** He was shown the list and what each one looks like it means —
+`Asuryani`, `Craftworld`, `Harlequins` reading as Aeldari; `Imperial Guard` and
+`Veteran Guardsmen` as Astra Militarum; `Adeptus Astartes` as Space Marines;
+`Kroot` and `Hunter Cadre` as T'au — and said to leave them all. So the report
+naming them every run is the settled state, not an outstanding gap.
+
+That is the right call and worth defending: the data does not say any of it.
+Every one of those readings is a model recognising an older army name, which
+is exactly the recall this repo refuses — fluent, plausible, and wrong in
+places with no signal about which. An alliance like `Imperium` covers nineteen
+teams while naming no faction, and the 2021 Compendium teams are legacy anyway.
+**Do not place them later without asking him again.**
 
 **Fellgor Ravagers, Chaos Cult and Blooded stay unplaced on purpose**, and the
 report naming them every run is the intended state rather than a gap to close.
@@ -277,6 +303,28 @@ his say-so: `Agents of the Imperium` is BSData's `Imperial Agents`, and
 Imperial Navy Breachers go there too. Those are recorded as his decisions in
 the YAML, because reading two names and deciding they mean one army is a
 judgement and not a lookup.
+
+**A natural key may not contain a derived value.** `datasheets.bsdata_id` was
+`kt:{edition}:{faction}:{entry}` while the comment beside it said "edition,
+team and entry id are all stable" — and the faction is the one part that is
+not. Every time a team's allegiance was worked out, the key moved with it: the
+importer could no longer find its own row, inserted a second, and left the
+first behind on the old faction. Placing Greenskin under Orks put nine
+operatives there and left nine more under `Greenskin`. Clay, after two rounds
+of faction work had shipped: *"the filtering on the factions is still not
+working properly."* Re-importing made **86 duplicate operatives**. It is keyed
+on the team now, and `_legacy_row` finds a row written under the old key by
+`source_note` + edition + entry id and corrects it in place, so an existing
+database heals on the next import instead of needing a migration to clean up
+after it. Extra copies from a re-import that already ran are **reported, never
+deleted** — any of them may be carrying Clay's models.
+
+**A faction row nothing points at is a dead end in a filter and a fair choice
+in a picker.** They appear on their own: placing a Kill Team under Orks moves
+its operatives and leaves the team's own row empty. `list_factions` carries a
+`datasheets` count; the collection's filter drops the empty ones (keeping any
+already selected, so a bookmarked URL still says what it shows) and the pickers
+that *assign* a faction keep them.
 
 **The name match compares normalised names, never raw strings.** It used to use
 `name = ?`, so the compendium team `T'au Empire` missed the faction row `T’au
