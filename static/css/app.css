@@ -1004,3 +1004,22 @@ h2 + .panel, h2 + form, h2 + .hint { margin-top: 0; }
 /* Two rails now — what to show, then how to narrow it. The gap between them
    is what says they are different questions. */
 .chips + .chips { margin-top: .3rem; }
+
+/* List legality, spec §9's three-state badge.
+   
+   Three states because two would lie. "Nothing found wrong" is deliberately
+   not the accent: the accent means done, and a list that passed every check
+   the data could run is not the same as a list that is legal. Only a real
+   problem gets the rust — the colour this app reserves for things that want
+   something from you. */
+.legality { border: 1px solid var(--line); border-left-width: 4px;
+            background: var(--panel-2); padding: .5rem .7rem;
+            margin: 0 0 .8rem; font-size: .9rem; }
+.legality.problem { border-left-color: var(--rust); }
+/* `--warn` and `--rust` are the same ink, so review is told apart by the
+   border being dashed rather than by a colour: unfinished, not wrong. */
+.legality.review  { border-left-style: dashed; border-left-color: var(--rust); }
+.legality.ok      { border-left-color: var(--muted); }
+.legality ul { margin: .35rem 0 0; padding-left: 1.1rem; }
+.legality li { margin: .15rem 0; }
+.legality li.wrong { color: var(--rust); }

@@ -53,6 +53,33 @@
     {% endif %}
   </p>
 
+  {# Spec §9's three-state badge. Two states would be a lie: 415 of the
+     imported datasheets carry no unit size, an unresolved row has nothing to
+     check against, and an allied detachment looks exactly like a faction
+     mistake. So "looks right" is a third answer, and it never borrows the
+     accent — the accent means done, and this is the opposite of settled. #}
+  <div class="legality {{ legality.state }}">
+    {% if legality.state == 'problem' %}
+      <b>Not legal</b>
+    {% elif legality.state == 'review' %}
+      <b>Worth a look</b>
+    {% else %}
+      <b>Nothing found wrong</b>
+      <span class="muted">— points, unit sizes and factions all check out.
+        Not a rules engine: detachments and enhancements are not modelled.</span>
+    {% endif %}
+    {% if legality.problems or legality.review %}
+      <ul>
+        {% for p in legality.problems %}
+          <li class="wrong">{{ p.message }}</li>
+        {% endfor %}
+        {% for r in legality.review %}
+          <li class="muted">{{ r.message }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+
   {% if gap.ready %}
     <div class="panel"><p><b>Ready to field.</b> Everything is owned and battle ready.</p></div>
   {% elif gap.fieldable %}
