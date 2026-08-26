@@ -470,6 +470,29 @@ position.
 connection open, so committed data routinely sits in the `-wal` file with the
 `.db` not yet containing it, and a plain copy loses it silently.
 
+**The home screen says when the last backup finished, because cron's failure
+mode is silence.** `backup.sh` runs nightly on bastion; it reports failures
+loudly, but at 3am loudly is one line in a log nobody opens — the exact hazard
+the `env_value` bug already demonstrated.
+
+`backup_status.last_backup` reads `data/.last-backup`, which `backup.sh` writes
+as its **final** act. Final is the whole point: under `set -euo pipefail`,
+reaching that line means every step above succeeded, so a run that dies half
+way leaves the marker at its old value and the screen keeps saying the backup
+is overdue.
+
+**A marker, not the snapshots themselves.** The container mounts `./data` and
+`./.env` and nothing else, so `/mnt/t7` does not exist from inside it —
+statting `BACKUP_DIR` would work perfectly in development and report "no
+backups, ever" on the only machine that matters.
+
+**Three states, and `unknown` is not `never`.** A missing or corrupt marker
+means *the app has no record*, which is also what a box with real backups on
+the T7 looked like the day this shipped. Every unreadable case falls to
+`unknown` rather than to a date: failing open here would put a reassuring line
+on the home screen about a backup that never happened, which is the one
+outcome worth engineering against.
+
 **Photos are the one thing whose bytes are not in the database.** A row in
 `unit_photos` points at a file under `data/photos/`, so the snapshot and the
 directory have to travel together or a restore produces a log of missing

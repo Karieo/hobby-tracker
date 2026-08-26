@@ -97,4 +97,27 @@
       </p>
     </div>
   {% endif %}
+
+  {# The backup line. Quiet when it is fine — a reassurance shown every day is
+     one nobody reads, and this collection is dozens of hours of typing with no
+     upstream to rebuild it from. Loud only when something is actually wrong,
+     which on a nightly cron means two nights missed. #}
+  {% if backup.state == 'ok' %}
+    <p class="hint backup-line">{{ backup.label }}.</p>
+  {% else %}
+    <div class="panel warn">
+      <p><b>{{ backup.label }}.</b></p>
+      <p class="muted">
+        {% if backup.state == 'unknown' %}
+          This app has no record of one — which is also what it looks like
+          before the first run of a backup that reports back. Run
+          <code>./backup.sh</code> on bastion and this line will settle.
+        {% else %}
+          The nightly job should have run. Check
+          <code>/mnt/t7/hobby-tracker/backup.log</code> — a cron backup that
+          fails does it quietly.
+        {% endif %}
+      </p>
+    </div>
+  {% endif %}
 {% endblock %}
