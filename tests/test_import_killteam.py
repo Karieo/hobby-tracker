@@ -629,3 +629,217 @@ def test_the_three_chaos_teams_stay_deliberately_unplaced():
     assert table['Fellgor Ravagers'] == 'Chaos'
     assert table['Chaos Cult'] == 'Chaos'
     assert table['Blooded'] == 'Chaos'
+
+
+# ── The Compendium teams ─────────────────────────────────
+#
+# Clay, after the category rule and the reviewed table had both shipped: *"the
+# filtering on the factions is still not working properly."* It wasn't.
+# Filtering for Orks still missed Greenskin, the 2021 Ork Compendium team,
+# along with 31 others sitting on rows of their own.
+#
+# The 2021 catalogues were written against a different game system and define
+# their categories inline instead of referencing the 2024 ones, so
+# `faction_categories` — which reads the game system file — saw nothing in
+# them. `2021 - Greenskin.cat` declares `<categoryEntry name="Ork"/>` in its
+# own body, and nothing was reading it.
+
+COMPENDIUM = '''<?xml version="1.0" encoding="utf-8"?>
+<catalogue xmlns="http://www.battlescribe.net/schema/catalogueSchema"
+           id="cat-{cid}" name="{team}">
+  <categoryEntries>{cats}</categoryEntries>
+  <selectionEntries>
+    <selectionEntry id="{cid}-1" name="{team} Fighter" type="model"/>
+  </selectionEntries>
+</catalogue>
+'''
+
+
+@pytest.fixture
+def compendium(tmp_path):
+    """The 2021 shape: no game system file to reference, categories inline."""
+    def write(filename, name, *category_names):
+        cats = ''.join(f'<categoryEntry id="c{i}" name="{c}"/>'
+                       for i, c in enumerate(category_names))
+        (tmp_path / filename).write_text(COMPENDIUM.format(
+            cid=filename[:4].replace(' ', ''), team=name, cats=cats))
+    return type('Dir', (), {'path': str(tmp_path), 'write': staticmethod(write)})
+
+
+def test_a_compendium_team_lands_on_the_faction_it_names_itself(
+        conn, compendium, factions):
+    """Greenskin is an Ork team and says so in its own categories. Nothing in
+    the 2024 game system mentions it at all."""
+    compendium.write('2021 - Greenskin.cat', 'Greenskin', 'GREENSKIN', 'Ork',
+                     'Boy', 'Loota')
+
+    placed = kt.resolve_factions(conn, compendium.path, reviewed_path=None)
+
+    assert placed['Greenskin'] == factions['orks']
+
+
+def test_a_role_category_is_not_mistaken_for_an_allegiance(
+        conn, compendium, factions):
+    """The inline categories are mostly operative roles. Only the ones that
+    name a real faction count, and a team naming none keeps its own row."""
+    compendium.write('2021 - Nobody.cat', 'Nobody', 'Leader', 'Gunner', 'Medic')
+
+    placed = kt.resolve_factions(conn, compendium.path, reviewed_path=None)
+
+    assert 'Nobody' not in placed
+
+
+def test_several_factions_in_one_catalogue_is_reported_not_chosen(
+        conn, compendium, factions):
+    """`Heretic Astartes` lists Iron Warriors, Night Lords and World Eaters
+    beside Chaos Space Marine. Those are its legions, and picking the
+    allegiance out of them takes knowledge the data does not carry — one match
+    is a reading, several is a guess."""
+    compendium.write('2021 - Two Ways.cat', 'Two Ways', 'Aeldari', 'Drukhari')
+    report = {}
+
+    placed = kt.resolve_factions(conn, compendium.path, reviewed_path=None,
+                                 report=report)
+
+    assert 'Two Ways' not in placed
+    assert report['ambiguous'] == [('Two Ways', ['Aeldari', 'Drukhari'])]
+
+
+def test_the_game_system_still_wins_over_a_catalogue_s_own_categories(
+        conn, teams, factions, tmp_path):
+    """The inline read is a fallback for the printings that have nothing else,
+    never a second opinion on the ones that do.
+
+    The catalogue here does both: it links the game system's `Ork` category and
+    also declares an `Aeldari` one of its own. Written without the conflict
+    this test passed no matter which layer won — the fixture catalogues carry
+    no inline categories at all, so there was nothing for the fallback to
+    disagree with."""
+    (tmp_path / '2024 - Two Minds.cat').write_text('''<?xml version="1.0"?>
+<catalogue xmlns="http://www.battlescribe.net/schema/catalogueSchema"
+           id="cat-two" name="Two Minds">
+  <categoryEntries><categoryEntry id="own-1" name="Aeldari"/></categoryEntries>
+  <selectionEntries>
+    <selectionEntry id="two-1" name="Two Minds Fighter" type="model"/>
+  </selectionEntries>
+  <categoryLinks><categoryLink id="l0" targetId="fac-ork"/></categoryLinks>
+</catalogue>
+''')
+
+    placed = kt.resolve_factions(conn, teams, reviewed_path=None)
+
+    assert placed['Two Minds'] == factions['orks'], \
+        'the game system said Ork; the file also says Aeldari and loses'
+
+
+def test_both_printings_of_an_unplaced_team_share_one_row(conn, catalogues):
+    """`2021 - Fellgor Ravager` and `2024 - Fellgor Ravagers` are one team
+    spelled two ways. Each was making a faction row of its own — eleven
+    operatives on one and twelve on the other — so filtering for either showed
+    half the team with nothing to say the rest existed."""
+    catalogues.write('2021 - Fellgor Ravager.cat', 'Fellgor Ravager')
+    catalogues.write('2024 - Fellgor Ravagers.cat', 'Fellgor Ravagers')
+
+    report = kt.import_all(conn, directory=catalogues.path, reviewed_path=None)
+
+    rows = conn.execute(
+        "SELECT slug FROM factions WHERE slug LIKE 'kt-%'").fetchall()
+    assert [r['slug'] for r in rows] == ['kt-fellgor-ravagers'], \
+        'the newest printing names the row — it is the box still on sale'
+    assert report['unplaced'] == ['Fellgor Ravagers'], 'named once, not twice'
+    assert conn.execute(
+        'SELECT COUNT(*) FROM datasheets WHERE faction_id = '
+        "(SELECT id FROM factions WHERE slug = 'kt-fellgor-ravagers')"
+    ).fetchone()[0] == 4, 'every operative of both printings, on one row'
+
+
+# ── The key that moved ───────────────────────────────────
+#
+# Clay, after two rounds of faction work had shipped: *"the filtering on the
+# factions is still not working properly."*
+#
+# It wasn't, and this was why. `bsdata_id` was `kt:{edition}:{faction}:{entry}`
+# while the comment beside it said "edition, team and entry id are all stable"
+# — and the faction is the one part that is not, because it is derived. Every
+# time a team's allegiance was worked out the key moved with it: the importer
+# then failed to find its own row, inserted a second, and left the first behind
+# on the old faction. Re-importing after the Kill Team fixes made 86 duplicate
+# operatives, so filtering for Orks showed Greenskin twice and a `Greenskin`
+# faction went on existing beside the Orks one.
+
+
+def test_a_team_changing_faction_updates_its_row_rather_than_adding_one(
+        conn, catalogues, factions):
+    """The whole bug in one test. Import with the team unplaced, then place it,
+    and the operatives must move — not be copied."""
+    def greenskin(cats):
+        path = tempfile.mkdtemp()
+        with open(os.path.join(path, '2021 - Greenskin.cat'), 'w') as fh:
+            fh.write(COMPENDIUM.format(cid='gree', team='Greenskin', cats=cats))
+        return path
+
+    # First, with nothing in the catalogue naming a faction: unplaced.
+    kt.import_all(conn, directory=greenskin(''), reviewed_path=None)
+    assert conn.execute('SELECT COUNT(*) FROM datasheets').fetchone()[0] == 1
+
+    # Then the same operative, with the allegiance now readable.
+    kt.import_all(conn, directory=greenskin('<categoryEntry id="c0" name="Ork"/>'),
+                  reviewed_path=None)
+
+    assert conn.execute('SELECT COUNT(*) FROM datasheets').fetchone()[0] == 1, \
+        'one operative, moved — not two, one under each faction'
+    assert conn.execute(
+        'SELECT faction_id FROM datasheets').fetchone()['faction_id'] \
+        == factions['orks']
+
+
+def test_the_key_no_longer_carries_the_faction(conn, catalogues, factions):
+    """Keyed on the team, which is what the comment always claimed. A key
+    holding a derived value is a key that moves when the derivation improves."""
+    catalogues.write('2024 - Wrecka Krew.cat', 'Wrecka Krew')
+
+    kt.import_all(conn, directory=catalogues.path, reviewed_path=None)
+
+    ids = [r['bsdata_id'] for r in conn.execute('SELECT bsdata_id FROM datasheets')]
+    assert all(i.startswith('kt:2024:wrecka-krew:') for i in ids), ids
+
+
+def test_two_teams_sharing_an_entry_id_still_keep_separate_rows(
+        conn, catalogues):
+    """The reason the key was ever scoped at all: BSData reuses entry ids
+    across catalogues, and a bare id would let one team overwrite another's
+    operative. Scoping by team keeps that safe while the faction can move."""
+    catalogues.write('2024 - Hunter Clade.cat', 'Hunter Clade')
+    catalogues.write('2024 - Forge World.cat', 'Forge World')
+
+    kt.import_all(conn, directory=catalogues.path, reviewed_path=None)
+
+    assert conn.execute('SELECT COUNT(*) FROM datasheets').fetchone()[0] == 4, \
+        'two teams, two operatives each, sharing entry ids and not colliding'
+
+
+def test_an_existing_duplicate_is_reported_rather_than_deleted(
+        conn, catalogues, factions):
+    """Rows a re-import already made while the key still moved. One is adopted
+    and corrected; the rest are named, because any of them could be carrying
+    Clay's models and merging those is a decision of its own."""
+    catalogues.write('2024 - Wrecka Krew.cat', 'Wrecka Krew')
+    # The pair a past re-import left behind: the same operative keyed once
+    # under the team's own faction row and once under the one it was moved to.
+    for slug in ('kt-wrecka-krew', 'orks'):
+        conn.execute(
+            'INSERT INTO datasheets (bsdata_id, name, faction_id, min_models, '
+            'max_models, variant, game_system, source_note, created_at, '
+            'updated_at) VALUES (?, ?, ?, 1, 1, ?, ?, ?, ?, ?)',
+            (f'kt:2024:{slug}:aaaa-1111', 'Skitarii Ranger Gunner',
+             factions['orks'], '2024', 'killteam', '2024 - Wrecka Krew.cat',
+             db.now(), db.now()))
+
+    report = kt.import_all(conn, directory=catalogues.path, reviewed_path=None)
+
+    assert report['duplicates'] == ['kt:2024:orks:aaaa-1111'], \
+        'the older row is adopted and corrected; the newer one is named'
+    assert conn.execute(
+        "SELECT COUNT(*) FROM datasheets WHERE bsdata_id = "
+        "'kt:2024:orks:aaaa-1111'").fetchone()[0] == 1, \
+        'still there — reported, never dropped'

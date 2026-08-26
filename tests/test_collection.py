@@ -745,6 +745,30 @@ def test_the_two_rows_stay_separate(conn):
     assert len(col.list_factions(conn)) == 2
 
 
+def test_each_faction_carries_how_much_points_at_it(conn):
+    """Clay: *"the filtering on the factions is still not working properly."*
+
+    Part of it was the picker offering rows nothing points at. They appear on
+    their own: when a Kill Team is worked out to be Orks its operatives move to
+    the Orks row, and the team's own row is left holding nothing — still in the
+    list, still selectable, and able to filter only to an empty screen. The
+    count is what lets the collection's filter leave those out while the
+    pickers that *assign* a faction keep them, since starting an army for a
+    faction with nothing imported yet is a real thing to do.
+    """
+    orks = db.upsert_faction(conn, 'Orks', 'orks')
+    db.upsert_faction(conn, 'Greenskin', 'kt-greenskin')
+    conn.execute(
+        'INSERT INTO datasheets (bsdata_id, name, faction_id, min_models, '
+        "max_models, game_system, created_at, updated_at) VALUES ('x', 'Boyz', "
+        "?, 10, 20, 'wh40k', ?, ?)", (orks, db.now(), db.now()))
+
+    counts = {f['slug']: f['datasheets'] for f in col.list_factions(conn)}
+
+    assert counts['orks'] == 1
+    assert counts['kt-greenskin'] == 0
+
+
 # ── Removing models ──────────────────────────────────────
 #
 # The gap Clay found: adding too many was easy and there was no way back. Note

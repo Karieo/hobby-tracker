@@ -52,7 +52,13 @@
     <label class="sr-only" for="faction_id">Faction</label>
     <select id="faction_id" name="faction_id">
       <option value="">Any faction</option>
-      {% for f in factions %}
+      {# Only the ones with something behind them. A faction no datasheet
+         points at can only ever filter to nothing, and eleven of those appear
+         on their own the moment a Kill Team is worked out to be Orks and its
+         operatives move off the team's row. The faction stays selectable if it
+         is already selected, so a bookmarked URL still says what it is showing
+         rather than silently resetting to "Any faction". #}
+      {% for f in factions if f.datasheets or faction_id == f.id %}
         <option value="{{ f.id }}" {% if faction_id == f.id %}selected{% endif %}>
           {{ f.label or f.name }}</option>
       {% endfor %}

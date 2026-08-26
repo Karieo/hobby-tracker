@@ -186,6 +186,34 @@ def _singular(key):
     return key[:-1] if key.endswith('s') else key
 
 
+def self_categories(directory):
+    """{team: {names of the categories its own catalogue defines}}.
+
+    `faction_categories` reads the 2024 game system's category entries, which
+    the 2021 Compendium catalogues do not use at all — they were written
+    against a different game system and define their categories inline. That is
+    why 32 teams stayed unplaced after the category rule shipped, and Clay
+    found the ones that mattered: *"the filtering on the factions is still not
+    working properly."* Filtering for Orks still missed Greenskin, because
+    `2021 - Greenskin.cat` declares `<categoryEntry name="Ork"/>` in its own
+    body and nothing was reading it.
+
+    Still derived, never recalled. What comes back is whatever the catalogue
+    calls itself; matching it to a faction is the caller's job and it refuses
+    anything ambiguous.
+    """
+    out = {}
+    for filename in sorted(f for f in os.listdir(directory) if f.endswith('.cat')):
+        with open(os.path.join(directory, filename), encoding='utf-8',
+                  errors='replace') as fh:
+            body = fh.read()
+        names = {m.group(1).replace('&apos;', '’')
+                 for m in re.finditer(r'<categoryEntry[^>]*name="([^"]*)"', body)}
+        out.setdefault(team_name_from_filename(filename), set()).update(
+            n for n in names if n not in _NOT_A_FACTION)
+    return out
+
+
 def catalogue_names(directory):
     """{singular key: {every catalogue name sharing it}}.
 
@@ -197,6 +225,32 @@ def catalogue_names(directory):
         team = team_name_from_filename(filename)
         out.setdefault(_singular(_key(team)), set()).add(team)
     return out
+
+
+def canonical_names(directory):
+    """{team name: the one name every printing of that team should file under}.
+
+    `2021 - Fellgor Ravager.cat` and `2024 - Fellgor Ravagers.cat` are one team
+    spelled two ways, and each was making a faction row of its own — eleven
+    operatives under `Fellgor Ravager` and twelve under `Fellgor Ravagers`, so
+    filtering for either showed about half the team and nothing said the other
+    half existed. A team placed on a 40,000 faction never had this problem
+    because both printings land on the same row; only the unplaced ones, which
+    keep a row of their own, could split.
+
+    The newest printing's spelling wins, because that is the one on the box
+    Clay can still buy.
+    """
+    best = {}
+    for filename in sorted(f for f in os.listdir(directory) if f.endswith('.cat')):
+        team = team_name_from_filename(filename)
+        key = _singular(_key(team))
+        edition = edition_of(filename)
+        if key not in best or edition > best[key][0]:
+            best[key] = (edition, team)
+    return {team_name_from_filename(f): best[_singular(_key(
+                team_name_from_filename(f)))][1]
+            for f in os.listdir(directory) if f.endswith('.cat')}
 
 
 def real_factions(conn):
@@ -320,6 +374,28 @@ def resolve_factions(conn, directory=KILLTEAM_DIR, reviewed_path=REVIEWED_PATH,
                 derived[team] = row['id']
                 break
 
+    # The Compendium fallback. Only for teams the game system could not place,
+    # and only when the catalogue's own categories name exactly one real
+    # faction: `Heretic Astartes` lists Iron Warriors, Night Lords and World
+    # Eaters alongside Chaos Space Marine, and picking the allegiance out of
+    # its own legions takes knowledge the data does not carry. One match is a
+    # reading; several is a guess, so several is reported instead.
+    ambiguous = []
+    for team, names in self_categories(directory).items():
+        if team in derived:
+            continue
+        matched = {}
+        for name in names:
+            row = match_faction(real, name)
+            if row is not None:
+                matched[row['id']] = row['name']
+        if len(matched) == 1:
+            derived[team] = next(iter(matched))
+        elif len(matched) > 1:
+            ambiguous.append((team, sorted(matched.values())))
+    if report is not None:
+        report['ambiguous'] = sorted(ambiguous)
+
     reviewed = reviewed_placements(
         load_reviewed(reviewed_path), by_key, real, report)
 
@@ -341,14 +417,42 @@ def resolve_factions(conn, directory=KILLTEAM_DIR, reviewed_path=REVIEWED_PATH,
     return placed
 
 
+def _legacy_row(conn, filename, edition, eid, report):
+    """The row this operative already has under the old faction-keyed id.
+
+    Found by what has always been stable and never appeared in the key: the
+    catalogue it came from (`source_note`), its edition, and BSData's own entry
+    id. Updating that row in place is what turns a re-import after a faction
+    change from "insert a second copy" into "correct the one that is there",
+    so nothing has to be deleted afterwards.
+
+    A second match means duplicates already exist — a re-import that ran while
+    the key still moved. The oldest is adopted and the rest are reported rather
+    than deleted: they may be carrying Clay's models, and merging those is a
+    decision of its own.
+    """
+    rows = conn.execute(
+        'SELECT id, bsdata_id FROM datasheets '
+        ' WHERE game_system = ? AND variant = ? AND source_note = ? '
+        "   AND bsdata_id LIKE '%:' || ? ORDER BY id",
+        (GAME_SYSTEM, edition, filename, eid)).fetchall()
+    if not rows:
+        return None
+    for extra in rows[1:]:
+        report['duplicates'].append(extra['bsdata_id'])
+    return rows[0]
+
+
 def import_all(conn, directory=KILLTEAM_DIR, dry_run=False,
                reviewed_path=REVIEWED_PATH):
     report = {'catalogues': 0, 'teams': 0, 'inserted': 0, 'updated': 0,
               'by_edition': defaultdict(int), 'empty': [], 'unreadable': [],
               'placed': 0, 'unplaced': [], 'disagreed': [],
-              'reviewed_no_faction': [], 'reviewed_no_catalogue': []}
+              'reviewed_no_faction': [], 'reviewed_no_catalogue': [],
+              'ambiguous': [], 'duplicates': []}
     seen_factions = set()
     real = real_factions(conn)
+    canonical = canonical_names(directory)
     placed = resolve_factions(conn, directory, reviewed_path, report=report)
 
     # A line the reviewed table names and this cannot use is a team Clay
@@ -416,10 +520,16 @@ def import_all(conn, directory=KILLTEAM_DIR, dry_run=False,
             # Not placed and not named after a faction. It keeps a row of its
             # own and is reported, because assigning one from recall is the
             # change this repo forbids.
-            slug = f'kt-{slugify(team)}'
-            faction_id = db.upsert_faction(conn, team, slug)
-            if team not in report['unplaced']:
-                report['unplaced'].append(team)
+            #
+            # One row for the team, not one per printing: filed under the
+            # canonical spelling so `Fellgor Ravager` and `Fellgor Ravagers`
+            # meet instead of splitting the team across two rows that each show
+            # half of it.
+            label = canonical.get(team, team)
+            slug = f'kt-{slugify(label)}'
+            faction_id = db.upsert_faction(conn, label, slug)
+            if label not in report['unplaced']:
+                report['unplaced'].append(label)
         if slug not in seen_factions:
             seen_factions.add(slug)
             report['teams'] += 1
@@ -429,19 +539,33 @@ def import_all(conn, directory=KILLTEAM_DIR, dry_run=False,
             # ids across catalogues — 20 of them here, 4 spanning editions — so
             # a bare id lets Hunter Clade's Skitarii Ranger Gunner overwrite
             # Forge World (Legends)'s, and a team quietly loses an operative
-            # that Clay only misses with the box in his hand. Edition, team and
-            # entry id are all stable, so the key survives a re-sync.
-            bsdata_id = f'kt:{edition}:{slug}:{eid}'
+            # that Clay only misses with the box in his hand.
+            #
+            # **The team, never the faction.** This said `slug` for months
+            # while the comment beside it said "edition, team and entry id are
+            # all stable" — and the faction is the one part that is not. It is
+            # derived, and every time a team's allegiance was worked out the
+            # key moved with it: the importer then failed to find its own row,
+            # inserted a second one, and left the first behind on the old
+            # faction. Clay: *"the filtering on the factions is still not
+            # working properly."* It wasn't — placing Greenskin under Orks put
+            # nine operatives there and left nine more under `Greenskin`, so
+            # the filter he was promised showed him a duplicate of everything.
+            bsdata_id = f'kt:{edition}:{slugify(team)}:{eid}'
             existing = conn.execute(
                 'SELECT id FROM datasheets WHERE bsdata_id = ?',
                 (bsdata_id,)).fetchone()
+            if existing is None:
+                existing = _legacy_row(conn, filename, edition, eid, report)
             if existing:
                 conn.execute(
-                    'UPDATE datasheets SET name = ?, faction_id = ?, variant = ?, '
-                    'game_system = ?, min_models = ?, max_models = ?, '
-                    'source_note = ?, updated_at = ? WHERE bsdata_id = ?',
-                    (name, faction_id, edition, GAME_SYSTEM, OPERATIVE_MODELS,
-                     OPERATIVE_MODELS, filename, db.now(), bsdata_id))
+                    'UPDATE datasheets SET bsdata_id = ?, name = ?, '
+                    'faction_id = ?, variant = ?, game_system = ?, '
+                    'min_models = ?, max_models = ?, source_note = ?, '
+                    'updated_at = ? WHERE id = ?',
+                    (bsdata_id, name, faction_id, edition, GAME_SYSTEM,
+                     OPERATIVE_MODELS, OPERATIVE_MODELS, filename, db.now(),
+                     existing['id']))
                 report['updated'] += 1
             else:
                 conn.execute(
@@ -455,6 +579,12 @@ def import_all(conn, directory=KILLTEAM_DIR, dry_run=False,
             report['by_edition'][edition] += 1
 
     report['by_edition'] = dict(report['by_edition'])
+    # Only worth naming for a team that actually ended up on a row of its own.
+    # A team the reviewed table placed, or one named after its faction, is
+    # already answered — listing it as ambiguous would be reporting a doubt
+    # that was resolved two layers up.
+    report['ambiguous'] = [(team, names) for team, names in report['ambiguous']
+                           if canonical.get(team, team) in report['unplaced']]
     return report
 
 
@@ -489,6 +619,26 @@ def print_report(report, dry_run=False):
               'overrode what the catalogue derived:')
         for team, was, now in r['disagreed']:
             print(f'     {team}: derived {was} -> reviewed {now}')
+    if r.get('duplicates'):
+        # Left in place, never deleted. These rows were written by a re-import
+        # that ran while the key still carried the faction, and any of them
+        # could be holding Clay's models — merging those is a decision of its
+        # own, not a side effect of a re-sync.
+        print(f"\n  {len(r['duplicates'])} duplicate operative row(s) from an "
+              'earlier re-import, adopted rather than deleted:')
+        for bsdata_id in r['duplicates'][:10]:
+            print(f'     {bsdata_id}')
+        if len(r['duplicates']) > 10:
+            print(f"     ...and {len(r['duplicates']) - 10} more")
+    if r.get('ambiguous'):
+        # Named rather than picked from. A catalogue that lists Iron Warriors,
+        # Night Lords and World Eaters beside Chaos Space Marine is describing
+        # its legions, and choosing the allegiance out of them takes knowledge
+        # the data does not carry.
+        print(f"\n  {len(r['ambiguous'])} team(s) name more than one faction in "
+              'their own categories, so none was chosen:')
+        for team, names in r['ambiguous']:
+            print(f"     {team}: {', '.join(names)}")
     if r.get('reviewed_no_faction'):
         print(f"\n  {len(r['reviewed_no_faction'])} reviewed entr(y/ies) name "
               'a faction with no row (each is a row in unresolved_imports):')

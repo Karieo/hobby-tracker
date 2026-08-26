@@ -1966,3 +1966,54 @@ def test_one_picture_needs_no_scrubber(client, army_with_unit, tmp_path,
 
 def test_the_journey_is_in_the_nav(client):
     assert 'href="/gallery"' in client.get('/collection').get_data(as_text=True)
+
+
+# ── The faction filter, and the rows that filter to nothing ──
+
+def test_an_empty_faction_is_not_offered_in_the_collection_filter(
+        client, army_with_unit):
+    """Clay: *"the filtering on the factions is still not working properly."*
+
+    A faction nothing points at can only ever filter to an empty screen. They
+    turn up on their own: placing a Kill Team under Orks moves its operatives
+    to the Orks row and leaves the team's own row holding nothing.
+    """
+    import database as db
+    with db.connect() as conn:
+        db.upsert_faction(conn, 'Greenskin', 'kt-greenskin')
+        conn.commit()
+
+    page = client.get('/collection').get_data(as_text=True)
+
+    assert 'Greenskin' not in page
+    assert 'Orks' in page, 'the one with datasheets behind it still shows'
+
+
+def test_an_empty_faction_is_still_offered_where_a_faction_is_assigned(
+        client, army_with_unit):
+    """Only the filter drops them. Starting an army for a faction with nothing
+    imported against it yet is a real thing to do, and the armies page is where
+    that choice is made."""
+    import database as db
+    with db.connect() as conn:
+        db.upsert_faction(conn, 'Greenskin', 'kt-greenskin')
+        conn.commit()
+
+    page = client.get('/armies').get_data(as_text=True)
+
+    assert 'Greenskin' in page
+
+
+def test_a_selected_faction_survives_even_when_it_is_empty(
+        client, army_with_unit):
+    """A bookmarked URL has to keep saying what it is showing. Dropping the
+    selected option would silently reset the page to "Any faction" and show
+    everything, which reads as data appearing out of nowhere."""
+    import database as db
+    with db.connect() as conn:
+        fid = db.upsert_faction(conn, 'Greenskin', 'kt-greenskin')
+        conn.commit()
+
+    page = client.get(f'/collection?faction_id={fid}').get_data(as_text=True)
+
+    assert 'Greenskin' in page

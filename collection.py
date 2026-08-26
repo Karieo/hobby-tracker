@@ -1865,9 +1865,22 @@ def list_factions(conn):
     reference it, because the slug is the contract the importer actually
     establishes — a faction with nothing imported against it yet still knows
     which game it is from.
+
+    Each row also carries `datasheets`, how many point at it. A faction with
+    none is a real choice when *tagging* — Clay can start an army for one
+    before importing a thing — and a dead end when *filtering*, where picking
+    it can only ever return nothing. The collection's filter drops those; the
+    pickers that assign a faction keep them. Rows fall empty on their own: when
+    a Kill Team is worked out to be Orks its operatives move to the Orks row,
+    and the team's own row is left behind holding nothing.
     """
-    rows = [dict(r) for r in conn.execute(
-        'SELECT * FROM factions ORDER BY name')]
+    rows = [dict(r) for r in conn.execute("""
+        SELECT f.*, COUNT(d.id) AS datasheets
+          FROM factions f
+          LEFT JOIN datasheets d ON d.faction_id = f.id
+         GROUP BY f.id
+         ORDER BY f.name
+    """)]
     for row in rows:
         kill_team = (row['slug'] or '').startswith(KILL_TEAM_SLUG_PREFIX)
         row['game_system'] = 'killteam' if kill_team else 'wh40k'
