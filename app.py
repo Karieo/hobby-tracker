@@ -67,6 +67,7 @@ import journey
 import lists as army_lists
 import photos
 import rules_data  # noqa: E402
+import sale
 import shopping
 import database as db  # noqa: E402
 import kit_templates as templates  # noqa: E402
@@ -1161,6 +1162,27 @@ def shopping_page():
     """
     with _read() as conn:
         return render_template('shopping.html', **shopping.plan(conn))
+
+
+@app.route('/sale')
+def sale_page():
+    """What to part with, proposed rather than remembered.
+
+    `models.for_sale_on` has held the shortlist since migration 011 and nothing
+    ever fed it — Clay had to fill it in from memory. This proposes; the pile
+    controls on the unit page still do the deciding.
+
+    Computed live like the gap report, the backlog and the shopping list. Sell
+    something, resolve a list row, add a game on Saturday, and the answer is
+    different on the next load.
+    """
+    sort = request.args.get('sort') or sale.DEFAULT_SORT
+    if sort not in dict(sale.SORTS):
+        sort = sale.DEFAULT_SORT
+    with _read() as conn:
+        result = sale.candidates(conn, sort=sort)
+        return render_template('sale.html', sorts=sale.SORTS, sort=sort,
+                               totals=sale.totals(result), **result)
 
 
 @app.route('/paint')

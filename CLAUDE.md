@@ -128,6 +128,42 @@ ladder is per model — `stages_for` — so a Trukk is four steps from done and 
 six, and vehicles do not look permanently unfinished. Wishlist models are not
 backlog: they are not on the shelf.
 
+**The sale screen proposes; the shortlist decides.** `sale.py` and `/sale`
+(spec §8). `models.for_sale_on` has held the shortlist since migration 011 and
+nothing ever *fed* it — Clay had to fill it in from memory. The unit page's
+pile controls still do the deciding.
+
+**"Needed" is the maximum any one list asks for, never the sum.** The same rule
+the wishlist deduplicates on, and the same reason `list_allocate` gives every
+list the whole collection: models are not allocated between lists — "the same
+Killa Kans appear in three lists and get swapped on a whim". Three lists
+wanting twenty Boyz need twenty. Summing is the dangerous direction here: it
+inflates what looks needed, hides real surplus and makes the screen recommend
+nothing, which is a quiet failure nobody notices.
+
+**Two sections, because a sealed box and a loose model are different objects.**
+A sealed box is the one case where the box is what you act on — `box_state`
+exists because a sealed box carries a premium opening destroys. Everything else
+is per datasheet, for the reason the kits screen was dropped: a box is not a
+thing Clay does anything with once the models are out of it.
+
+**A sealed box is held back whole if any datasheet in it is wanted**, since it
+is sold shut — and held-back boxes are *named*, because "nothing sealed worth
+selling" and "four sealed boxes and every one is spoken for" are different
+facts and only one means stop looking.
+
+**Models inside a sealed box count as owned but are never proposed loose.**
+Found by rendering the real screen, not by a test: the sealed Gorkanaut box
+showed in one section and its two Gorkanauts as "2 spare" in the other — the
+same plastic offered twice, and they cannot be sold loose anyway because
+getting them out is what destroys the premium. `to_propose` subtracts them
+and the shortlisted ones both.
+
+**An unresolved list row makes every number on the screen optimistic**, so the
+count leads the page. Same three-state honesty as list validation, and it
+matters more here: being wrong costs models Clay cannot buy back at the price
+he paid.
+
 **`/paint` and `/backlog` are different moments and stay separate.**
 `paintable_units` is freshest-first with no sorting because what Clay touched
 last night is what he is about to pick up, and sorting controls are useless

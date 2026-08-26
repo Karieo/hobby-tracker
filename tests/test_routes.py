@@ -87,7 +87,7 @@ def army_with_unit(db_path):
 # ── Auth ─────────────────────────────────────────────────
 
 @pytest.mark.parametrize('path', ['/', '/collection', '/paint', '/backlog',
-                                  '/shopping', '/reference'])
+                                  '/shopping', '/sale', '/reference'])
 def test_pages_require_login(db_path, monkeypatch, path):
     import app as appmod
     monkeypatch.setattr(appmod.db, 'DB_PATH', db_path)
@@ -113,7 +113,7 @@ def test_healthz_is_public(db_path, monkeypatch):
 # ── Pages render ─────────────────────────────────────────
 
 @pytest.mark.parametrize('path', ['/', '/collection', '/paint', '/backlog',
-                                  '/shopping', '/reference'])
+                                  '/shopping', '/sale', '/reference'])
 def test_pages_render(client, army_with_unit, path):
     assert client.get(path).status_code == 200
 
@@ -2129,3 +2129,64 @@ def test_deleting_a_list_leaves_the_wishlist_it_raised(client, db_path,
 
     with db.connect(db_path) as conn:
         assert lists_mod.wishlist(conn)[0]['wanted'] == before
+
+
+def test_the_sale_page_renders_both_sections_and_the_caveat(client, db_path,
+                                                            army_with_unit):
+    """The empty page is the easy half. This exercises every branch that can
+    throw on one render: a sealed box free to sell, one held back, a surplus
+    row, and the unresolved-list warning above them."""
+    import kit_templates as kt
+    with db.connect(db_path) as conn:
+        boyz = army_with_unit['datasheet_id']
+        gork = conn.execute(
+            'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+            "created_at, updated_at) VALUES ('g','Gorkanaut',?,8,?,?)",
+            (army_with_unit['faction_id'], db.now(), db.now())).lastrowid
+        # A list needs 5 of the 10 Boyz owned, leaving 5 spare.
+        list_id = lists_mod.create_list(conn, 'Saturday')
+        lists_mod.add_entry(conn, list_id, boyz, 5)
+        # ...and one row that never resolved, which makes it all optimistic.
+        conn.execute('INSERT INTO list_entries (list_id, position, raw_name, '
+                     'model_count) VALUES (?, 2, ?, 3)', (list_id, 'Sum Fing'))
+        for name, sheet in (('Sealed Gork', gork), ('Sealed Boyz', boyz)):
+            template = kt.create_template(
+                conn, f'{name} tpl',
+                [{'datasheet_id': sheet, 'model_count': 1}])
+            kit = conn.execute(
+                'INSERT INTO kits (name, kit_template_id, box_state, status, '
+                "created_at, updated_at) VALUES (?,?,'sealed','owned',?,?)",
+                (name, template, db.now(), db.now())).lastrowid
+            conn.execute('INSERT INTO kit_datasheets (kit_id, datasheet_id) '
+                         'VALUES (?,?)', (kit, sheet))
+
+    res = client.get('/sale')
+    body = res.get_data(as_text=True)
+
+    assert res.status_code == 200
+    assert 'never matched a datasheet' in body, 'the caveat leads'
+    assert 'Sealed Gork' in body, 'nothing wants a Gorkanaut'
+    assert 'Sealed, but spoken for' in body, 'the Boyz box is held back'
+    assert 'More than any list needs' in body
+
+
+def test_the_sale_page_says_so_when_there_is_nothing_to_spare(client, db_path,
+                                                              army_with_unit):
+    """Every model owned is wanted by a list, so the screen has to say "nothing
+    to spare" rather than render three empty headings."""
+    with db.connect(db_path) as conn:
+        list_id = lists_mod.create_list(conn, 'Saturday')
+        lists_mod.add_entry(conn, list_id, army_with_unit['datasheet_id'], 10)
+
+    body = client.get('/sale').get_data(as_text=True)
+
+    assert 'Nothing to spare' in body
+
+
+def test_the_collection_offers_the_sale_screen_from_the_shortlist(client):
+    """The shortlist says what is going; /sale proposes what could. The link
+    only appears in that view — the nav is five items on a phone already."""
+    assert 'href="/sale"' in client.get(
+        '/collection?own=sell').get_data(as_text=True)
+    assert 'href="/sale"' not in client.get(
+        '/collection').get_data(as_text=True)
