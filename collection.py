@@ -1738,6 +1738,15 @@ def home_summary(conn):
     and an opened one both hold models "On sprue" — box_state is a fact about
     the box, and it is the one that carries a resale premium and the one that
     means "there is work here you have not started".
+
+    `_LIVE_MODEL` belongs here as much as anywhere and was missing until
+    2026-08-26: this query had `_ACTIVE_UNIT` only, so a model sold out of a
+    kit Clay still owns went on counting. Every other surface read 15 of 20
+    after disposing five; home read 20 — and because the same rows feed
+    `effort_total` and `effort_done`, the effort-weighted percentage that leads
+    the screen was wrong too. The exact failure the disposal invariant names:
+    a filter half the queries ignore is a collection that over-counts quietly
+    for months.
     """
     row = conn.execute(f"""
         SELECT COUNT(m.id)                                          AS models,
@@ -1753,7 +1762,7 @@ def home_summary(conn):
           JOIN datasheets d ON d.id = u.datasheet_id
           JOIN models m     ON m.unit_id = u.id
           JOIN stages st    ON st.id = m.stage_id
-         WHERE {_ACTIVE_UNIT}
+         WHERE {_ACTIVE_UNIT} AND {_LIVE_MODEL}
     """).fetchone()
 
     sealed = conn.execute(

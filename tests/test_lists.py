@@ -85,6 +85,81 @@ def test_the_index_reports_the_points_it_computed(conn, sheets, orks):
     assert row['declared_points'] == 999, "the export's claim, kept beside it"
 
 
+def test_a_pasted_list_the_app_cannot_price_keeps_the_pastes_figure(conn, sheets):
+    """The regression #56 introduced while fixing "None".
+
+    `SUM` skips NULL snapshots, so a list nothing is priced for computes to 0 —
+    and rendering "0 / 2000 pts" for a 1,985-point army is wrong in the
+    direction that matters. The paste's own figure is better information than a
+    zero, and `unpriced_entries` is what lets the screen say which it is
+    showing.
+    """
+    list_id = lists.create_list(conn, 'Pasted', points_limit=2000,
+                                points_total=1985)
+    lists.add_entry(conn, list_id, sheets['Boyz'], 20)   # no points row exists
+
+    row = lists.list_lists(conn)[0]
+
+    assert row['points_total'] == 0, 'the app genuinely cannot price it'
+    assert row['unpriced_entries'] == 1, 'and that is why'
+    assert row['declared_points'] == 1985, 'so the paste is what to show'
+
+
+def test_a_fully_priced_list_reports_no_unpriced_entries(conn, sheets, orks):
+    conn.execute(
+        'INSERT INTO datasheet_points (datasheet_id, model_count, points, '
+        'effective_from) VALUES (?, 10, 100, ?)', (sheets['Boyz'], '2026-01-01'))
+    list_id = lists.create_list(conn, 'Saturday', faction_id=orks,
+                                points_limit=2000)
+    lists.add_entry(conn, list_id, sheets['Boyz'], 10)
+
+    row = lists.list_lists(conn)[0]
+
+    assert row['points_total'] == 100 and row['unpriced_entries'] == 0
+
+
+def test_an_unresolved_entry_does_not_count_as_unpriced(conn):
+    """It has no datasheet to price. `/lists/<id>` reports unresolved rows
+    separately and this must not double-count them as a pricing gap."""
+    list_id = lists.create_list(conn, 'Pasted', points_limit=2000)
+    conn.execute('INSERT INTO list_entries (list_id, position, raw_name, '
+                 'model_count) VALUES (?, 1, ?, 10)', (list_id, 'Sum Fing'))
+
+    assert lists.list_lists(conn)[0]['unpriced_entries'] == 0
+
+
+def test_the_points_headline_says_nothing_when_there_is_nothing_to_say(conn):
+    """A Kill Team list can never be priced from the 40,000 manual, so "at
+    least 0 pts" is a true statement that helps nobody. Silence is one of the
+    four answers on purpose."""
+    assert lists.points_headline(
+        {'points_total': 0, 'unpriced_entries': 2, 'declared_points': None}) is None
+
+
+def test_the_points_headline_prefers_the_pastes_claim_to_a_zero(conn):
+    got = lists.points_headline(
+        {'points_total': 0, 'unpriced_entries': 2, 'declared_points': 1985})
+
+    assert got == {'value': 1985, 'note': 'from the paste'}
+
+
+def test_a_partial_figure_is_shown_as_a_floor(conn):
+    """Some entries priced and some not: the figure is real but low, and the
+    same rule the shopping total keeps — never wrong downwards without saying
+    so."""
+    got = lists.points_headline(
+        {'points_total': 340, 'unpriced_entries': 1, 'declared_points': None})
+
+    assert got['value'] == 340 and got['floor'] is True
+
+
+def test_a_fully_priced_list_states_its_figure_plainly(conn):
+    got = lists.points_headline(
+        {'points_total': 1985, 'unpriced_entries': 0, 'declared_points': None})
+
+    assert got == {'value': 1985, 'note': None}
+
+
 def test_a_list_with_no_priced_entries_reports_zero_not_none(conn):
     """Zero is a number Clay can read. None renders as the word "None"."""
     lists.create_list(conn, 'Empty', points_limit=1000)

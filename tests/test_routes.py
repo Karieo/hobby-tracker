@@ -2212,3 +2212,19 @@ def test_picking_a_battle_size_sets_the_limit(client, db_path):
         row = lists_mod.list_lists(conn)[0]
     assert row['points_limit'] == 2000
     assert row['battle_size'] == 'Strike Force'
+
+
+def test_the_index_shows_the_pastes_figure_when_it_cannot_price_the_list(
+        client, db_path, army_with_unit):
+    """"0 / 2000 pts" for a 1,985-point army is wrong in the direction that
+    matters. The paste's own figure is better information than a zero —
+    labelled, because it is a claim and not a calculation."""
+    with db.connect(db_path) as conn:
+        list_id = lists_mod.create_list(conn, 'Pasted', points_limit=2000,
+                                        points_total=1985)
+        lists_mod.add_entry(conn, list_id, army_with_unit['datasheet_id'], 20)
+
+    body = client.get('/lists').get_data(as_text=True)
+
+    assert '1985' in body
+    assert 'from the paste' in body

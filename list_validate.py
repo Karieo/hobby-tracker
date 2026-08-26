@@ -98,9 +98,19 @@ def _check_points(limit, entries, problems, review):
               'over': max(0, total - limit) if limit else 0}
 
     if not limit:
-        review.append(_note(
-            'points', 'No points limit set, so nothing to check the total '
-                      'against. Set one on the list to have this checked.'))
+        # ...but only ask for one where there is a control that can set it.
+        # Battle sizes are 40,000's, and the picker offers its two; a Kill Team
+        # list has no limit to choose, so demanding one every load is a nag
+        # pointing at a door that does not exist. Same reason `_check_sizes`
+        # scopes itself to `SIZED_SYSTEM`, and the same test of a check worth
+        # printing: it has to be actionable.
+        #
+        # An empty list still gets asked. Nothing says which game it is yet,
+        # and a list about to be filled with 40,000 entries should be told.
+        if _any_sized(entries):
+            review.append(_note(
+                'points', 'No points limit set, so nothing to check the total '
+                          'against. Set one on the list to have this checked.'))
         return points
 
     if total > limit:
@@ -119,6 +129,16 @@ def _check_points(limit, entries, problems, review):
             'points', f'{total} of {limit} points, but {" and ".join(parts)} — '
                       'the real total could be higher.'))
     return points
+
+
+def _any_sized(entries):
+    """Does this list contain anything the battle-size picker can price?
+
+    An entry with no datasheet counts: it might resolve to a 40,000 unit, and
+    guessing otherwise would silently stop checking a list that needs it.
+    """
+    return any(e['game_system'] == SIZED_SYSTEM or not e['datasheet_id']
+               for e in entries) or not entries
 
 
 def _check_sizes(entries, problems, review):

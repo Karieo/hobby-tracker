@@ -239,3 +239,50 @@ def test_an_empty_list_is_not_green(conn, orks):
 def test_a_missing_list_raises(conn):
     with pytest.raises(ValueError, match='no list'):
         list_validate.validate(conn, 9999)
+
+
+def test_a_kill_team_list_is_not_nagged_for_a_battle_size(conn):
+    """Battle sizes are 40,000's, and the picker offers its two. A Kill Team
+    list has no limit it could choose, so "Set one on the list" points at a
+    door that does not exist — the same reason `_check_sizes` scopes itself to
+    SIZED_SYSTEM. A check worth printing has to be actionable."""
+    faction = db.upsert_faction(conn, 'Kommandos', 'kt-kommandos')
+    operative = sheet(conn, 'Kommando Boy', faction, low=1, high=1,
+                      system='killteam')
+    list_id = a_list(conn, faction_id=faction)
+    entry(conn, list_id, operative, 1)
+
+    messages = [n['message'] for n in list_validate.validate(conn, list_id)['review']]
+
+    assert not any('points limit' in m for m in messages), messages
+
+
+def test_a_40k_list_with_no_limit_still_is(conn, orks):
+    list_id = a_list(conn, faction_id=orks)
+    entry(conn, list_id, sheet(conn, 'Boyz', orks), 10)
+
+    messages = [n['message'] for n in list_validate.validate(conn, list_id)['review']]
+
+    assert any('points limit' in m for m in messages), messages
+
+
+def test_an_unresolved_row_keeps_the_limit_question_open(conn, orks):
+    """It might resolve to a 40,000 unit. Guessing otherwise would silently
+    stop checking a list that needs it."""
+    list_id = a_list(conn, faction_id=orks)
+    conn.execute('INSERT INTO list_entries (list_id, position, raw_name, '
+                 'model_count) VALUES (?, 1, ?, 10)', (list_id, 'Sum Fing'))
+
+    messages = [n['message'] for n in list_validate.validate(conn, list_id)['review']]
+
+    assert any('points limit' in m for m in messages), messages
+
+
+def test_an_empty_list_is_still_asked(conn):
+    """Nothing says which game it is yet, and a list about to be filled with
+    40,000 entries should be told."""
+    list_id = a_list(conn)
+
+    messages = [n['message'] for n in list_validate.validate(conn, list_id)['review']]
+
+    assert any('points limit' in m for m in messages), messages
