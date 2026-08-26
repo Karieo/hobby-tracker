@@ -179,6 +179,16 @@ code { background: var(--bg); padding: .1rem .35rem; border-radius: 0;
 }
 footer { max-width: 60rem; margin: 3rem auto 0; color: var(--muted);
          font-size: .8rem; }
+/* The owner's name in the footer is the sign-out. A <button> because it does
+   something rather than goes somewhere — keyboard and screen readers both need
+   that to be true — but it has to read as the quiet label it already was, not
+   as a control inviting a tap. Inherits the footer's colour and size and adds
+   only the underline that says it is pressable. */
+footer button.linkish { background: none; border: 0; padding: 0; margin: 0;
+                        font: inherit; color: inherit; cursor: pointer;
+                        text-decoration: underline; text-underline-offset: 2px;
+                        min-height: 0; }
+footer button.linkish:hover { color: var(--ink); }
 
 .page { display: flex; justify-content: space-between; align-items: flex-start;
         gap: 1rem; margin-bottom: 1.25rem; }

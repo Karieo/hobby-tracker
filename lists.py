@@ -114,6 +114,13 @@ def get_list(conn, list_id):
         return None
     row = dict(row)
     row['battle_size'] = battle_size(row['points_limit'])
+    # `points_total` is renamed away rather than kept, because it meant two
+    # different things depending on which accessor you used: the export's
+    # declared claim here, this app's own computed figure in `list_lists`. One
+    # key with two meanings is the "None where the points belong" bug waiting
+    # for the next screen that renders it. Nothing read it off `get_list`, so
+    # the ambiguity is removed rather than documented.
+    row['declared_points'] = row.pop('points_total', None)
     return row
 
 

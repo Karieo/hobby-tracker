@@ -626,6 +626,7 @@ def list_for_sale(conn, unit_id, count=1):
         SELECT m.id FROM models m
           JOIN stages s ON s.id = m.stage_id
          WHERE m.unit_id = ? AND s.is_owned = 1 AND m.for_sale_on IS NULL
+           AND m.disposed_on IS NULL
          ORDER BY s.position DESC, m.id LIMIT ?
     """, (unit_id, max(0, count)))]
     if not listing:
@@ -1811,7 +1812,7 @@ def stalled_unit(conn, days=14):
           JOIN models m     ON m.unit_id = u.id
           JOIN stages st    ON st.id = m.stage_id
           LEFT JOIN armies a ON a.id = u.army_id
-         WHERE {_ACTIVE_UNIT} AND st.is_owned = 1
+         WHERE {_ACTIVE_UNIT} AND {_LIVE_MODEL} AND st.is_owned = 1
          GROUP BY u.id
         HAVING done < model_count
          ORDER BY idle_days DESC

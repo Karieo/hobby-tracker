@@ -740,3 +740,16 @@ def test_a_box_with_no_contents_cannot_be_wanted(conn):
 def test_wanting_a_box_that_does_not_exist_is_refused(conn):
     with pytest.raises(ValueError, match='no kit template'):
         lists.want_template(conn, 999)
+
+
+def test_get_list_does_not_expose_an_ambiguous_points_total(conn):
+    """It meant the export's declared claim here and this app's computed figure
+    in `list_lists` — one key, two meanings, and the "None where the points
+    belong" bug waiting for the next screen to render it."""
+    list_id = lists.create_list(conn, 'Pasted', points_limit=2000,
+                                points_total=1985)
+
+    row = lists.get_list(conn, list_id)
+
+    assert row['declared_points'] == 1985
+    assert 'points_total' not in row, 'the ambiguous key is gone, not renamed'

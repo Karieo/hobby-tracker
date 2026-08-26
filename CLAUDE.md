@@ -609,6 +609,18 @@ the column is re-pointed to another list that still claims the model, or to
 NULL when none does. The column means "this row exists because *a* list asked
 for it", and while a list is still claiming it that stays true.
 
+**Signing out is the owner's name in the footer.** `POST /api/auth/logout`
+shipped in the first commit and nothing ever called it — the
+endpoint-with-no-caller pattern again, and the instance of it that left Clay
+with no way to end a session at all. The name was already sitting in the footer
+doing nothing, so it became the control: no nav entry, and it sits where you
+would look to check who you are signed in as. A `<button>` rather than a link
+because it does something rather than goes somewhere, styled to read as the
+quiet label it already was.
+
+It asks first, for the same reason the list delete does: nothing beside it
+undoes it.
+
 **The delete control is the one place in the app that asks first**, because it
 is the one control with no opposite beside it. It sits at the bottom of
 `/lists/<id>`, outlined rather than filled, and names the list in the prompt —
