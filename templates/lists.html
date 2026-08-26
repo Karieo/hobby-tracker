@@ -19,7 +19,17 @@
         {% for f in factions %}<option value="{{ f.id }}">{{ f.label }}</option>{% endfor %}
       </select>
     </label>
-    <label>Points limit<input name="points_limit" type="number" min="0" placeholder="2000"></label>
+    {# A picker, not a number box. Clay: "There are only 2 list battle sizes
+       for list." The game offers two and typing a third is a way to make a
+       list that cannot be played. #}
+    <label>Battle size
+      <select name="points_limit">
+        <option value="">—</option>
+        {% for label, limit in battle_sizes %}
+          <option value="{{ limit }}">{{ label }} ({{ limit }} pts)</option>
+        {% endfor %}
+      </select>
+    </label>
     <div class="actions"><button class="go" type="submit">Add list</button></div>
   </form>
 
@@ -31,7 +41,7 @@
             <b>{{ l.name }}</b>
             <span class="muted">
               {{ l.faction_name or 'no faction' }} ·
-              {{ l.points_total }}{% if l.points_limit %} / {{ l.points_limit }}{% endif %} pts ·
+              {{ l.points_total }}{% if l.points_limit %} / {{ l.points_limit }}{% endif %} pts{% if l.battle_size %} <span class="muted">{{ l.battle_size }}</span>{% endif %} ·
               {{ l.entry_count }} unit{{ '' if l.entry_count == 1 else 's' }}
             </span>
           </a>

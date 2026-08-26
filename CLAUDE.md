@@ -529,6 +529,36 @@ costs nothing while a destructive migration for tidiness costs a restore if it
 goes wrong. The `m.disposed_on IS NULL` filters in the ownership queries stay
 with them, correct and currently inert.
 
+**Battle size is a picker of two, and the two came off a screenshot.** Clay:
+*"There are only 2 list battle sizes for list."* `lists.BATTLE_SIZES` is
+Incursion (1000) and Strike Force (2000), taken from the 40,000 app's own
+picker in a screenshot he sent — not from anything a model recalls about the
+game, which is the distinction this repo cares most about. A points limit
+written from memory would be fluent, plausible and wrong with nothing on screen
+to flag it, so `test_the_two_sizes_are_the_ones_the_game_offers` pins them as
+data.
+
+No migration: `army_lists.points_limit` already holds the number and the name
+is derived by `battle_size()`, so there is no second copy of the same fact.
+A limit matching neither returns None rather than a guess — a list made before
+the picker existed still reads.
+
+**"Unit composition shall not exceed" was already built.** `list_validate.
+_check_sizes` flags an entry outside its datasheet's `min_models`/`max_models`.
+Asked, Clay confirmed that was what he meant; no battle-size-dependent cap is
+modelled, and none should be invented.
+
+**`SELECT l.*` collided with `AS points_total` and the index read "None".**
+`army_lists` has a `points_total` column — what a pasted export *declared* —
+so the aggregate of the same name came back as the second of two columns and
+`sqlite3.Row` hands `dict()` the first. Every list on `/lists` showed the word
+"None" where its points belong, and the computed figure was thrown away. The
+aggregate is `points_computed` now and `list_lists` maps it onto
+`points_total`, keeping the declared one as `declared_points`. **Found by
+reading the rendered screen, not by a test** — the same way the sale screen's
+double-counted sealed box turned up. When adding an alias to a `SELECT t.*`,
+check the table has no column of that name.
+
 **Deleting a list re-points its wishlist models rather than clearing them.**
 Clay: *"No way to delete list."* `DELETE /api/lists/<id>` and
 `lists.delete_list` had both shipped and nothing called either — the

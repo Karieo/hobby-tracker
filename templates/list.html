@@ -43,7 +43,9 @@
     <b>{{ gap.points_owned }}</b> / {{ gap.points_total }} pts owned ·
     <b>{{ gap.points_ready }}</b> pts battle ready ·
     <b>{{ gap.units_short }}</b> unit{{ '' if gap.units_short == 1 else 's' }} short
-    {% if list.points_limit %} · limit {{ list.points_limit }}{% endif %}
+    {% if list.points_limit %}
+      · limit {{ list.points_limit }}{% if list.battle_size %} ({{ list.battle_size }}){% endif %}
+    {% endif %}
     {% if gap.unresolved %}
       {# "Unresolved entries are excluded from all totals and the summary says
          so explicitly. Never let an unresolved row quietly deflate the

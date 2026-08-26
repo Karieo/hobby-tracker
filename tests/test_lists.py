@@ -64,6 +64,83 @@ def test_a_list_needs_a_name(conn):
         lists.create_list(conn, '   ')
 
 
+def test_the_index_reports_the_points_it_computed(conn, sheets, orks):
+    """`army_lists` has a `points_total` column of its own — what a pasted
+    export declared — so `SELECT l.*` returned two columns of that name and
+    `dict(row)` kept the stored one. The aggregate was computed and thrown
+    away, and every list on the index read "None" where its points belong.
+
+    Found by reading the rendered screen, not by a test: "None / 1500 pts".
+    """
+    conn.execute(
+        'INSERT INTO datasheet_points (datasheet_id, model_count, points, '
+        'effective_from) VALUES (?, 10, 100, ?)', (sheets['Boyz'], '2026-01-01'))
+    list_id = lists.create_list(conn, 'Saturday', faction_id=orks,
+                                points_limit=2000, points_total=999)
+    lists.add_entry(conn, list_id, sheets['Boyz'], 10)
+
+    row = lists.list_lists(conn)[0]
+
+    assert row['points_total'] == 100, "this app's own figure, not the paste's"
+    assert row['declared_points'] == 999, "the export's claim, kept beside it"
+
+
+def test_a_list_with_no_priced_entries_reports_zero_not_none(conn):
+    """Zero is a number Clay can read. None renders as the word "None"."""
+    lists.create_list(conn, 'Empty', points_limit=1000)
+
+    assert lists.list_lists(conn)[0]['points_total'] == 0
+
+
+# ── Battle sizes ─────────────────────────────────────────
+
+def test_a_limit_that_matches_a_battle_size_is_named(conn):
+    """Clay: "There are only 2 list battle sizes for list." The number is what
+    is stored; the name is derived on the way out, so there is no second copy
+    of the same fact to keep in step."""
+    assert lists.battle_size(1000) == 'Incursion'
+    assert lists.battle_size(2000) == 'Strike Force'
+
+
+def test_a_limit_that_matches_nothing_is_not_invented(conn):
+    """A list made before the picker existed can carry any number, and the
+    screens fall back to showing the figure. Guessing a name for 1500 would put
+    a size on screen that the game does not have."""
+    assert lists.battle_size(1500) is None
+    assert lists.battle_size(None) is None
+    assert lists.battle_size(0) is None
+
+
+def test_a_list_carries_its_battle_size_name(conn):
+    list_id = lists.create_list(conn, 'Saturday', points_limit=2000)
+
+    assert lists.get_list(conn, list_id)['battle_size'] == 'Strike Force'
+
+
+def test_a_list_with_an_odd_limit_still_reads(conn):
+    """The picker gaining two options must not make an existing list
+    unreadable."""
+    list_id = lists.create_list(conn, 'Old one', points_limit=1500)
+
+    row = lists.get_list(conn, list_id)
+
+    assert row['points_limit'] == 1500
+    assert row['battle_size'] is None
+
+
+def test_the_index_names_the_size_too(conn):
+    lists.create_list(conn, 'Saturday', points_limit=1000)
+
+    assert lists.list_lists(conn)[0]['battle_size'] == 'Incursion'
+
+
+def test_the_two_sizes_are_the_ones_the_game_offers(conn):
+    """Pinned as data rather than trusted as a comment. These came off a
+    screenshot of the 40,000 app's own picker; a model editing this file later
+    from memory is exactly what the test is here to stop."""
+    assert lists.BATTLE_SIZES == (('Incursion', 1000), ('Strike Force', 2000))
+
+
 def test_entries_snapshot_their_points(conn, sheets, orks):
     """A list records what Clay meant to field on a day. The manual changes
     under it, and the list should not silently change with it."""
