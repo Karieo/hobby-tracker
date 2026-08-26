@@ -8,6 +8,7 @@ when the pin had aged.
 
 import os
 import subprocess
+from datetime import date
 
 import pytest
 
@@ -131,6 +132,28 @@ def test_an_unpriced_database_is_not_a_warning(conn, monkeypatch):
 
 # ── Asking upstream ──────────────────────────────────────────────────────────
 
+#: The real function, captured before `_no_network` shadows it. The three tests
+#: below exercise the parser itself and must not get the stub — the first draft
+#: of them did, and failed for that reason rather than for a real one.
+_REAL_MFM_UPSTREAM = rules_data.mfm_upstream
+
+
+@pytest.fixture(autouse=True)
+def _no_network(monkeypatch):
+    """`check_pins` reaches upstream for the MFM dataset now. Nothing in this
+    file should touch the network — a suite that does is a suite that fails on
+    a train."""
+    monkeypatch.setattr(rules_data, 'mfm_upstream',
+                        lambda timeout=30, url=None: None)
+
+
+def offer(monkeypatch, version, day):
+    monkeypatch.setattr(
+        rules_data, 'mfm_upstream',
+        lambda timeout=30, url=None: {'version': version,
+                                      'date': date.fromisoformat(day)})
+
+
 def test_a_moved_pin_is_reported_as_moved(monkeypatch):
     monkeypatch.setattr(rules_data, 'remote_head',
                         lambda repo, timeout=60: 'f' * 40)
@@ -151,6 +174,92 @@ def test_an_unreachable_github_is_reported_rather_than_raised(monkeypatch):
     monkeypatch.setattr(rules_data, 'remote_head', lambda repo, timeout=60: None)
     rows = rules_data.check_pins()
     assert all(r['reachable'] is False and r['moved'] is False for r in rows)
+
+
+# ── Moved is not the same as stale ───────────────────────────────────────────
+
+def test_a_chore_commit_does_not_report_new_points(monkeypatch):
+    """Measured 2026-08-26. The MFM pin had moved and the only commit was
+    `chore(deps): Bump pnpm/setup from 1 to 2` — the points files were
+    byte-identical. The old check said MOVED and there was nothing to take.
+
+    A weekly warning about something there is nothing to do about is a nag, and
+    a nag becomes wallpaper."""
+    monkeypatch.setattr(rules_data, 'remote_head',
+                        lambda repo, timeout=60: 'f' * 40)
+    ours = rules_data.mfm_meta().get('lastUpdated')
+    offer(monkeypatch, '1.2', ours.isoformat())
+
+    row = next(r for r in rules_data.check_pins() if r['key'] == 'mfm')
+
+    assert row['moved'] is True, 'the repository did move'
+    assert row['stale'] is False, 'but the points did not'
+
+
+def test_a_newer_dataset_is_reported_as_stale(monkeypatch):
+    """The case that actually matters: GW repriced and the scrape picked it
+    up."""
+    monkeypatch.setattr(rules_data, 'remote_head',
+                        lambda repo, timeout=60: 'f' * 40)
+    offer(monkeypatch, '1.3', '2099-01-01')
+
+    row = next(r for r in rules_data.check_pins() if r['key'] == 'mfm')
+
+    assert row['stale'] is True
+    assert row['dataset'] == {'version': '1.3',
+                              'date': date.fromisoformat('2099-01-01')}
+
+
+def test_staleness_is_None_where_it_cannot_be_established(monkeypatch):
+    """BSData and Kill Team publish no dated dataset, so "not established" is
+    the honest answer. Reporting False would claim they are current on evidence
+    nobody has."""
+    monkeypatch.setattr(rules_data, 'remote_head',
+                        lambda repo, timeout=60: 'f' * 40)
+
+    rows = {r['key']: r for r in rules_data.check_pins()}
+
+    assert rows['bsdata']['stale'] is None
+    assert rows['killteam']['stale'] is None
+
+
+def test_an_unreachable_changelog_does_not_claim_currency(monkeypatch):
+    monkeypatch.setattr(rules_data, 'remote_head',
+                        lambda repo, timeout=60: rules_data.MFM_SHA)
+    monkeypatch.setattr(rules_data, 'mfm_upstream',
+                        lambda timeout=30, url=None: None)
+
+    row = next(r for r in rules_data.check_pins() if r['key'] == 'mfm')
+
+    assert row['stale'] is None and row['dataset'] is None
+
+
+def test_mfm_upstream_parses_the_newest_entry(monkeypatch, tmp_path):
+    """The newest heading wins, and the format is upstream's own."""
+    body = ('# Data changelog\n\n'
+            '## [2026-08-05] \u2014 MFM v1.2\n\n### Added\n- a thing\n\n'
+            '## [2026-07-22] \u2014 MFM v1.1\n')
+    path = tmp_path / 'CHANGELOG.md'
+    path.write_text(body, encoding='utf-8')
+
+    got = _REAL_MFM_UPSTREAM(url=path.as_uri())
+
+    assert got == {'version': '1.2', 'date': date.fromisoformat('2026-08-05')}
+
+
+def test_a_changelog_it_cannot_parse_reads_as_unknown(monkeypatch, tmp_path):
+    """An upstream that changed its format is a thing to report as unknown, not
+    to crash the sweep over."""
+    path = tmp_path / 'CHANGELOG.md'
+    path.write_text('# Data changelog\n\nnothing parseable here\n',
+                    encoding='utf-8')
+
+    assert _REAL_MFM_UPSTREAM(url=path.as_uri()) is None
+
+
+def test_an_unreachable_changelog_never_raises():
+    assert _REAL_MFM_UPSTREAM(
+        url='https://example.invalid/nope.md', timeout=2) is None
 
 
 def test_remote_head_swallows_a_failing_git(monkeypatch):

@@ -25,7 +25,10 @@ agree.
 """
 
 import os
+import re
 import subprocess
+import urllib.request
+from datetime import date
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MFM_DIR = os.path.join(BASE_DIR, 'data', 'mfm')
@@ -136,12 +139,81 @@ def remote_head(repo, timeout=60):
     return parts[0] if parts else None
 
 
-def check_pins(timeout=60):
-    """Each pinned source against its upstream. Network-bound; sweep-only."""
+#: Upstream's own record of when the points dataset last changed. Fetched as a
+#: raw file rather than through the GitHub API, which needs a token and a rate
+#: limit; this needs neither and works from the sweep.
+MFM_CHANGELOG_URL = (
+    'https://raw.githubusercontent.com/BSData/wh40k-11e-mfm/HEAD/'
+    'DATA-CHANGELOG.md')
+
+#: `## [2026-08-05] — MFM v1.2` — the newest heading is the newest dataset.
+_MFM_ENTRY = re.compile(r'^##\s*\[(\d{4}-\d{2}-\d{2})\]\s*[—-]\s*MFM\s+v(\S+)',
+                        re.MULTILINE)
+
+
+def mfm_upstream(timeout=30, url=MFM_CHANGELOG_URL):
+    """The newest points dataset upstream has published, or None.
+
+    Why this exists at all: comparing commit SHAs answers "has the repository
+    moved", which is **not** the question. Measured on 2026-08-26 —
+
+      * the MFM pin had moved, and the one commit was
+        `chore(deps): Bump pnpm/setup from 1 to 2`. The points files were
+        byte-identical. The check said MOVED and there was nothing to take.
+      * the BSData pin had moved by 35 commits, every one a real data fix, and
+        re-importing changed **two rows** — both keyword-only, on units in
+        armies Clay does not play. BSData's JSON carries the whole BattleScribe
+        model; this app reads a narrow slice of it.
+
+    Both directions are wrong in the way that matters: a weekly warning about
+    something there is nothing to do about is a nag, and a nag becomes
+    wallpaper. So for the one source that publishes a versioned dataset, ask it
+    directly.
+
+    Returns ``{'version', 'date'}`` or None when unreachable or unparseable —
+    never raises. An upstream that changed its changelog format is a thing to
+    report as unknown, not to crash the sweep over.
+    """
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            body = response.read().decode('utf-8', 'replace')
+    except Exception:                                   # noqa: BLE001
+        return None
+    match = _MFM_ENTRY.search(body)
+    if not match:
+        return None
+    try:
+        return {'date': date.fromisoformat(match.group(1)),
+                'version': match.group(2)}
+    except ValueError:
+        return None
+
+
+def check_pins(timeout=60, conn=None):
+    """Each pinned source against its upstream. Network-bound; sweep-only.
+
+    Two different questions, kept apart because conflating them is what made
+    this check cry wolf:
+
+    ``moved``  the repository has commits past the pin. Cheap, and weak — it
+               is true for a CI chore and for a balance dataslate alike.
+    ``stale``  what this app *imports* is genuinely behind. Only answerable
+               for the MFM, which publishes a dated, versioned dataset; None
+               for the sources that do not, because "not established" and "no"
+               are different answers and only one of them is honest here.
+    """
+    theirs = mfm_upstream(timeout=timeout)
+    ours = mfm_meta().get('lastUpdated')
+
     results = []
     for source in SOURCES:
         head = remote_head(source['repo'], timeout=timeout)
-        results.append(dict(source, head=head,
-                            moved=bool(head) and head != source['sha'],
-                            reachable=head is not None))
+        row = dict(source, head=head,
+                   moved=bool(head) and head != source['sha'],
+                   reachable=head is not None,
+                   dataset=None, stale=None)
+        if source['key'] == 'mfm' and theirs:
+            row['dataset'] = theirs
+            row['stale'] = bool(ours) and theirs['date'] > ours
+        results.append(row)
     return results

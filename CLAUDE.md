@@ -331,6 +331,25 @@ on normalised name **scoped by faction** — 35 names carry different points per
 faction, so a global join would silently write wrong values. See the module
 docstring in `scripts/import_bsdata.py` for the full reasoning and measurements.
 
+**A moved pin is not stale data, and the check now says which.** Measured
+2026-08-26, both directions wrong: the MFM pin had moved on a `chore(deps)` CI
+bump with the points files **byte-identical**, and BSData had moved by 35
+genuine data commits — 805 inserted lines in `Orks.json` alone — that changed
+**two rows** of what this app imports, both keyword-only, in armies Clay does
+not play. BSData's JSON carries the whole BattleScribe model; this app reads a
+narrow slice.
+
+So `check_pins` separates `moved` (the repository has commits past the pin —
+cheap and weak) from `stale` (what this app imports is genuinely behind).
+`stale` is only answerable for the MFM, which publishes a dated, versioned
+dataset that `mfm_upstream` reads straight from its `DATA-CHANGELOG.md`. For
+the other two it is **None, not False** — "not established" and "no" are
+different answers and only one is honest.
+
+`check_rules_pins.py` exits 1 only on `stale`. A weekly alarm about a CI chore
+is a nag, and a nag becomes wallpaper — the same rule that scoped
+`_check_points` to the game that has battle sizes.
+
 **Neither source is ever re-imported on its own.** Both are pinned —
 `rules_data.py` holds all three SHAs, and the fetch scripts import them from
 there — and `deploy.sh` only imports when the datasheets table is empty. So the
