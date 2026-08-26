@@ -60,6 +60,7 @@ import collection as col
 import list_allocate
 import list_parse
 import list_resolve
+import list_validate
 import journey
 import lists as army_lists
 import photos
@@ -611,6 +612,7 @@ def list_page(list_id):
         gap = list_allocate.allocate(conn, list_id,
                                      include_unassigned=include_unassigned)
         return render_template('list.html', list=army_list, gap=gap,
+                               legality=list_validate.validate(conn, list_id),
                                include_unassigned=include_unassigned,
                                assigned=_assigned_models(conn, gap))
 

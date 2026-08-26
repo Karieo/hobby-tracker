@@ -66,6 +66,23 @@ keys cascade, so `unwant_template` and `remove_models` need no new cleanup.
 shortfall and a thing Clay simply wants are different facts; collapsing them
 would quietly under-order.
 
+**List validation has three states, and the third is the point.** `problem` is
+definite, `review` means a check could not run, `ok` means every check ran and
+passed. Two states would have been a lie: 415 of the 1,445 imported 40,000
+datasheets carry no `min_models`/`max_models`, an unresolved row has no
+datasheet to check against, and an allied detachment looks exactly like a
+faction mistake — so a faction stranger is reported and never called a fault. A
+badge saying "legal" while a third of the checks were skipped is worse than no
+badge, because it gets believed.
+
+Over the limit stays a `problem` even when something is unpriced, since
+unpriced entries can only ever *add* points. Under the limit with something
+unpriced is `review`, because the missing number could take it over.
+
+**It is not a rules engine and says so on screen.** Unit sizes come in
+increments — ten or twenty Boyz, never fifteen — and two columns cannot express
+that, so fifteen passes. Detachments and enhancements are not modelled at all.
+
 **One name-similarity function, `list_resolve.similarity`**, used by both paste
 doors. It sorts the words before comparing (rapidfuzz calls that
 `token_sort_ratio`) rather than using §8's `token_set_ratio`, which scores any
