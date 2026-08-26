@@ -56,6 +56,14 @@
 <main>
   {% block body %}{% endblock %}
 </main>
-<footer>v{{ version }} · {{ owner }}</footer>
+{# The owner's name was already here and did nothing. Making it the sign-out
+   is the whole control: no nav entry — that is five items on a phone and Clay
+   has complained about clutter — and it sits where you would look to check who
+   you are signed in as. `/api/auth/logout` shipped in the first commit and
+   nothing ever called it. #}
+<footer>v{{ version }} ·
+  <button id="sign-out" type="button" class="linkish"
+          aria-label="Sign out {{ owner }}">{{ owner }}</button>
+</footer>
 <script src="/static/js/app.js?v={{ asset_version }}"></script>
 {% block scripts %}{% endblock %}

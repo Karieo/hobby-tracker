@@ -2228,3 +2228,25 @@ def test_the_index_shows_the_pastes_figure_when_it_cannot_price_the_list(
 
     assert '1985' in body
     assert 'from the paste' in body
+
+
+def test_every_page_offers_a_way_to_sign_out(client):
+    """`POST /api/auth/logout` shipped in the first commit and nothing ever
+    called it — the endpoint-with-no-caller pattern, and the one instance of it
+    that left Clay with no way to end a session at all.
+
+    In the footer rather than the nav: that is five items on a phone already,
+    and the owner's name was sitting there doing nothing.
+    """
+    for path in ('/', '/collection', '/lists'):
+        body = client.get(path).get_data(as_text=True)
+        assert 'id="sign-out"' in body, path
+
+
+def test_signing_out_clears_the_session(client):
+    assert client.get('/').status_code == 200
+
+    assert client.post('/api/auth/logout').status_code == 200
+
+    res = client.get('/')
+    assert res.status_code == 302 and '/login' in res.headers['Location']

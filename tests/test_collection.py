@@ -923,3 +923,41 @@ def test_a_disposed_model_keeps_its_stage_rather_than_moving_to_sold(conn, orks,
         ' WHERE m.unit_id = ? LIMIT 1', (unit_id,)).fetchone()
 
     assert gone['name'] == 'Painted'
+
+
+def test_a_disposed_model_is_not_shortlisted_for_sale(conn, orks, stages):
+    """`list_for_sale` picks the most advanced models that are not already
+    listed — and had no disposal filter, so a model Clay had already sold could
+    be added to the pile of things to part with."""
+    unit_id = col.create_unit(conn, orks['Boyz'], 10,
+                              stage_id=stages['Battle ready']['id'])
+    conn.execute(
+        'UPDATE models SET disposed_on = ? WHERE id IN '
+        '  (SELECT id FROM models WHERE unit_id = ? LIMIT 6)',
+        ('2026-01-01', unit_id))
+
+    listed = col.list_for_sale(conn, unit_id, 10)
+
+    assert listed == 4, 'only the four still on the shelf'
+    gone_and_listed = conn.execute(
+        'SELECT COUNT(*) AS n FROM models '
+        ' WHERE disposed_on IS NOT NULL AND for_sale_on IS NOT NULL'
+    ).fetchone()['n']
+    assert gone_and_listed == 0
+
+
+def test_the_stalled_unit_is_never_one_that_is_gone(conn, orks, stages):
+    """Home's "untouched N days" nudge. Pointing it at plastic Clay no longer
+    owns is the same over-count `home_summary` had, one screen along."""
+    sold = col.create_unit(conn, orks['Boyz'], 5,
+                           stage_id=stages['On sprue']['id'])
+    conn.execute("UPDATE models SET disposed_on = '2026-01-01' "
+                 ' WHERE unit_id = ?', (sold,))
+    conn.execute("UPDATE models SET stage_changed_at = '2020-01-01' "
+                 ' WHERE unit_id = ?', (sold,))
+    kept = col.create_unit(conn, orks['Deff Dread'], 5,
+                           stage_id=stages['On sprue']['id'])
+
+    stalled = col.stalled_unit(conn)
+
+    assert stalled is None or stalled['id'] == kept

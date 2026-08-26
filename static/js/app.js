@@ -319,6 +319,23 @@ document.addEventListener('click', async (e) => {
   } catch (err) { toast(err.message, 'error'); }
 });
 
+/* Sign out. The one control that ends the session, so it asks first — the same
+ * bargain the list delete makes, and for the same reason: there is no opposite
+ * button beside it. */
+document.addEventListener('click', async (e) => {
+  const out = e.target.closest('#sign-out');
+  if (!out) return;
+  if (!window.confirm('Sign out?')) return;
+  out.disabled = true;
+  try {
+    await post('/api/auth/logout', {});
+    location.href = '/login';
+  } catch (err) {
+    out.disabled = false;
+    toast(err.message, 'error');
+  }
+});
+
 /* ── The three piles ─────────────────────────────────────
  * One listener on the list, not six on the buttons, so rows can change
  * without rewiring anything.
