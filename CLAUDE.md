@@ -280,11 +280,19 @@ one and twelve on the other, so filtering for either showed half the team.
 box still on sale. Only unplaced teams could split this way; a placed team's
 printings already meet on the faction they share.
 
-**The 22 still unplaced keep their own row and are named in the report.** The
-2021 Compendium teams are legacy and Clay's table deliberately does not cover
-them; an alliance like `Imperium` covers nineteen teams while naming no
-faction. Assigning those from recall is the forbidden change: fluent,
-plausible, and wrong in places with no signal about which.
+**The 22 still unplaced keep their own row, and Clay chose that on
+2026-08-26.** He was shown the list and what each one looks like it means —
+`Asuryani`, `Craftworld`, `Harlequins` reading as Aeldari; `Imperial Guard` and
+`Veteran Guardsmen` as Astra Militarum; `Adeptus Astartes` as Space Marines;
+`Kroot` and `Hunter Cadre` as T'au — and said to leave them all. So the report
+naming them every run is the settled state, not an outstanding gap.
+
+That is the right call and worth defending: the data does not say any of it.
+Every one of those readings is a model recognising an older army name, which
+is exactly the recall this repo refuses — fluent, plausible, and wrong in
+places with no signal about which. An alliance like `Imperium` covers nineteen
+teams while naming no faction, and the 2021 Compendium teams are legacy anyway.
+**Do not place them later without asking him again.**
 
 **Fellgor Ravagers, Chaos Cult and Blooded stay unplaced on purpose**, and the
 report naming them every run is the intended state rather than a gap to close.
