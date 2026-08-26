@@ -41,7 +41,15 @@
             <b>{{ l.name }}</b>
             <span class="muted">
               {{ l.faction_name or 'no faction' }} ·
-              {{ l.points_total }}{% if l.points_limit %} / {{ l.points_limit }}{% endif %} pts{% if l.battle_size %} <span class="muted">{{ l.battle_size }}</span>{% endif %} ·
+              {# `points_headline` decides; see lists.points_headline for why
+                 one of its four answers is silence. A Kill Team list cannot be
+                 priced from the 40,000 manual, and "at least 0 pts" is a true
+                 statement that helps nobody. #}
+              {% if l.points_headline %}
+                {% if l.points_headline.floor %}at least {% endif %}{{ l.points_headline.value }}{% if l.points_headline.note %}<span class="muted"> {{ l.points_headline.note }}</span>{% endif %}{% if l.points_limit %} / {{ l.points_limit }}{% endif %} pts{% if l.battle_size %} <span class="muted">{{ l.battle_size }}</span>{% endif %} ·
+              {% elif l.points_limit %}
+                limit {{ l.points_limit }}{% if l.battle_size %} <span class="muted">{{ l.battle_size }}</span>{% endif %} ·
+              {% endif %}
               {{ l.entry_count }} unit{{ '' if l.entry_count == 1 else 's' }}
             </span>
           </a>

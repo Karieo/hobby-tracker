@@ -854,3 +854,72 @@ def test_removing_from_one_unit_leaves_another_alone(conn, orks, stages):
 
     assert len(col.unit_models(conn, keep)) == 5
     assert len(col.unit_models(conn, trim)) == 3
+
+
+# ── The disposal invariant, walked ───────────────────────
+
+def test_every_ownership_surface_drops_a_disposed_model(conn, orks, stages):
+    """A filter half the queries ignore is a collection that over-counts
+    quietly for months.
+
+    `CLAUDE.md` has cited this test by name as the guard for the whole disposal
+    invariant. It did not exist. `home_summary` had `_ACTIVE_UNIT` and no
+    `_LIVE_MODEL`, so the home screen's headline — and the effort-weighted
+    percentage above it — went on counting models Clay had sold, while every
+    other surface had already dropped them.
+
+    So it exists now, and it walks the surfaces rather than testing one. A new
+    screen that counts ownership belongs in this list; if adding it here is
+    inconvenient, that is the test doing its job.
+    """
+    import backlog
+    import sale
+
+    army_id = col.create_army(conn, 'Da Boyz')
+    unit_id = col.create_unit(conn, orks['Boyz'], 20, army_id=army_id,
+                              stage_id=stages['On sprue']['id'])
+
+    def surfaces():
+        inventory = [r for r in col.inventory(conn) if r['name'] == 'Boyz']
+        left = [r for r in backlog.backlog(conn) if r['display_name'] == 'Boyz']
+        spare = [r for r in sale.candidates(conn)['surplus']
+                 if r['name'] == 'Boyz']
+        return {
+            'home_summary': col.home_summary(conn)['models'],
+            'home_stage_bar': sum(s['count']
+                                  for s in col.home_summary(conn)['segments']),
+            'inventory': inventory[0]['owned_count'] if inventory else 0,
+            'backlog': left[0]['models_left'] if left else 0,
+            'sale': spare[0]['owned'] if spare else 0,
+            'unit_piles': col.pile_counts(conn, unit_id)['owned'],
+            'unit_models': len([m for m in col.unit_models(conn, unit_id)
+                                if not m['disposed_on']]),
+        }
+
+    assert set(surfaces().values()) == {20}, 'all twenty owned to start with'
+
+    conn.execute(
+        'UPDATE models SET disposed_on = ? WHERE id IN '
+        '  (SELECT id FROM models WHERE unit_id = ? LIMIT 5)',
+        ('2026-01-01', unit_id))
+
+    after = surfaces()
+    over = {name: n for name, n in after.items() if n != 15}
+    assert not over, f'still counting the five that are gone: {over}'
+
+
+def test_a_disposed_model_keeps_its_stage_rather_than_moving_to_sold(conn, orks,
+                                                                     stages):
+    """The reason there is no *Sold* stage. One would have made all thirty
+    ownership queries correct for free and destroyed the fact worth recording,
+    which is that the five were painted when they went."""
+    unit_id = col.create_unit(conn, orks['Boyz'], 5,
+                              stage_id=stages['Painted']['id'])
+    conn.execute("UPDATE models SET disposed_on = '2026-01-01' "
+                 ' WHERE unit_id = ?', (unit_id,))
+
+    gone = conn.execute(
+        'SELECT s.name FROM models m JOIN stages s ON s.id = m.stage_id '
+        ' WHERE m.unit_id = ? LIMIT 1', (unit_id,)).fetchone()
+
+    assert gone['name'] == 'Painted'

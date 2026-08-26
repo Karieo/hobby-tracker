@@ -55,6 +55,33 @@ def battle_size(points_limit):
     return None
 
 
+def points_headline(row):
+    """What the index should say about a list's points, or None to say nothing.
+
+    Four cases and one of them is silence, which is why this is here and not in
+    the template. `backup_status.describe` set the precedent: the phrasing gets
+    tested, and the screen holds no logic.
+
+      every entry priced   the figure, plainly
+      some unpriced, and
+        the paste declared
+        a total             the paste's figure, labelled as a claim
+      some unpriced, and
+        a partial figure    that figure as a floor
+      nothing to show       None — a Kill Team list can never be priced from
+                            the 40,000 manual, and "at least 0 pts" is a true
+                            statement that helps nobody
+    """
+    total = row.get('points_total') or 0
+    if not row.get('unpriced_entries'):
+        return {'value': total, 'note': None}
+    if row.get('declared_points'):
+        return {'value': row['declared_points'], 'note': 'from the paste'}
+    if total:
+        return {'value': total, 'note': None, 'floor': True}
+    return None
+
+
 def create_list(conn, name, faction_id=None, detachment=None, points_limit=None,
                 notes=None, raw_text=None, source_format=None,
                 points_total=None):
@@ -95,6 +122,9 @@ def list_lists(conn):
     rows = [dict(r) for r in conn.execute("""
         SELECT l.*, f.name AS faction_name,
                COUNT(e.id)                       AS entry_count,
+               COALESCE(SUM(CASE WHEN e.datasheet_id IS NOT NULL
+                                  AND e.points_snapshot IS NULL
+                            THEN 1 ELSE 0 END), 0) AS unpriced_entries,
                -- NOT `AS points_total`. `army_lists` has a column of that
                -- name — what a pasted export declared — so `l.*` already
                -- returns one, and sqlite3.Row hands `dict()` the first of two
@@ -114,8 +144,16 @@ def list_lists(conn):
         # The screens ask for `points_total`; this app's own figure is what
         # they should get. `declared_points` keeps the export's claim beside
         # it rather than instead of it, per `create_list`.
+        #
+        # `unpriced_entries` is what stops that figure being read as the whole
+        # truth. `SUM` skips NULL snapshots, so a list nothing is priced for
+        # computes to 0 — and 0 for a 1,985-point army is wrong in the
+        # direction that matters, the same way an unpriced box would make a
+        # shopping total read low. Kill Team lists live here permanently:
+        # `datasheet_points` is the 40,000 manual and has no rows for them.
         row['declared_points'] = row['points_total']
         row['points_total'] = row.pop('points_computed')
+        row['points_headline'] = points_headline(row)
         row['battle_size'] = battle_size(row['points_limit'])
         gap = list_gap(conn, row['id'])
         row['to_buy'] = gap['to_buy']

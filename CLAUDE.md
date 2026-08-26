@@ -281,7 +281,13 @@ anyone notices.
   these are LEFT JOINs and a WHERE would drop every unit with no models.
   `tests/test_collection.py::test_every_ownership_surface_drops_a_disposed_model`
   walks the surfaces, because a filter half the queries ignore is a collection
-  that over-counts quietly for months. A sold kit stays with its
+  that over-counts quietly for months. **That test was cited here by name for
+  months before it existed**, and the gap it would have caught was real:
+  `home_summary` had `_ACTIVE_UNIT` and no `_LIVE_MODEL`, so the home screen's
+  headline — and the effort-weighted percentage above it — went on counting
+  sold models while every other surface had dropped them. Written 2026-08-26.
+  A new screen that counts ownership belongs in its list; if adding it there is
+  inconvenient, that is the test doing its job. A sold kit stays with its
   models, excluded from ownership counts, retained for spend history. A
   *correction* is the other thing: `collection.remove_models` and
   `delete_unit` delete rows outright, because plastic that was never there has
@@ -528,6 +534,28 @@ than dropped because dropping a column rewrites the table, and an inert column
 costs nothing while a destructive migration for tidiness costs a restore if it
 goes wrong. The `m.disposed_on IS NULL` filters in the ownership queries stay
 with them, correct and currently inert.
+
+**The list index shows the paste's own figure when the app cannot price
+the list.** `SUM` skips NULL snapshots, so a list nothing is priced for
+computes to **0** — and "0 / 2000 pts" for a 1,985-point army is wrong in the
+direction that matters, the same way an unpriced box would make a shopping
+total read low. Kill Team lists live there permanently: `datasheet_points` is
+the 40,000 manual and has no rows for them.
+
+`lists.points_headline` decides between four answers and **one of them is
+silence**: the figure plainly, the paste's claim labelled as a claim, a partial
+figure marked "at least", or nothing at all. It is a function rather than a
+template branch for the reason `backup_status.describe` is — the phrasing gets
+tested and the screen holds no logic. "at least 0 pts" is a true statement that
+helps nobody.
+
+**A check nobody can act on is a nag, not a check.** `_check_points` asked
+every limitless list to "Set one on the list" — including Kill Team lists,
+which have no battle size to choose, so it pointed at a door that does not
+exist. It is scoped to `SIZED_SYSTEM` now, exactly as `_check_sizes` already
+was. An unresolved row keeps the question open (it might yet resolve to a
+40,000 unit) and an empty list is still asked, since nothing says which game it
+is yet.
 
 **Battle size is a picker of two, and the two came off a screenshot.** Clay:
 *"There are only 2 list battle sizes for list."* `lists.BATTLE_SIZES` is
