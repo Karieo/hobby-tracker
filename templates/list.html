@@ -222,6 +222,25 @@
       <pre class="paste">{{ list.raw_text }}</pre>
     </details>
   {% endif %}
+
+  {# Last on the page and outlined rather than filled, because this is the one
+     control here that destroys something. Every other button on this screen
+     has its opposite beside it; this one has no undo, so it is the single
+     place in the app that asks first.
+
+     Models the list raised onto the wishlist are not touched — Clay still
+     wants them, and `delete_list` hands them to whichever list is still
+     waiting or leaves them as a standing want. #}
+  <h2>Delete this list</h2>
+  <p class="hint">
+    Removes the list and its {{ gap.entries|length }}
+    entr{{ 'y' if gap.entries|length == 1 else 'ies' }}. Anything it put on
+    your wishlist stays there. This cannot be undone.
+  </p>
+  <div class="actions">
+    <button class="danger" id="delete-list" data-list="{{ list.id }}"
+            data-name="{{ list.name }}">Delete list</button>
+  </div>
 {% endblock %}
 
 {% block scripts %}
