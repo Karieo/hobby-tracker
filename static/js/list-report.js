@@ -53,6 +53,24 @@ document.addEventListener('click', async (e) => {
     return;
   }
 
+  const edit = e.target.closest('#edit-list button[type="submit"]');
+  if (edit) {
+    e.preventDefault();
+    const form = edit.closest('form');
+    edit.disabled = true;
+    try {
+      await post(`/api/lists/${form.dataset.list}`, formBody(form), 'PATCH');
+      // Reload: the name is in the heading and the crumb, and the battle size
+      // moves what `list_validate` says about the points. Patching four places
+      // in the DOM to avoid one request is how they drift.
+      location.reload();
+    } catch (err) {
+      edit.disabled = false;
+      toast(err.message, 'error');
+    }
+    return;
+  }
+
   const del = e.target.closest('#delete-list');
   if (del) {
     // The one control on this screen with no opposite beside it, so it is the

@@ -124,6 +124,53 @@ def get_list(conn, list_id):
     return row
 
 
+#: What editing a list may touch. An allowlist rather than "whatever was
+#: posted", the same bargain `collection._UNIT_FIELDS` makes: `raw_text`,
+#: `source_format` and `points_total` are the record of what was *pasted*, and
+#: a form that could rewrite them would let a typo erase the provenance that
+#: `reparse` depends on.
+_LIST_FIELDS = ('name', 'faction_id', 'detachment', 'points_limit', 'notes')
+
+
+def update_list(conn, list_id, **fields):
+    """Change a list's own details. Its entries are edited elsewhere.
+
+    Clay: *"I do need to edit lists."* Everything about a list was write-once —
+    name, faction, battle size — so picking the wrong size meant deleting the
+    list and retyping every entry.
+
+    An absent key means "leave it alone" and an empty string still means
+    "clear it", which is what a cleared input has to mean; `collection.
+    update_unit` had to make the same distinction and for the same reason. A
+    PATCH that names one field must not blank the others.
+
+    `points_limit` is the exception to that: it is a number, and an empty
+    string from a picker set back to "—" means no limit rather than zero.
+    """
+    unknown = set(fields) - set(_LIST_FIELDS)
+    if unknown:
+        raise ValueError(f'update_list cannot write {sorted(unknown)}')
+    if not fields:
+        return False
+    if 'name' in fields and not (fields['name'] or '').strip():
+        raise ValueError('a list needs a name')
+
+    values = {}
+    for key, value in fields.items():
+        if key in ('faction_id', 'points_limit'):
+            values[key] = int(value) if str(value or '').strip() else None
+        elif key == 'name':
+            values[key] = value.strip()
+        else:
+            values[key] = (value or '').strip() or None
+
+    sets = ', '.join(f'{key} = ?' for key in values)
+    cur = conn.execute(
+        f'UPDATE army_lists SET {sets}, updated_at = ? WHERE id = ?',
+        [*values.values(), db.now(), list_id])
+    return cur.rowcount > 0
+
+
 def list_lists(conn):
     """Every list with its headline: points, and how ready it is."""
     rows = [dict(r) for r in conn.execute("""

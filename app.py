@@ -628,6 +628,8 @@ def list_page(list_id):
         gap = list_allocate.allocate(conn, list_id,
                                      include_unassigned=include_unassigned)
         return render_template('list.html', list=army_list, gap=gap,
+                               factions=col.list_factions(conn),
+                               battle_sizes=army_lists.BATTLE_SIZES,
                                legality=list_validate.validate(conn, list_id),
                                include_unassigned=include_unassigned,
                                assigned=_assigned_models(conn, gap))
@@ -646,6 +648,29 @@ def api_create_list():
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     return jsonify({'id': list_id}), 201
+
+
+@app.route('/api/lists/<int:list_id>', methods=['PATCH'])
+def api_update_list(list_id):
+    """Rename a list, or change its faction or battle size.
+
+    Only what the form actually sent — see lists.update_list. A PATCH naming
+    one field must not blank the others.
+    """
+    data = _payload()
+    with _write() as conn:
+        if not army_lists.get_list(conn, list_id):
+            abort(404)
+        try:
+            army_lists.update_list(
+                conn, list_id,
+                **{k: data[k] for k in army_lists._LIST_FIELDS if k in data})
+        except ValueError as err:
+            return jsonify({'error': str(err)}), 400
+        row = army_lists.get_list(conn, list_id)
+    return jsonify({'success': True, 'name': row['name'],
+                    'battle_size': row['battle_size'],
+                    'points_limit': row['points_limit']})
 
 
 @app.route('/api/lists/<int:list_id>', methods=['DELETE'])

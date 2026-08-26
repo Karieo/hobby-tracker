@@ -606,6 +606,19 @@ reading the rendered screen, not by a test** — the same way the sale screen's
 double-counted sealed box turned up. When adding an alias to a `SELECT t.*`,
 check the table has no column of that name.
 
+**A list is editable now, and its paste is not.** Clay: *"I do need to edit
+lists."* Everything about a list was write-once — name, faction, battle size —
+so choosing the wrong size meant deleting it and retyping every entry.
+`update_list` takes `**fields` against the `_LIST_FIELDS` allowlist, the same
+bargain `collection._UNIT_FIELDS` makes, so a PATCH naming one field cannot
+blank the others. `raw_text`, `source_format` and `points_total` are outside it
+on purpose: they record what was *pasted*, `reparse` reads them, and a form
+that could rewrite them would let a typo erase the provenance.
+
+An empty battle-size picker clears the limit rather than setting 0, and a list
+made before the picker existed keeps its odd number as a selected option — so
+opening the form does not silently discard it on save.
+
 **Deleting a list re-points its wishlist models rather than clearing them.**
 Clay: *"No way to delete list."* `DELETE /api/lists/<id>` and
 `lists.delete_list` had both shipped and nothing called either — the

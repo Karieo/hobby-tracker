@@ -225,6 +225,42 @@
     </details>
   {% endif %}
 
+  {# Editing the list's own details — its entries are edited in the table above.
+     In a <details> because it is not what you came to this page for: the gap
+     report is. Closed by default, and the summary says what is inside so it
+     does not have to be opened to find out. #}
+  <details class="whichones" id="edit-list">
+    <summary>Rename, or change faction or battle size</summary>
+    <form class="stack" data-list="{{ list.id }}">
+      <label>Name<input name="name" required value="{{ list.name }}"></label>
+      <label>Faction
+        <select name="faction_id">
+          <option value="">—</option>
+          {% for f in factions %}
+            <option value="{{ f.id }}"
+                    {% if f.id == list.faction_id %}selected{% endif %}>{{ f.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Battle size
+        <select name="points_limit">
+          <option value="">—</option>
+          {% for label, limit in battle_sizes %}
+            <option value="{{ limit }}"
+                    {% if limit == list.points_limit %}selected{% endif %}>{{ label }} ({{ limit }} pts)</option>
+          {% endfor %}
+          {# A list made before the picker existed can carry any number. Keeping
+             it as an option means opening this form does not silently discard
+             it on save. #}
+          {% if list.points_limit and not list.battle_size %}
+            <option value="{{ list.points_limit }}" selected>{{ list.points_limit }} pts (not a battle size)</option>
+          {% endif %}
+        </select>
+      </label>
+      <div class="actions"><button class="go" type="submit">Save</button></div>
+    </form>
+  </details>
+
   {# Last on the page and outlined rather than filled, because this is the one
      control here that destroys something. Every other button on this screen
      has its opposite beside it; this one has no undo, so it is the single
