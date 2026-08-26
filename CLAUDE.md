@@ -83,6 +83,27 @@ unpriced is `review`, because the missing number could take it over.
 increments — ten or twenty Boyz, never fifteen — and two columns cannot express
 that, so fifteen passes. Detachments and enhancements are not modelled at all.
 
+**There is no money anywhere on screen, and that is deliberate.** Clay,
+2026-08-26: *"Spend and kits are obsolete… I just need to be able to track
+models here."* The app no longer asks what a box costs and no longer shows what
+one cost: no RRP field on `/templates`, no "paid £X" on `/sale`, no cost beside
+a Bought or Sold entry on `/gallery`, and no totals on `/shopping`.
+
+**`rrp_cents` and `cost_cents` stay in the schema, unread** — the same bargain
+migration 010's disposal columns made. An inert column costs nothing; a
+destructive migration for tidiness costs a restore if it goes wrong, and this
+is a decision Clay has already reversed once.
+
+**The code behind the prices went, though.** `/shopping` used to carry three
+price states, total the basket, and compare a bundle against the single-unit
+boxes. A figure nothing renders is one that drifts out of step with the
+catalogue and nobody notices, so it was removed rather than left computing.
+`test_the_plan_carries_no_money_at_all` pins the absence.
+
+**What survived is the half that was never about money:** which boxes, and how
+much spare they arrive with. The overage is now the only cost anything reports,
+which is why it sits directly behind coverage in the tie-break.
+
 **The shopping list answers in boxes, because a shop does not sell seven
 Boyz.** `shopping.py` and `/shopping`: the wishlist names datasheets and model
 counts, which is the right answer to "what am I short" and the wrong one to the
@@ -95,22 +116,9 @@ would mean optimising against whichever boxes Clay happened to have priced.
 
 **The overage is carried because it is the cost nothing else would show.** Four
 boxes covering the list with forty spare models is worse than five with six, and
-`spare` is the only number on the screen that says so.
-
-**Bundle against à la carte is one function run twice** — once over every box,
-once over only the single-unit ones. A comparison computed by different code
-from the thing it compares to is a comparison that drifts. No saving is claimed
-unless both sides are fully priced *and* both cover the ground; a negative one
-is reported as it stands, since a comparison that only ever flatters the bundle
-is not a comparison.
-
-**Prices are three-state for the same reason list validation is.** A total that
-quietly skipped the unpriced boxes would read **low**, which is the one
-direction a shopping total must never be wrong in. `priced` is a figure,
-`partial` is a floor the screen shows as "at least", `unpriced` shows none —
-and `partial` is the honest common case. Anything no box in the catalogue
-contains is named on the page rather than dropped, the same rule the importers
-keep.
+`spare` is the only number on the screen that says so — literally so, now that
+the prices are gone. Anything no box in the catalogue contains is still named on
+the page rather than dropped, the same rule the importers keep.
 
 **`_cover` has two guards against picking a box that covers nothing, and that
 is deliberate.** The loop terminates because each pass reduces what is

@@ -2073,10 +2073,10 @@ def test_the_shopping_page_renders_a_real_plan(client, army_with_unit, db_path):
     assert 'Warboss' in body, 'the uncovered want must never be dropped'
 
 
-def test_the_shopping_page_never_shows_a_total_it_cannot_stand_behind(
-        client, army_with_unit, db_path):
-    """A total that quietly skips the unpriced boxes reads low, which is the
-    one direction a shopping total must not be wrong in."""
+def test_the_shopping_page_shows_no_money_anywhere(client, army_with_unit,
+                                                   db_path):
+    """Clay: "Spend and kits are obsolete." The screen answers which boxes and
+    how much spare, and says nothing about cost."""
     import kit_templates as kt
     with db.connect(db_path) as conn:
         boyz = army_with_unit['datasheet_id']
@@ -2087,8 +2087,9 @@ def test_the_shopping_page_never_shows_a_total_it_cannot_stand_behind(
 
     body = client.get('/shopping').get_data(as_text=True)
 
-    assert 'No prices recorded' in body
-
+    assert 'Boyz' in body, 'the plan still recommends the box'
+    for word in ('for the lot', 'at least', 'separately', 'no price recorded'):
+        assert word not in body, word
 
 def test_the_list_page_offers_a_way_to_delete_the_list(client, db_path):
     """Clay, on an empty list he could not get rid of: "No way to delete

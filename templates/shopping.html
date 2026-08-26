@@ -50,59 +50,10 @@
               {% if line.spare %}
                 <span class="muted"> · {{ line.spare }} spare</span>
               {% endif %}
-              {% if line.cents %}
-                <span class="muted"> · {{ line.cents | money }}</span>
-              {% else %}
-                <span class="muted"> · no price recorded</span>
-              {% endif %}
             </p>
           </li>
         {% endfor %}
       </ul>
-
-      {# Money, and how much of it the app can actually stand behind. A total
-         that quietly skipped the unpriced boxes would read low, which is the
-         one direction a shopping total must never be wrong in. #}
-      <div class="panel {% if best.state != 'priced' %}warn{% endif %}">
-        {% if best.state == 'priced' %}
-          <p><b>{{ best.cents | money }}</b> for the lot.</p>
-        {% elif best.state == 'partial' %}
-          <p><b>At least {{ best.cents | money }}</b> for the lot.</p>
-          <p class="muted">
-            Some of these boxes have no recorded price, so the real total is
-            higher. Add an RRP on a box's page and this settles.
-          </p>
-        {% else %}
-          <p>No prices recorded for any of these boxes.</p>
-          <p class="muted">
-            Add an RRP on a box's page and this becomes a total.
-          </p>
-        {% endif %}
-
-        {% if saving is not none %}
-          <p class="hint">
-            {% if saving > 0 %}
-              Buying them separately would be {{ alacarte.cents | money }} —
-              <b>{{ saving | money }} more</b>.
-            {% elif saving < 0 %}
-              Buying them separately would be {{ alacarte.cents | money }} —
-              <b>{{ (-saving) | money }} less</b>. The bundle is not a saving here.
-            {% else %}
-              Buying them separately costs the same.
-            {% endif %}
-          </p>
-        {% elif not uncovered and alacarte.lines %}
-          {# Only worth saying once the plan above actually covers the
-             wishlist. While something is uncovered, neither side can buy the
-             whole list, and blaming the single-unit boxes for a gap the bundle
-             has too would point at the wrong thing — the panel below is
-             already saying what is really missing. #}
-          <p class="hint muted">
-            No à la carte comparison: the single-unit boxes
-            {% if alacarte.uncovered %}don't cover all of this{% else %}aren't all priced{% endif %}.
-          </p>
-        {% endif %}
-      </div>
     {% endif %}
 
     {# Never drop a line. A want no box contains is the shortfall Clay would

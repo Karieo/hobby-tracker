@@ -1439,14 +1439,12 @@ def api_search_templates():
 @app.route('/api/templates', methods=['POST'])
 def api_create_template():
     data = _payload()
-    rrp = data.get('rrp')
     try:
         with _write() as conn:
             template_id = templates.create_template(
                 conn, data.get('name') or '', _contents_from(data),
                 faction_id=_int(data.get('faction_id')),
                 year=_int(data.get('year')),
-                rrp_cents=round(float(rrp) * 100) if rrp else None,
                 notes=(data.get('notes') or '').strip() or None)
             return jsonify({'id': template_id}), 201
     except ValueError as exc:
@@ -1456,7 +1454,6 @@ def api_create_template():
 @app.route('/api/templates/<int:template_id>', methods=['PATCH'])
 def api_update_template(template_id):
     data = _payload()
-    rrp = data.get('rrp')
     contents = _contents_from(data) if 'contents' in data else None
     try:
         with _write() as conn:
@@ -1464,7 +1461,6 @@ def api_update_template(template_id):
                 conn, template_id, name=data.get('name'),
                 faction_id=_int(data.get('faction_id')),
                 year=_int(data.get('year')),
-                rrp_cents=round(float(rrp) * 100) if rrp else None,
                 notes=data.get('notes'), contents=contents)
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400

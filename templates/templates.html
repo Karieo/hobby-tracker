@@ -26,8 +26,6 @@
       </label>
       <label>Year<input name="year" type="number" min="1987" max="2100"
                         placeholder="2024"></label>
-      <label>RRP<input name="rrp" type="number" step="0.01" min="0"
-                       placeholder="0.00"></label>
     </div>
     <p class="hint">
       Year is not cosmetic. Combat Patrol: Orks is both a 2021 and a 2024 box
@@ -72,7 +70,7 @@
 
   <div class="wrap">
     <table>
-      <tr><th>Kit</th><th>Year</th><th>Contents</th><th>RRP</th></tr>
+      <tr><th>Kit</th><th>Year</th><th>Contents</th></tr>
       {% for t in templates %}
         <tr>
           <td><a href="/templates/{{ t.id }}"><b>{{ t.name }}</b></a>
@@ -81,7 +79,6 @@
           <td>{{ t.year or '—' }}</td>
           <td>{{ t.unit_count }} unit{{ '' if t.unit_count == 1 else 's' }},
               {{ t.model_count }} model{{ '' if t.model_count == 1 else 's' }}</td>
-          <td>{{ t.rrp_cents | money }}</td>
         </tr>
       {% endfor %}
     </table>

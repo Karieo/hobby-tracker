@@ -160,20 +160,20 @@ def _kits(conn):
     """
     out = []
     for row in conn.execute("""
-        SELECT id, name, acquired_on, cost_cents, status,
-               disposed_on, disposed_price_cents
+        SELECT id, name, acquired_on, status, disposed_on
           FROM kits
          WHERE acquired_on IS NOT NULL OR disposed_on IS NOT NULL
     """):
+        # No cost carried. Clay, 2026-08-26: "Spend and kits are obsolete."
+        # The dates are the story — "bought in March, sold in August" — and the
+        # price was never part of what made that worth reading.
         if row['acquired_on']:
             out.append({'kind': 'kit', 'on': row['acquired_on'],
-                        'kit_id': row['id'], 'name': row['name'],
-                        'cost_cents': row['cost_cents']})
+                        'kit_id': row['id'], 'name': row['name']})
         if row['disposed_on']:
             out.append({'kind': 'gone', 'on': row['disposed_on'],
                         'kit_id': row['id'], 'name': row['name'],
-                        'status': row['status'],
-                        'cost_cents': row['disposed_price_cents']})
+                        'status': row['status']})
     return out
 
 
