@@ -2190,3 +2190,25 @@ def test_the_collection_offers_the_sale_screen_from_the_shortlist(client):
         '/collection?own=sell').get_data(as_text=True)
     assert 'href="/sale"' not in client.get(
         '/collection').get_data(as_text=True)
+
+
+def test_the_list_forms_offer_battle_sizes_not_a_number_box(client):
+    """Clay: "There are only 2 list battle sizes for list." Typing a third is a
+    way to build a list that cannot be played."""
+    for path in ('/lists', '/lists/import'):
+        body = client.get(path).get_data(as_text=True)
+        assert 'Battle size' in body, path
+        assert 'Incursion (1000 pts)' in body, path
+        assert 'Strike Force (2000 pts)' in body, path
+        assert 'name="points_limit" type="number"' not in body, path
+
+
+def test_picking_a_battle_size_sets_the_limit(client, db_path):
+    res = client.post('/api/lists', json={'name': 'Saturday',
+                                          'points_limit': 2000})
+    assert res.status_code in (200, 201)
+
+    with db.connect(db_path) as conn:
+        row = lists_mod.list_lists(conn)[0]
+    assert row['points_limit'] == 2000
+    assert row['battle_size'] == 'Strike Force'

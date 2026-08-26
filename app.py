@@ -608,6 +608,7 @@ def lists_page():
     with _read() as conn:
         return render_template('lists.html', lists=army_lists.list_lists(conn),
                                factions=col.list_factions(conn),
+                               battle_sizes=army_lists.BATTLE_SIZES,
                                wants=army_lists.wishlist(conn))
 
 
@@ -1261,7 +1262,8 @@ def api_add_commit():
 def import_list_page():
     with _read() as conn:
         return render_template(
-            'list_import.html', factions=col.list_factions(conn))
+            'list_import.html', factions=col.list_factions(conn),
+            battle_sizes=army_lists.BATTLE_SIZES)
 
 
 @app.route('/lists/import/preview', methods=['POST'])

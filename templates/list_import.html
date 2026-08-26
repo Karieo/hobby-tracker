@@ -34,9 +34,13 @@
           {% endfor %}
         </select>
       </label>
-      <label>Points limit
-        <input name="points_limit" type="number" min="0" step="5"
-               placeholder="2000">
+      <label>Battle size
+        <select name="points_limit">
+          <option value="">—</option>
+          {% for label, limit in battle_sizes %}
+            <option value="{{ limit }}">{{ label }} ({{ limit }} pts)</option>
+          {% endfor %}
+        </select>
       </label>
       <label>Game
         <select name="game_system">

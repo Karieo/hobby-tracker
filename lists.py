@@ -25,6 +25,36 @@ import database as db
 import list_allocate
 
 
+#: The battle sizes the game actually offers, and the points limit each one
+#: means. Taken from the 40,000 app's own Battle Size picker — Clay sent a
+#: screenshot of it showing exactly these two — rather than from anything a
+#: model remembers about the game. That distinction is the one this repo cares
+#: most about: a points limit written from recall would be fluent, plausible,
+#: and wrong in a way nothing on screen would flag.
+#:
+#: Stored as the number, not the name. `army_lists.points_limit` already holds
+#: it, every check already reads it, and a name column would be a second
+#: version of the same fact to keep in step. The name is derived on the way
+#: out.
+BATTLE_SIZES = (
+    ('Incursion', 1000),
+    ('Strike Force', 2000),
+)
+
+
+def battle_size(points_limit):
+    """The name for a limit, or None if it is not one of the two.
+
+    None rather than an error on purpose. A list made before this existed may
+    carry any number, and the screens fall back to showing the figure — a
+    picker gaining two options must not make an existing list unreadable.
+    """
+    for name, limit in BATTLE_SIZES:
+        if limit == points_limit:
+            return name
+    return None
+
+
 def create_list(conn, name, faction_id=None, detachment=None, points_limit=None,
                 notes=None, raw_text=None, source_format=None,
                 points_total=None):
@@ -53,7 +83,11 @@ def get_list(conn, list_id):
         'SELECT l.*, f.name AS faction_name FROM army_lists l '
         'LEFT JOIN factions f ON f.id = l.faction_id WHERE l.id = ?',
         (list_id,)).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    row = dict(row)
+    row['battle_size'] = battle_size(row['points_limit'])
+    return row
 
 
 def list_lists(conn):
@@ -61,7 +95,14 @@ def list_lists(conn):
     rows = [dict(r) for r in conn.execute("""
         SELECT l.*, f.name AS faction_name,
                COUNT(e.id)                       AS entry_count,
-               COALESCE(SUM(e.points_snapshot), 0) AS points_total,
+               -- NOT `AS points_total`. `army_lists` has a column of that
+               -- name — what a pasted export declared — so `l.*` already
+               -- returns one, and sqlite3.Row hands `dict()` the first of two
+               -- same-named columns. The aggregate was being computed and
+               -- thrown away: every list on the index read "None" where its
+               -- points should be. The two are different facts (this app's
+               -- figure and the export's claim) and now have different names.
+               COALESCE(SUM(e.points_snapshot), 0) AS points_computed,
                COALESCE(SUM(e.model_count), 0)   AS model_count
           FROM army_lists l
           LEFT JOIN factions f    ON f.id = l.faction_id
@@ -70,6 +111,12 @@ def list_lists(conn):
          ORDER BY l.created_at DESC, l.id DESC
     """)]
     for row in rows:
+        # The screens ask for `points_total`; this app's own figure is what
+        # they should get. `declared_points` keeps the export's claim beside
+        # it rather than instead of it, per `create_list`.
+        row['declared_points'] = row['points_total']
+        row['points_total'] = row.pop('points_computed')
+        row['battle_size'] = battle_size(row['points_limit'])
         gap = list_gap(conn, row['id'])
         row['to_buy'] = gap['to_buy']
         row['to_paint'] = gap['to_paint']
