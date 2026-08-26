@@ -1023,3 +1023,8 @@ h2 + .panel, h2 + form, h2 + .hint { margin-top: 0; }
 .legality ul { margin: .35rem 0 0; padding-left: 1.1rem; }
 .legality li { margin: .15rem 0; }
 .legality li.wrong { color: var(--rust); }
+
+/* The backup line when everything is fine: a footnote, not an announcement.
+   Shown every day, so it has to be ignorable — the warning panel is what
+   earns attention, and it only appears when something is actually wrong. */
+.backup-line { margin-top: 1rem; text-align: center; opacity: .7; }

@@ -56,6 +56,7 @@ from flask import (Flask, Response, abort, jsonify, redirect,  # noqa: E402
 from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 
 import backlog as backlog_mod  # noqa: E402
+import backup_status
 import bulk_add  # noqa: E402
 import collection as col
 import list_allocate
@@ -392,6 +393,16 @@ def inject_globals():
 
 # ── Armies ───────────────────────────────────────────────
 
+def _backup_line():
+    """The home screen's backup line: state, and the words for it.
+
+    Phrased here rather than in the template so the wording is testable and the
+    template stays free of logic.
+    """
+    status = backup_status.last_backup()
+    return dict(status, label=backup_status.describe(status))
+
+
 @app.route('/')
 def index():
     """Home, from Tracker Wireframes §3a. One number, then the mass, then which
@@ -407,7 +418,8 @@ def index():
             'home.html',
             summary=col.home_summary(conn),
             armies=[a for a in col.list_armies(conn) if a['model_count']],
-            stalled=col.stalled_unit(conn))
+            stalled=col.stalled_unit(conn),
+            backup=_backup_line())
 
 
 @app.route('/armies')

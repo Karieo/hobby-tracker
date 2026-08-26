@@ -199,6 +199,22 @@ fi
 # every backup at once rather than the oldest.
 ok "Kept newest $BACKUP_KEEP snapshots (photos/ is shared and never rotated)"
 
+# ── 6 · Tell the app ────────────────────────────────────
+# On a nightly cron this script's failure mode is silence — it reports loudly,
+# but at 3am that is one line in a file nobody opens. So the home screen shows
+# when the last backup finished, and this is how it finds out.
+#
+# A marker rather than the app reading $BACKUP_DIR itself: the container has
+# only ./data and ./.env mounted, so /mnt/t7 does not exist from in there.
+# Statting the snapshots would work in development and report "no backups,
+# ever" on the one machine that matters.
+#
+# Written last on purpose. Under `set -euo pipefail` reaching this line means
+# every step above succeeded, so a run that died half way leaves the marker at
+# its old value and the home screen keeps saying the backup is overdue.
+date -u +%Y-%m-%dT%H:%M:%SZ > "$APP_DIR/data/.last-backup"
+ok "Marked the app's home screen"
+
 bold ""
 bold "Backup complete → $BACKUP_DIR"
 echo "  Verify a restore with:  ./restore.sh --check $SNAP"
