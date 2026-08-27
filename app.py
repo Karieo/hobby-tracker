@@ -66,6 +66,7 @@ import list_validate
 import journey
 import lists as army_lists
 import photos
+import recent
 import rules_data  # noqa: E402
 import sale
 import shopping
@@ -421,6 +422,7 @@ def index():
             summary=col.home_summary(conn),
             armies=[a for a in col.list_armies(conn) if a['model_count']],
             stalled=col.stalled_unit(conn),
+            recent=recent.summary(conn),
             backup=_backup_line())
 
 

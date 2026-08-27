@@ -136,6 +136,49 @@ ladder is per model — `stages_for` — so a Trukk is four steps from done and 
 six, and vehicles do not look permanently unfinished. Wishlist models are not
 backlog: they are not on the shelf.
 
+**The home screen says what you got done, and never answers with a zero.**
+`recent.py` and the "Last 30 days" panel (spec §5.1) — the second thing to read
+`stage_events` back, after `journey.py`. Models finished is the number the spec
+asks for and the one Clay would say out loud, but it reads **zero** for a month
+spent priming sixty Boyz, and a home screen telling him he did nothing in a
+month he spent every evening at the desk is the abandonment failure this app is
+designed against. So the headline falls back to what *did* move, and
+`effort_done` rides alongside in the same currency `/backlog` reports what is
+left in — 13 spent against 87 to go is a sentence; "16 models" against "37
+models" is not.
+
+**Arrivals are not work, and that exclusion is structural rather than a
+filter.** `_moves` inner-joins the from-stage, and `add_models` writes an
+arrival with `from_stage_id` NULL. A model appearing at Painted is Clay saying
+what was already on the shelf — `/add` takes a stage word precisely so
+onboarding can be honest — and counting it would have the first week of typing
+report hundreds of models "finished", wrong in the direction that makes the
+number worthless exactly when it is new. Buying is not work either: the walk
+starts at On sprue, so Wishlist → On sprue crosses no step, the same line
+`backlog._work_left` draws.
+
+**Corrections cancel, genuine strip-backs do not** — journey's rule, since
+`retreat_unit` exists for the mis-tap with wet hands. A retreat out of a stage
+cancels an advance into it **on the same day**. Journey nets those per *unit*
+because it renders one row per unit; `recent` nets per **model**, which is the
+rule stated exactly rather than approximated. Nothing ever subtracts: a month
+cannot go negative, and a screen that punished Clay for redoing a unit he was
+unhappy with would be arguing with the hobby.
+
+**It is the one counting surface that does not filter disposals, deliberately.**
+Painting twenty Boyz in March and selling them in April does not un-paint them.
+`test_every_ownership_surface_drops_a_disposed_model` walks the surfaces that
+count *what Clay has*; this counts *what he did*, so it is not on that list —
+and a reader tempted to add it should change the module docstring first and see
+whether the sentence survives.
+
+**`by_stage` stops short of the terminal stage**, which `finished` already is —
+by construction the same number. The rendered screen is what showed it: "10
+models finished" above "… · 10 battle ready" was saying it twice, and two copies
+of one number are two to keep in step. Found the same way the sale screen's
+double-counted sealed box and the list index's "None" were, which is now three
+for three: **render the page.**
+
 **The sale screen proposes; the shortlist decides.** `sale.py` and `/sale`
 (spec §8). `models.for_sale_on` has held the shortlist since migration 011 and
 nothing ever *fed* it — Clay had to fill it in from memory. The unit page's
