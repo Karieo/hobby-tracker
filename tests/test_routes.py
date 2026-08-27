@@ -6,6 +6,7 @@ import pytest
 
 import collection as col
 import database as db
+import games as games_mod
 import lists as lists_mod
 
 
@@ -2323,3 +2324,70 @@ def test_a_list_kept_an_odd_limit_it_was_made_with(client, db_path):
     body = client.get(f'/lists/{list_id}').get_data(as_text=True)
 
     assert '1500 pts (not a battle size)' in body
+
+
+# ── Games, per list ──────────────────────────────────────
+#
+# Clay: "games played by list, win/loss and point difference 0-100."
+
+def test_recording_a_game_takes_two_scores_and_derives_the_rest(client, gap_list):
+    res = client.post(f'/api/lists/{gap_list["list_id"]}/games',
+                      json={'your_score': 85, 'their_score': 72})
+
+    assert res.status_code == 200
+    with db.connect(db.DB_PATH) as conn:
+        game = games_mod.games_for(conn, gap_list['list_id'])[0]
+    assert (game['result'], game['margin']) == ('won', 13)
+
+
+def test_a_score_outside_the_range_is_refused_by_the_route(client, gap_list):
+    """400 with the reason, not a clamp. A mistyped 850 stored as 100 is a
+    wrong record that reads like a real one."""
+    res = client.post(f'/api/lists/{gap_list["list_id"]}/games',
+                      json={'your_score': 850, 'their_score': 72})
+
+    assert res.status_code == 400
+    assert '0 and 100' in res.get_json()['error']
+
+
+def test_recording_a_game_against_a_list_that_is_gone_is_a_404(client):
+    res = client.post('/api/lists/9999/games',
+                      json={'your_score': 85, 'their_score': 72})
+
+    assert res.status_code == 404
+
+
+def test_the_list_page_shows_the_record_and_the_games(client, gap_list):
+    for yours, theirs in ((85, 72), (40, 90)):
+        client.post(f'/api/lists/{gap_list["list_id"]}/games',
+                    json={'your_score': yours, 'their_score': theirs})
+
+    body = ' '.join(
+        client.get(f'/lists/{gap_list["list_id"]}').get_data(as_text=True).split())
+
+    assert '1–1' in body, 'the record, in the heading'
+    assert '85–72' in body and '40–90' in body
+    assert 'average margin' in body
+
+
+def test_a_list_that_never_played_says_so_rather_than_showing_zeroes(client, gap_list):
+    body = client.get(f'/lists/{gap_list["list_id"]}').get_data(as_text=True)
+
+    assert 'No games yet.' in body
+    assert '0–0' not in body
+
+
+def test_the_index_carries_each_list_s_record(client, gap_list):
+    client.post(f'/api/lists/{gap_list["list_id"]}/games',
+                json={'your_score': 85, 'their_score': 72})
+
+    assert '1–0' in client.get('/lists').get_data(as_text=True)
+
+
+def test_a_game_can_be_removed(client, gap_list):
+    res = client.post(f'/api/lists/{gap_list["list_id"]}/games',
+                      json={'your_score': 85, 'their_score': 72})
+    game_id = res.get_json()['id']
+
+    assert client.delete(f'/api/games/{game_id}').status_code == 200
+    assert client.delete(f'/api/games/{game_id}').status_code == 404

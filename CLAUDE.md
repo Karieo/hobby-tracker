@@ -179,6 +179,56 @@ of one number are two to keep in step. Found the same way the sale screen's
 double-counted sealed box and the list index's "None" were, which is now three
 for three: **render the page.**
 
+**Games are recorded per list, and nothing derived is stored.** `games.py`,
+migration 013, and the Games section on `/lists/<id>`. Clay: *"games played by
+list, win/loss and point difference 0-100."* Asked which way round, he chose to
+record **both scores** rather than a difference: one more number typed, and it
+is what tells "lost 85–90" from "lost 45–90" — two completely different
+evenings that a stored result cannot tell apart. Won/lost/drew and the margin
+both fall out of the pair, so neither is a column. A stored result would be a
+second copy of what the row already says, and this app has paid for one of
+those: `army_lists.points_total` colliding with an aggregate of the same name
+put the word "None" on the list index for months.
+
+**It records outcomes and must not grow into a game tracker.** Clay plays in
+Battlebase — *"playing the game is a whole other thing"* — so there are no
+missions, objectives or turns here. A list is what a collection is built
+*towards*, and whether it wins is the one fact about it the app cannot read off
+a shelf.
+
+**The 0–100 range is Clay's own number, not a rule recalled from a rulebook** —
+the same bargain `lists.BATTLE_SIZES` makes with the two battle sizes he took
+off a screenshot, and pinned as data the same way. It is deliberately **not**
+scoped by game system: Kill Team lists live in `army_lists` too and are not
+scored out of 100, but writing that rule from a model's recall is the one
+change to this repo that would do real damage. The range widens when he says
+so. A score outside it is **refused, not clamped** — a mistyped 850 quietly
+stored as 100 is a wrong record that reads like a real one.
+
+**Both scores are NOT NULL, which is the honest choice rather than the lenient
+one.** A game with no score cannot say who won, so a nullable score would put
+rows in the tally that no number on the screen could describe — and the tally
+is the whole feature.
+
+**Tallied in Python, not in SQL.** `_result` decides won/lost/drew in exactly
+one place and both the list page and the list index count through it. The
+alternative is a `SUM(CASE WHEN ...)` per screen, which is two copies of the
+rule that drift the moment a draw is defined differently in one of them. Clay
+plays perhaps weekly; a few hundred rows is nothing to total in memory.
+`test_the_index_and_the_list_page_agree` pins it.
+
+**The average margin is signed, and the per-game margin sits beside its
+scores.** `−12` says the list is losing by twelve; an absolute average reads
+`12` whether you win or lose every game. The per-game number moved onto the
+meta line after the screen was rendered: on a line of its own it was a second
+copy of what "Lost 55–60" already says, and cost every game a row.
+
+**The record is a heading, not a fourth stat tile.** `list.html` says why in a
+comment that predates this: the three tiles are one sentence on one row, and a
+fourth wraps onto a line of its own and reads as a separate fact. A list that
+has never played shows nothing at all rather than "0–0", which would imply
+games played and none won.
+
 **The sale screen proposes; the shortlist decides.** `sale.py` and `/sale`
 (spec §8). `models.for_sale_on` has held the shortlist since migration 011 and
 nothing ever *fed* it — Clay had to fill it in from memory. The unit page's

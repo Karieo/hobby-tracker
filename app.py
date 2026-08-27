@@ -59,6 +59,7 @@ import backlog as backlog_mod  # noqa: E402
 import backup_status
 import bulk_add  # noqa: E402
 import collection as col
+import games
 import list_allocate
 import list_parse
 import list_resolve
@@ -611,6 +612,7 @@ def lists_page():
         return render_template('lists.html', lists=army_lists.list_lists(conn),
                                factions=col.list_factions(conn),
                                battle_sizes=army_lists.BATTLE_SIZES,
+                               records=games.records(conn),
                                wants=army_lists.wishlist(conn))
 
 
@@ -629,11 +631,15 @@ def list_page(list_id):
             abort(404)
         gap = list_allocate.allocate(conn, list_id,
                                      include_unassigned=include_unassigned)
+        played = games.games_for(conn, list_id)
         return render_template('list.html', list=army_list, gap=gap,
                                factions=col.list_factions(conn),
                                battle_sizes=army_lists.BATTLE_SIZES,
                                legality=list_validate.validate(conn, list_id),
                                include_unassigned=include_unassigned,
+                               games=played, record=games.record(played),
+                               score_max=games.SCORE_MAX,
+                               today=str(date.today()),
                                assigned=_assigned_models(conn, gap))
 
 
@@ -681,6 +687,39 @@ def api_delete_list(list_id):
         if not army_lists.get_list(conn, list_id):
             abort(404)
         army_lists.delete_list(conn, list_id)
+    return jsonify({'success': True})
+
+
+@app.route('/api/lists/<int:list_id>/games', methods=['POST'])
+def api_add_game(list_id):
+    """Record a game. Clay: "games played by list, win/loss and point
+    difference 0-100".
+
+    The result and the margin are not accepted and not stored — they fall out
+    of the two scores, and a second copy of a fact the row already carries is
+    what put the word "None" on this very index for months.
+    """
+    data = _payload()
+    with _write() as conn:
+        if not army_lists.get_list(conn, list_id):
+            abort(404)
+        try:
+            game_id = games.add_game(
+                conn, list_id,
+                data.get('your_score'), data.get('their_score'),
+                played_on=(data.get('played_on') or '').strip() or None,
+                opponent_faction_id=data.get('opponent_faction_id'),
+                notes=data.get('notes'))
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+    return jsonify({'success': True, 'id': game_id})
+
+
+@app.route('/api/games/<int:game_id>', methods=['DELETE'])
+def api_delete_game(game_id):
+    with _write() as conn:
+        if not games.delete_game(conn, game_id):
+            abort(404)
     return jsonify({'success': True})
 
 
