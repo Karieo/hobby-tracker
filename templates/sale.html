@@ -65,9 +65,6 @@
             {% if b.acquired_on %}
               <span class="muted"> · had since {{ b.acquired_on }}</span>
             {% endif %}
-            {% if b.cost_cents %}
-              <span class="muted"> · paid {{ b.cost_cents | money }}</span>
-            {% endif %}
           </p>
         </li>
       {% endfor %}

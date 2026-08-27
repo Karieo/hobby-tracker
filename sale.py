@@ -116,7 +116,7 @@ def _sealed_boxes(conn, needed):
     so one wanted unit inside it is enough to make selling it the wrong move.
     """
     rows = [dict(r) for r in conn.execute("""
-        SELECT k.id, k.name, k.acquired_on, k.cost_cents, k.source,
+        SELECT k.id, k.name, k.acquired_on, k.source,
                f.name AS faction_name,
                t.name AS template_name, t.year, t.rrp_cents
           FROM kits k

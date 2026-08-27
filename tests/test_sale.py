@@ -293,13 +293,14 @@ def test_a_sealed_box_nothing_wants_is_a_candidate(conn, stages, sheets):
     """The case where the box really is the unit of action: `box_state` exists
     because a sealed box carries a resale premium an opened one does not."""
     sealed(conn, 'Combat Patrol', sheets, [('Boyz', 20), ('Trukk', 1)],
-           acquired_on='2024-03-01', cost_cents=11500)
+           acquired_on='2024-03-01')
 
     result = sale.candidates(conn)
 
     assert [b['name'] for b in result['boxes']] == ['Combat Patrol']
-    assert result['boxes'][0]['cost_cents'] == 11500
     assert result['boxes'][0]['acquired_on'] == '2024-03-01'
+    assert 'cost_cents' not in result['boxes'][0], \
+        'the app no longer reports what a box cost'
 
 
 def test_a_sealed_box_a_list_wants_is_held_back_and_named(conn, stages, sheets):

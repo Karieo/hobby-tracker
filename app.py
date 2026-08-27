@@ -628,6 +628,8 @@ def list_page(list_id):
         gap = list_allocate.allocate(conn, list_id,
                                      include_unassigned=include_unassigned)
         return render_template('list.html', list=army_list, gap=gap,
+                               factions=col.list_factions(conn),
+                               battle_sizes=army_lists.BATTLE_SIZES,
                                legality=list_validate.validate(conn, list_id),
                                include_unassigned=include_unassigned,
                                assigned=_assigned_models(conn, gap))
@@ -646,6 +648,29 @@ def api_create_list():
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     return jsonify({'id': list_id}), 201
+
+
+@app.route('/api/lists/<int:list_id>', methods=['PATCH'])
+def api_update_list(list_id):
+    """Rename a list, or change its faction or battle size.
+
+    Only what the form actually sent — see lists.update_list. A PATCH naming
+    one field must not blank the others.
+    """
+    data = _payload()
+    with _write() as conn:
+        if not army_lists.get_list(conn, list_id):
+            abort(404)
+        try:
+            army_lists.update_list(
+                conn, list_id,
+                **{k: data[k] for k in army_lists._LIST_FIELDS if k in data})
+        except ValueError as err:
+            return jsonify({'error': str(err)}), 400
+        row = army_lists.get_list(conn, list_id)
+    return jsonify({'success': True, 'name': row['name'],
+                    'battle_size': row['battle_size'],
+                    'points_limit': row['points_limit']})
 
 
 @app.route('/api/lists/<int:list_id>', methods=['DELETE'])
@@ -1414,14 +1439,12 @@ def api_search_templates():
 @app.route('/api/templates', methods=['POST'])
 def api_create_template():
     data = _payload()
-    rrp = data.get('rrp')
     try:
         with _write() as conn:
             template_id = templates.create_template(
                 conn, data.get('name') or '', _contents_from(data),
                 faction_id=_int(data.get('faction_id')),
                 year=_int(data.get('year')),
-                rrp_cents=round(float(rrp) * 100) if rrp else None,
                 notes=(data.get('notes') or '').strip() or None)
             return jsonify({'id': template_id}), 201
     except ValueError as exc:
@@ -1431,7 +1454,6 @@ def api_create_template():
 @app.route('/api/templates/<int:template_id>', methods=['PATCH'])
 def api_update_template(template_id):
     data = _payload()
-    rrp = data.get('rrp')
     contents = _contents_from(data) if 'contents' in data else None
     try:
         with _write() as conn:
@@ -1439,7 +1461,6 @@ def api_update_template(template_id):
                 conn, template_id, name=data.get('name'),
                 faction_id=_int(data.get('faction_id')),
                 year=_int(data.get('year')),
-                rrp_cents=round(float(rrp) * 100) if rrp else None,
                 notes=data.get('notes'), contents=contents)
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400

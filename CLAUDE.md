@@ -83,6 +83,27 @@ unpriced is `review`, because the missing number could take it over.
 increments — ten or twenty Boyz, never fifteen — and two columns cannot express
 that, so fifteen passes. Detachments and enhancements are not modelled at all.
 
+**There is no money anywhere on screen, and that is deliberate.** Clay,
+2026-08-26: *"Spend and kits are obsolete… I just need to be able to track
+models here."* The app no longer asks what a box costs and no longer shows what
+one cost: no RRP field on `/templates`, no "paid £X" on `/sale`, no cost beside
+a Bought or Sold entry on `/gallery`, and no totals on `/shopping`.
+
+**`rrp_cents` and `cost_cents` stay in the schema, unread** — the same bargain
+migration 010's disposal columns made. An inert column costs nothing; a
+destructive migration for tidiness costs a restore if it goes wrong, and this
+is a decision Clay has already reversed once.
+
+**The code behind the prices went, though.** `/shopping` used to carry three
+price states, total the basket, and compare a bundle against the single-unit
+boxes. A figure nothing renders is one that drifts out of step with the
+catalogue and nobody notices, so it was removed rather than left computing.
+`test_the_plan_carries_no_money_at_all` pins the absence.
+
+**What survived is the half that was never about money:** which boxes, and how
+much spare they arrive with. The overage is now the only cost anything reports,
+which is why it sits directly behind coverage in the tie-break.
+
 **The shopping list answers in boxes, because a shop does not sell seven
 Boyz.** `shopping.py` and `/shopping`: the wishlist names datasheets and model
 counts, which is the right answer to "what am I short" and the wrong one to the
@@ -95,22 +116,9 @@ would mean optimising against whichever boxes Clay happened to have priced.
 
 **The overage is carried because it is the cost nothing else would show.** Four
 boxes covering the list with forty spare models is worse than five with six, and
-`spare` is the only number on the screen that says so.
-
-**Bundle against à la carte is one function run twice** — once over every box,
-once over only the single-unit ones. A comparison computed by different code
-from the thing it compares to is a comparison that drifts. No saving is claimed
-unless both sides are fully priced *and* both cover the ground; a negative one
-is reported as it stands, since a comparison that only ever flatters the bundle
-is not a comparison.
-
-**Prices are three-state for the same reason list validation is.** A total that
-quietly skipped the unpriced boxes would read **low**, which is the one
-direction a shopping total must never be wrong in. `priced` is a figure,
-`partial` is a floor the screen shows as "at least", `unpriced` shows none —
-and `partial` is the honest common case. Anything no box in the catalogue
-contains is named on the page rather than dropped, the same rule the importers
-keep.
+`spare` is the only number on the screen that says so — literally so, now that
+the prices are gone. Anything no box in the catalogue contains is still named on
+the page rather than dropped, the same rule the importers keep.
 
 **`_cover` has two guards against picking a box that covers nothing, and that
 is deliberate.** The loop terminates because each pass reduces what is
@@ -605,6 +613,19 @@ aggregate is `points_computed` now and `list_lists` maps it onto
 reading the rendered screen, not by a test** — the same way the sale screen's
 double-counted sealed box turned up. When adding an alias to a `SELECT t.*`,
 check the table has no column of that name.
+
+**A list is editable now, and its paste is not.** Clay: *"I do need to edit
+lists."* Everything about a list was write-once — name, faction, battle size —
+so choosing the wrong size meant deleting it and retyping every entry.
+`update_list` takes `**fields` against the `_LIST_FIELDS` allowlist, the same
+bargain `collection._UNIT_FIELDS` makes, so a PATCH naming one field cannot
+blank the others. `raw_text`, `source_format` and `points_total` are outside it
+on purpose: they record what was *pasted*, `reparse` reads them, and a form
+that could rewrite them would let a typo erase the provenance.
+
+An empty battle-size picker clears the limit rather than setting 0, and a list
+made before the picker existed keeps its odd number as a selected option — so
+opening the form does not silently discard it on save.
 
 **Deleting a list re-points its wishlist models rather than clearing them.**
 Clay: *"No way to delete list."* `DELETE /api/lists/<id>` and

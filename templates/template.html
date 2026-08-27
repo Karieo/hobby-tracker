@@ -8,10 +8,6 @@
       <p class="muted">
         {% if template.year %}{{ template.year }} · {% endif %}
         {{ template.faction_name or 'no faction' }}
-        {% if template.rrp_cents %}
-          · RRP {{ template.rrp_cents | money }}
-          <span class="muted">as of {{ template.price_updated_on }}</span>
-        {% endif %}
       </p>
     </div>
   </header>
@@ -43,8 +39,6 @@
         </select>
       </label>
       <label>Year<input name="year" type="number" value="{{ template.year or '' }}"></label>
-      <label>RRP<input name="rrp" type="number" step="0.01" min="0"
-             value="{{ '%.2f'|format(template.rrp_cents / 100) if template.rrp_cents else '' }}"></label>
     </div>
 
     <ul class="contents" id="contents">

@@ -753,3 +753,88 @@ def test_get_list_does_not_expose_an_ambiguous_points_total(conn):
 
     assert row['declared_points'] == 1985
     assert 'points_total' not in row, 'the ambiguous key is gone, not renamed'
+
+
+# ── Editing a list ───────────────────────────────────────
+
+def test_a_list_can_be_renamed(conn):
+    """Clay: "I do need to edit lists." Everything about a list was write-once,
+    so picking the wrong battle size meant deleting it and retyping every
+    entry."""
+    list_id = lists.create_list(conn, 'Saturdya')
+
+    lists.update_list(conn, list_id, name='Saturday')
+
+    assert lists.get_list(conn, list_id)['name'] == 'Saturday'
+
+
+def test_the_battle_size_can_be_changed_after_the_fact(conn):
+    list_id = lists.create_list(conn, 'Saturday', points_limit=1000)
+
+    lists.update_list(conn, list_id, points_limit=2000)
+
+    row = lists.get_list(conn, list_id)
+    assert row['points_limit'] == 2000
+    assert row['battle_size'] == 'Strike Force'
+
+
+def test_clearing_the_battle_size_means_no_limit_not_zero(conn):
+    """An empty picker is "—", and 0 would be a limit no list can meet."""
+    list_id = lists.create_list(conn, 'Saturday', points_limit=2000)
+
+    lists.update_list(conn, list_id, points_limit='')
+
+    assert lists.get_list(conn, list_id)['points_limit'] is None
+
+
+def test_naming_one_field_does_not_blank_the_others(conn, orks):
+    """The bug `update_unit` shipped, and the reason it takes **fields rather
+    than a whole row."""
+    list_id = lists.create_list(conn, 'Saturday', faction_id=orks,
+                                points_limit=2000, notes='bring the Trukk')
+
+    lists.update_list(conn, list_id, name='Sunday')
+
+    row = lists.get_list(conn, list_id)
+    assert row['name'] == 'Sunday'
+    assert row['faction_id'] == orks
+    assert row['points_limit'] == 2000
+    assert row['notes'] == 'bring the Trukk'
+
+
+def test_a_list_cannot_be_renamed_to_nothing(conn):
+    list_id = lists.create_list(conn, 'Saturday')
+
+    with pytest.raises(ValueError, match='needs a name'):
+        lists.update_list(conn, list_id, name='   ')
+
+
+def test_editing_cannot_rewrite_what_was_pasted(conn):
+    """`raw_text` and `source_format` are the record of the paste, and
+    `reparse` reads them. A form that could overwrite them would let a typo
+    erase the provenance."""
+    list_id = lists.create_list(conn, 'Pasted', raw_text='20 Boyz',
+                                source_format='newrecruit')
+
+    with pytest.raises(ValueError, match='cannot write'):
+        lists.update_list(conn, list_id, raw_text='nonsense')
+
+    assert lists.get_list(conn, list_id)['raw_text'] == '20 Boyz'
+
+
+def test_editing_nothing_changes_nothing(conn):
+    list_id = lists.create_list(conn, 'Saturday')
+
+    assert lists.update_list(conn, list_id) is False
+    assert lists.get_list(conn, list_id)['name'] == 'Saturday'
+
+
+def test_editing_a_list_leaves_its_entries_alone(conn, sheets):
+    """The entries are edited in the table above the form. Rewriting the list's
+    own details must not disturb what is in it."""
+    list_id = lists.create_list(conn, 'Saturday', points_limit=1000)
+    lists.add_entry(conn, list_id, sheets['Boyz'], 20)
+
+    lists.update_list(conn, list_id, points_limit=2000, name='Sunday')
+
+    assert lists.list_lists(conn)[0]['entry_count'] == 1

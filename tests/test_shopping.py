@@ -2,10 +2,13 @@
 
 Spec §7. The wishlist answers in datasheets; a shop sells boxes. What matters
 most in here is that the plan never *understates* — not the models it leaves
-uncovered, not the spare it arrives with, and above all not the price. A
-shopping total that reads low is the one failure that costs Clay money at a
-till, so every test that touches money is really testing that it refuses to
-guess.
+uncovered, and not the spare it arrives with.
+
+There is no money in these tests because there is none on the screen. Clay,
+2026-08-26: "Spend and kits are obsolete… I just need to be able to track
+models here." The totals, the three price states and the bundle-against-à-la-
+carte comparison went with it; the last test here pins their absence, because a
+figure nothing renders is one that drifts out of step unnoticed.
 """
 
 import os
@@ -59,11 +62,13 @@ def want(conn, stages, datasheet_id, count):
                            stage_id=stages['Wishlist'])
 
 
-def box(conn, name, contents, sheets, rrp_cents=None, faction_id=None):
+def box(conn, name, contents, sheets, faction_id=None):
+    """No price. Clay, 2026-08-26: "Spend and kits are obsolete" — the app no
+    longer asks what a box costs, so there is nothing to total."""
     return kt.create_template(
         conn, name,
         [{'datasheet_id': sheets[n], 'model_count': c} for n, c in contents],
-        rrp_cents=rrp_cents, faction_id=faction_id)
+        faction_id=faction_id)
 
 
 def line_for(result, name):
@@ -140,7 +145,8 @@ def test_a_line_says_what_it_is_for(conn, stages, sheets):
 
 def test_a_smaller_overage_wins_an_otherwise_even_tie(conn, stages, sheets):
     """Two boxes covering the same seven Boyz are not equally good if one
-    arrives with three spare and the other with thirteen."""
+    arrives with three spare and the other with thirteen. With no price on the
+    screen this is the only cost left to weigh."""
     want(conn, stages, sheets['Boyz'], 7)
     box(conn, 'Big box', [('Boyz', 20)], sheets)
     box(conn, 'Small box', [('Boyz', 10)], sheets)
@@ -199,7 +205,6 @@ def test_an_empty_wishlist_plans_nothing(conn, stages, sheets):
 
     assert result['best']['lines'] == []
     assert result['uncovered'] == []
-    assert result['saving'] is None
 
 
 def test_an_empty_catalogue_reports_everything_uncovered(conn, stages, sheets):
@@ -212,138 +217,6 @@ def test_an_empty_catalogue_reports_everything_uncovered(conn, stages, sheets):
 
     assert result['best']['lines'] == []
     assert [u['name'] for u in result['uncovered']] == ['Boyz']
-
-
-# ── Money, and refusing to guess about it ────────────────
-
-def test_a_fully_priced_plan_totals(conn, stages, sheets):
-    want(conn, stages, sheets['Boyz'], 20)
-    box(conn, 'Boyz', [('Boyz', 10)], sheets, rrp_cents=3750)
-
-    best = shopping.plan(conn)['best']
-
-    assert best['state'] == shopping.PRICED
-    assert best['cents'] == 7500
-
-
-def test_one_unpriced_box_makes_the_whole_total_a_floor(conn, stages, sheets):
-    """The failure worth engineering against: a total that quietly leaves out
-    the boxes it has no price for reads *lower* than the truth, which is the
-    one direction a shopping total must never be wrong in."""
-    want(conn, stages, sheets['Boyz'], 10)
-    want(conn, stages, sheets['Trukk'], 1)
-    box(conn, 'Boyz', [('Boyz', 10)], sheets, rrp_cents=3750)
-    box(conn, 'Trukk', [('Trukk', 1)], sheets)          # no price
-
-    best = shopping.plan(conn)['best']
-
-    assert best['state'] == shopping.PARTIAL
-    assert best['cents'] == 3750, 'the figure is what is known, shown as a floor'
-
-
-def test_a_plan_with_no_prices_at_all_shows_no_figure(conn, stages, sheets):
-    """Zero would be a lie in the most expensive direction available."""
-    want(conn, stages, sheets['Boyz'], 10)
-    box(conn, 'Boyz', [('Boyz', 10)], sheets)
-
-    best = shopping.plan(conn)['best']
-
-    assert best['state'] == shopping.UNPRICED
-    assert best['cents'] is None
-
-
-def test_a_known_price_wins_a_tie_over_an_unknown_one(conn, stages, sheets):
-    """Not an optimisation — an unpriced box turns the whole total into a
-    floor, so where the choice is otherwise even the plan prefers the one it
-    can stand behind."""
-    want(conn, stages, sheets['Boyz'], 10)
-    box(conn, 'A unpriced', [('Boyz', 10)], sheets)
-    box(conn, 'B priced', [('Boyz', 10)], sheets, rrp_cents=3750)
-
-    best = shopping.plan(conn)['best']
-
-    assert line_for(best, 'B priced') is not None
-    assert best['state'] == shopping.PRICED
-
-
-def test_the_cheaper_of_two_priced_boxes_wins(conn, stages, sheets):
-    want(conn, stages, sheets['Boyz'], 10)
-    box(conn, 'Dear', [('Boyz', 10)], sheets, rrp_cents=5000)
-    box(conn, 'Cheap', [('Boyz', 10)], sheets, rrp_cents=3750)
-
-    assert line_for(shopping.plan(conn)['best'], 'Cheap') is not None
-
-
-# ── Bundle against à la carte ────────────────────────────
-
-def test_the_alacarte_side_uses_only_single_unit_boxes(conn, stages, sheets):
-    want(conn, stages, sheets['Boyz'], 10)
-    want(conn, stages, sheets['Trukk'], 1)
-    box(conn, 'Combat Patrol', [('Boyz', 10), ('Trukk', 1)], sheets, rrp_cents=9000)
-    box(conn, 'Boyz', [('Boyz', 10)], sheets, rrp_cents=3750)
-    box(conn, 'Trukk', [('Trukk', 1)], sheets, rrp_cents=3500)
-
-    result = shopping.plan(conn)
-
-    assert line_for(result['best'], 'Combat Patrol') is not None
-    assert {line['box']['name'] for line in result['alacarte']['lines']} == \
-        {'Boyz', 'Trukk'}
-
-
-def test_a_saving_is_the_difference_between_the_two_totals(conn, stages, sheets):
-    want(conn, stages, sheets['Boyz'], 10)
-    want(conn, stages, sheets['Trukk'], 1)
-    box(conn, 'Combat Patrol', [('Boyz', 10), ('Trukk', 1)], sheets, rrp_cents=6000)
-    box(conn, 'Boyz', [('Boyz', 10)], sheets, rrp_cents=3750)
-    box(conn, 'Trukk', [('Trukk', 1)], sheets, rrp_cents=3500)
-
-    result = shopping.plan(conn)
-
-    assert result['best']['cents'] == 6000
-    assert result['alacarte']['cents'] == 7250
-    assert result['saving'] == 1250
-
-
-def test_a_bundle_that_costs_more_reports_a_negative_saving(conn, stages, sheets):
-    """A comparison that only ever flatters the bundle is not a comparison. If
-    the singles are cheaper, that is the thing worth knowing."""
-    want(conn, stages, sheets['Boyz'], 10)
-    want(conn, stages, sheets['Trukk'], 1)
-    box(conn, 'Combat Patrol', [('Boyz', 10), ('Trukk', 1)], sheets, rrp_cents=9000)
-    box(conn, 'Boyz', [('Boyz', 10)], sheets, rrp_cents=3750)
-    box(conn, 'Trukk', [('Trukk', 1)], sheets, rrp_cents=3500)
-
-    assert shopping.plan(conn)['saving'] == -1750
-
-
-def test_no_saving_is_claimed_when_either_side_is_only_a_floor(conn, stages, sheets):
-    """Subtracting one floor from another gives a number that bounds nothing —
-    a figure that looks like money and means nothing."""
-    want(conn, stages, sheets['Boyz'], 10)
-    want(conn, stages, sheets['Trukk'], 1)
-    box(conn, 'Combat Patrol', [('Boyz', 10), ('Trukk', 1)], sheets, rrp_cents=6000)
-    box(conn, 'Boyz', [('Boyz', 10)], sheets, rrp_cents=3750)
-    box(conn, 'Trukk', [('Trukk', 1)], sheets)          # no price
-
-    result = shopping.plan(conn)
-
-    assert result['alacarte']['state'] == shopping.PARTIAL
-    assert result['saving'] is None
-
-
-def test_no_saving_is_claimed_when_the_singles_cannot_cover_it(conn, stages, sheets):
-    """If no one sells a Trukk on its own, the à la carte total is not cheaper
-    — it is impossible, and quietly costing less by leaving the Trukk out would
-    recommend against the only box that works."""
-    want(conn, stages, sheets['Boyz'], 10)
-    want(conn, stages, sheets['Trukk'], 1)
-    box(conn, 'Combat Patrol', [('Boyz', 10), ('Trukk', 1)], sheets, rrp_cents=6000)
-    box(conn, 'Boyz', [('Boyz', 10)], sheets, rrp_cents=3750)
-
-    result = shopping.plan(conn)
-
-    assert [u['name'] for u in result['alacarte']['uncovered']] == ['Trukk']
-    assert result['saving'] is None
 
 
 # ── Agreement with the rest of the app ───────────────────
@@ -420,3 +293,18 @@ def test_a_datasheet_listed_twice_in_one_box_is_summed(conn, stages, sheets):
     best = shopping.plan(conn)['best']
 
     assert line_for(best, 'Boyz')['qty'] == 1, 'one box already holds twenty'
+
+
+def test_the_plan_carries_no_money_at_all(conn, stages, sheets):
+    """The screen stopped showing prices, so the module stopped computing them.
+    A total nothing renders is dead weight that would drift out of step with
+    the catalogue and nobody would notice."""
+    want(conn, stages, sheets['Boyz'], 10)
+    box(conn, 'Boyz', [('Boyz', 10)], sheets)
+
+    result = shopping.plan(conn)
+
+    assert set(result) == {'wanted', 'best', 'uncovered'}
+    assert 'cents' not in result['best']
+    assert 'state' not in result['best']
+    assert all('cents' not in line for line in result['best']['lines'])

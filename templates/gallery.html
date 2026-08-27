@@ -120,13 +120,11 @@
             <span class="what">
               <b>Bought</b>
               {{ e.name }}
-              {% if e.cost_cents %}<span class="muted">· {{ e.cost_cents|money }}</span>{% endif %}
             </span>
           {% else %}
             <span class="what">
               <b>{{ e.status|capitalize }}</b>
               {{ e.name }}
-              {% if e.cost_cents %}<span class="muted">· {{ e.cost_cents|money }}</span>{% endif %}
             </span>
           {% endif %}
         </li>
