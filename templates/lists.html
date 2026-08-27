@@ -51,6 +51,13 @@
                 limit {{ l.points_limit }}{% if l.battle_size %} <span class="muted">{{ l.battle_size }}</span>{% endif %} ·
               {% endif %}
               {{ l.entry_count }} unit{{ '' if l.entry_count == 1 else 's' }}
+              {# The record, for lists that have played. Absent rather than
+                 "0–0": a list you have never fielded has no record, and a
+                 zero implies you played and lost nothing. #}
+              {%- set rec = records.get(l.id) %}
+              {%- if rec %} · {{ rec.played }}
+                game{{ '' if rec.played == 1 else 's' }}, {{ rec.label }}
+              {%- endif %}
             </span>
           </a>
           <p class="counts">

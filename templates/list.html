@@ -210,6 +210,87 @@
     </div>
   {% endif %}
 
+  {# ── Games ─────────────────────────────────────────────
+     Clay: "games played by list, win/loss and point difference 0-100."
+
+     He plays in Battlebase — "playing the game is a whole other thing" — so
+     this records outcomes and nothing else. No mission, no objectives, no
+     turns. A list is what a collection is built towards, and whether it wins
+     is the one fact about it the app cannot read off a shelf.
+
+     The record sits in the heading rather than becoming a fourth stat tile:
+     the three above are one sentence on one row, and a fourth wraps onto a
+     line of its own and reads as a separate fact. #}
+  <h2>Games
+    {% if record.played %}<span class="muted">{{ record.label }}</span>{% endif %}
+  </h2>
+
+  {% if record.played %}
+    <p class="hint">
+      {{ record.played }} game{{ '' if record.played == 1 else 's' }} ·
+      {# Signed on purpose. "12" reads the same whether you are winning or
+         losing every game, which answers nothing anyone would ask. #}
+      <b>{{ '+' if record.margin_avg > 0 }}{{ record.margin_avg }}</b>
+      average margin
+    </p>
+
+    <ul class="units">
+      {% for g in games %}
+        <li>
+          <div class="what">
+            {# No colour on the result. Red would read as "needs attention" in
+               an app where that is what red means everywhere else, and a loss
+               is a fact rather than a fault. The word is in bold and first. #}
+            <b>{{ g.result | capitalize }} {{ g.your_score }}–{{ g.their_score }}</b>
+            <span class="muted">
+              {# The margin sits beside the scores it comes from rather than on
+                 a line of its own: on its own it was a second copy of what
+                 "Lost 55–60" already says, and cost every game a line. #}
+              {{ '+' if g.margin > 0 }}{{ g.margin }} · {{ g.played_on }}
+              {% if g.opponent_faction_name %} · vs {{ g.opponent_faction_name }}{% endif %}
+            </span>
+          </div>
+          {% if g.notes %}<p class="counts">{{ g.notes }}</p>{% endif %}
+          {# A correction, not a disposal: a score that was never the score has
+             no history worth keeping. Quiet text rather than a bordered button
+             — it is the rarest thing on this screen and was rendering as the
+             heaviest. #}
+          <button class="link drop-game" data-game="{{ g.id }}">Remove</button>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="hint">No games yet.</p>
+  {% endif %}
+
+  <details class="whichones" id="add-game">
+    <summary>Record a game</summary>
+    <form class="stack" id="game-form" data-list="{{ list.id }}">
+      {# Both totals rather than a difference: one more number typed, and it is
+         what tells "lost 85-90" from "lost 45-90". Win, loss and margin all
+         fall out of the pair, so none of them is asked for or stored. #}
+      <label>Your score
+        <input name="your_score" type="number" required
+               min="0" max="{{ score_max }}" inputmode="numeric">
+      </label>
+      <label>Their score
+        <input name="their_score" type="number" required
+               min="0" max="{{ score_max }}" inputmode="numeric">
+      </label>
+      <label>Played on<input name="played_on" type="date" value="{{ today }}"></label>
+      <label>Their faction
+        <select name="opponent_faction_id">
+          <option value="">—</option>
+          {% for f in factions %}
+            <option value="{{ f.id }}">{{ f.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Note<input name="notes" placeholder="What you would change"></label>
+      <div class="actions"><button class="go" type="submit">Record it</button></div>
+    </form>
+  </details>
+
   {% if list.raw_text %}
     <h2>The paste this came from</h2>
     <p class="hint">

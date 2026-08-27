@@ -92,6 +92,41 @@ document.addEventListener('click', async (e) => {
     return;
   }
 
+  const game = e.target.closest('#game-form button[type="submit"]');
+  if (game) {
+    e.preventDefault();
+    const form = game.closest('form');
+    game.disabled = true;
+    try {
+      await post(`/api/lists/${form.dataset.list}/games`, formBody(form));
+      // Reload rather than prepend the row. One game moves the record in the
+      // heading, the average margin, and this list's line on the index — three
+      // places to keep in step by hand, for one request.
+      location.reload();
+    } catch (err) {
+      game.disabled = false;
+      toast(err.message, 'error');
+    }
+    return;
+  }
+
+  const dropGame = e.target.closest('.drop-game');
+  if (dropGame) {
+    // Asks, like the list delete and for the same reason: nothing sits beside
+    // it to put the game back. Short prompt because the row you tapped is
+    // right there — unlike the delete button at the foot of the page.
+    if (!window.confirm('Remove this game?')) return;
+    dropGame.disabled = true;
+    try {
+      await post(`/api/games/${dropGame.dataset.game}`, null, 'DELETE');
+      location.reload();
+    } catch (err) {
+      dropGame.disabled = false;
+      toast(err.message, 'error');
+    }
+    return;
+  }
+
   const reparse = e.target.closest('#reparse');
   if (reparse) {
     reparse.disabled = true;
