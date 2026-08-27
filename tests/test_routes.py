@@ -539,6 +539,40 @@ def test_home_offers_something_to_pick_back_up(client, army_with_unit):
     assert 'Pick up where you left off' in body
 
 
+def test_home_says_what_you_got_done_lately(client, army_with_unit):
+    """Spec §5.1, read back out of `stage_events`."""
+    with db.connect(db.DB_PATH) as conn:
+        for _ in range(6):
+            col.advance_unit(conn, army_with_unit['unit_id'])
+
+    body = client.get('/').get_data(as_text=True)
+
+    assert 'Last 30 days' in body
+    assert '10 models finished' in ' '.join(body.split())
+    assert 'effort spent' in body
+
+
+def test_a_month_that_finished_nothing_leads_with_the_work(client, army_with_unit):
+    """Priming sixty Boyz is an evening every night and finishes not one
+    model. Answering that with "0 finished" is the abandonment failure this
+    app is designed against, so the headline becomes what did move."""
+    with db.connect(db.DB_PATH) as conn:
+        col.advance_unit(conn, army_with_unit['unit_id'])
+
+    body = ' '.join(client.get('/').get_data(as_text=True).split())
+
+    assert '10 models moved forward' in body
+    assert 'models finished' not in body
+
+
+def test_home_stays_quiet_about_a_month_with_no_work_in_it(client, army_with_unit):
+    """A line reading "0 finished" every day is furniture. The unit exists and
+    its models arrived — arrivals are not work, so there is nothing to say."""
+    body = client.get('/').get_data(as_text=True)
+
+    assert 'Last 30 days' not in body
+
+
 def test_the_armies_index_kept_its_own_screen(client, army_with_unit):
     assert client.get('/armies').status_code == 200
 

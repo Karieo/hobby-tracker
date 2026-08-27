@@ -47,6 +47,39 @@
     </div>
   {% endif %}
 
+  {# ── What you got done ────────────────────────────────
+     Spec §5.1, read back out of `stage_events`. Quiet when nothing moved: a
+     line reading "0 finished" every day is furniture, and the screen already
+     has "Pick up where you left off" for a stalled month.
+
+     The headline is models finished — except in a month that finished nothing,
+     where it is the work instead. Priming sixty Boyz is an evening every night
+     and finishes not one model, and a home screen answering that with a zero
+     is the abandonment failure this app is designed against. #}
+  {% if recent.models_touched %}
+    <h2 class="label">Last {{ recent.days }} days</h2>
+    <div class="panel">
+      <b>
+        {% if recent.finished %}
+          {{ recent.finished }}
+          model{{ '' if recent.finished == 1 else 's' }} finished
+        {% else %}
+          {{ recent.models_touched }}
+          model{{ '' if recent.models_touched == 1 else 's' }} moved forward
+        {% endif %}
+      </b>
+      {# Effort alongside the count, never instead of it: a Knight and a
+         Termagant are both "1 model". Same currency /backlog reports what is
+         left in, so the two screens read against each other. #}
+      <p class="muted">{{ recent.effort_done }} effort spent</p>
+      <p class="counts">
+        {% for s in recent.by_stage %}
+          {{ s.n }} {{ s.name | lower }}{{ '' if loop.last else ' · ' }}
+        {% endfor %}
+      </p>
+    </div>
+  {% endif %}
+
   {% if armies %}
     <h2 class="label">By army</h2>
     <div class="multiples">
