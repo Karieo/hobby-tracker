@@ -109,6 +109,77 @@ def stages_for(conn, basing=None, ladder=None):
     return [s for s in ladder if not s['is_basing']]
 
 
+def walks(conn, ladder=None):
+    """``{basing: positions a model of that kind walks}``, both kinds.
+
+    The ladder minus the stages it never visits: Wishlist, because the walk
+    begins at On sprue and buying something is not work, and the two basing
+    stages for a model with no base — which is `stages_for`'s job, called
+    here rather than restated, so there is still one answer to which stages a
+    Trukk goes through.
+
+    `backlog` and `recent` each had their own copy of this. They agreed, but
+    they were copies, and the third reading of the same idea — the rollups'
+    `effort_done` — did not agree with either.
+    """
+    ladder = ladder if ladder is not None else stage_ladder(conn)
+    return {basing: [s['position'] for s in stages_for(conn, basing, ladder)
+                     if s['is_owned']]
+            for basing in ('based', 'unbased')}
+
+
+def done_fraction(position, walk):
+    """How much of a model's effort it has earned by reaching this position.
+
+    **This is the app's one definition of progress**, and every surface that
+    reports work — done or left — goes through it. `/backlog` says what a
+    model has still to cost (`1 - done_fraction`), `recent.py` says what one
+    move was worth (the difference between two of these), and the army, unit
+    and home rollups say how much is already spent. They were three separate
+    readings of the same sentence until 2026-08-29, and one of them was not a
+    reading at all: `effort_done` counted **only** models that had reached
+    Battle ready, so four assembled models showed as 0 and an army mid-build
+    read 0/188 and 0% while `/backlog` was already reporting a chunk of that
+    effort spent. The two screens contradicted each other on the same
+    collection.
+
+    A model on sprue has earned nothing — the walk starts there. One that
+    needs only its final check has earned five sixths. Battle ready is 1.0 by
+    construction rather than by a special case, which is why the terminal
+    stage no longer appears in any of these queries.
+
+    A position off the walk (a based-only stage under an unbased datasheet)
+    counts the steps below it, so nothing is lost if a model is sitting
+    somewhere its own ladder does not go.
+    """
+    total = len(walk) - 1
+    if position is None or total < 1:
+        return 0.0
+    return len([p for p in walk if walk[0] < p <= position]) / total
+
+
+def effort_credit_sql(conn, ladder=None, stage='st', datasheet='d'):
+    """SQL for the effort one model has earned, to sum inside a rollup.
+
+    A generated CASE rather than a join, because the fraction depends on two
+    things SQL cannot cheaply put together — the model's position and its
+    *datasheet's* basing, which decides which ladder it is a fraction of. The
+    numbers come from `done_fraction`, so there is still one rule; this only
+    carries it into the query. NULL position (a LEFT JOIN with no model)
+    falls to the ELSE and earns nothing.
+    """
+    ladder = ladder if ladder is not None else stage_ladder(conn)
+    arms = {}
+    for basing, walk in walks(conn, ladder).items():
+        whens = ' '.join(
+            f"WHEN {s['position']} THEN "
+            f'{done_fraction(s["position"], walk):.6f}'
+            for s in ladder)
+        arms[basing] = f'CASE {stage}.position {whens} ELSE 0 END'
+    return (f"{datasheet}.effort * CASE WHEN {datasheet}.basing = 'unbased' "
+            f"THEN ({arms['unbased']}) ELSE ({arms['based']}) END")
+
+
 def next_stage(conn, stage_id):
     """The stage after this one, or None at the end of the pipeline."""
     row = conn.execute(
@@ -127,6 +198,7 @@ def list_armies(conn):
     own row rather than being hidden, so nothing goes missing by being
     unfiled.
     """
+    credit = effort_credit_sql(conn)
     rows = [dict(r) for r in conn.execute(f"""
         SELECT a.id, a.name, a.notes, a.sort_order, f.name AS faction_name,
                COUNT(DISTINCT u.id)                                AS unit_count,
@@ -134,7 +206,7 @@ def list_armies(conn):
                COALESCE(SUM(CASE WHEN st.is_owned THEN 1 ELSE 0 END), 0)
                                                                    AS owned_count,
                COALESCE(SUM(d.effort), 0)                          AS effort_total,
-               COALESCE(SUM(CASE WHEN st.is_terminal THEN d.effort ELSE 0 END), 0)
+               COALESCE(SUM({credit}), 0)
                                                                    AS effort_done,
                MAX(m.stage_changed_at)                             AS last_activity
           FROM armies a
@@ -153,7 +225,7 @@ def list_armies(conn):
                COALESCE(SUM(CASE WHEN st.is_owned THEN 1 ELSE 0 END), 0)
                                                                    AS owned_count,
                COALESCE(SUM(d.effort), 0)                          AS effort_total,
-               COALESCE(SUM(CASE WHEN st.is_terminal THEN d.effort ELSE 0 END), 0)
+               COALESCE(SUM({credit}), 0)
                                                                    AS effort_done,
                MAX(m.stage_changed_at)                             AS last_activity
           FROM units u
@@ -175,17 +247,15 @@ def list_armies(conn):
 
     ladder = stage_ladder(conn)
     for row in rows:
-        row['completion'] = _pct(row['effort_done'], row['effort_total'])
+        _spent(row)
         row['segments'] = _segments(ladder, spread.get(row['id'], {}),
                                     row['model_count'])
     if unassigned['unit_count']:
         unassigned.update(id=None, name='Unassigned', notes=None,
                           faction_name=None,
-                          completion=_pct(unassigned['effort_done'],
-                                          unassigned['effort_total']),
                           segments=_segments(ladder, spread.get(None, {}),
                                              unassigned['model_count']))
-        rows.append(unassigned)
+        rows.append(_spent(unassigned))
     return rows
 
 
@@ -224,6 +294,7 @@ def army_stats(conn, army_id):
     """Header figures for the army detail screen."""
     where = 'u.army_id = ?' if army_id else 'u.army_id IS NULL'
     args = (army_id,) if army_id else ()
+    credit = effort_credit_sql(conn)
     row = dict(conn.execute(f"""
         SELECT COUNT(DISTINCT u.id)                              AS unit_count,
                COUNT(m.id)                                       AS model_count,
@@ -232,7 +303,7 @@ def army_stats(conn, army_id):
                COALESCE(SUM(CASE WHEN st.is_terminal THEN 1 ELSE 0 END), 0)
                                                                  AS done_count,
                COALESCE(SUM(d.effort), 0)                        AS effort_total,
-               COALESCE(SUM(CASE WHEN st.is_terminal THEN d.effort ELSE 0 END), 0)
+               COALESCE(SUM({credit}), 0)
                                                                  AS effort_done,
                MAX(m.stage_changed_at)                           AS last_activity
           FROM units u
@@ -241,8 +312,7 @@ def army_stats(conn, army_id):
           LEFT JOIN stages st ON st.id = m.stage_id
          WHERE {where} AND {_ACTIVE_UNIT}
     """, args).fetchone())
-    row['completion'] = _pct(row['effort_done'], row['effort_total'])
-    return row
+    return _spent(row)
 
 
 # ── Units ────────────────────────────────────────────────
@@ -250,6 +320,7 @@ def army_stats(conn, army_id):
 def list_units(conn, army_id=None, unassigned=False, include_disposed=False,
                kit_id=None):
     """Units with the per-stage counts the stage bar is drawn from."""
+    credit = effort_credit_sql(conn)
     clauses, args = [], []
     if kit_id is not None:
         # A kit's own units, disposed or not: the kit page has to show what is
@@ -279,7 +350,7 @@ def list_units(conn, army_id=None, unassigned=False, include_disposed=False,
                COALESCE(SUM(CASE WHEN st.is_owned THEN 1 ELSE 0 END), 0)
                                                                  AS owned_count,
                COUNT(m.id) * d.effort                            AS effort_total,
-               COALESCE(SUM(CASE WHEN st.is_terminal THEN d.effort ELSE 0 END), 0)
+               COALESCE(SUM({credit}), 0)
                                                                  AS effort_done,
                MAX(m.stage_changed_at)                           AS last_activity
           FROM units u
@@ -311,7 +382,7 @@ def list_units(conn, army_id=None, unassigned=False, include_disposed=False,
         counts = breakdown.get(unit['id'], {})
         unit['stage_counts'] = counts
         unit['segments'] = _segments(ladder, counts, unit['model_count'])
-        unit['completion'] = _pct(unit['effort_done'], unit['effort_total'])
+        _spent(unit)
         unit['display_name'] = unit['nickname'] or unit['datasheet_name']
     return units
 
@@ -1264,6 +1335,20 @@ def _pct(part, whole):
     return round(part / whole * 100) if whole else 0
 
 
+def _spent(row):
+    """Turn a row's raw effort credit into what a screen shows.
+
+    The percentage comes off the exact figure and the figure is rounded
+    after, never before: a lone assembled Deff Dread has earned 1.667 of its
+    8, which is 17% — round it to 1.7 first and the same model reads 21%,
+    round it to 1.3 and it reads 16%. One decimal is plenty on screen and
+    nowhere near enough to divide by.
+    """
+    row['completion'] = _pct(row['effort_done'], row['effort_total'])
+    row['effort_done'] = round(row['effort_done'], 1)
+    return row
+
+
 def _segments(ladder, counts, total):
     """Stage bar segments — only the stages actually present, in order."""
     if not total:
@@ -1710,6 +1795,8 @@ def inventory(conn, query=None, faction_id=None, game_system=None,
         units_by_sheet.setdefault(unit['datasheet_id'], []).append(unit)
 
     ladder = stage_ladder(conn)
+    position = {s['id']: s['position'] for s in ladder}
+    ladders = walks(conn, ladder)
     for row in rows:
         counts = spread.get(row['datasheet_id'], {})
         row['units'] = units_by_sheet.get(row['datasheet_id'], [])
@@ -1717,8 +1804,13 @@ def inventory(conn, query=None, faction_id=None, game_system=None,
         row['segments'] = _segments(ladder, counts,
                                     row['owned_count'] + row['wanted_count'])
         row['effort_total'] = row['owned_count'] * row['effort']
-        row['effort_done'] = row['done_count'] * row['effort']
-        row['completion'] = _pct(row['effort_done'], row['effort_total'])
+        # Partial credit, the same rule the army and unit rollups sum in SQL —
+        # in Python here because the per-stage counts are already to hand.
+        walk = ladders[row['basing'] or 'based']
+        row['effort_done'] = row['effort'] * sum(
+            n * done_fraction(position[sid], walk)
+            for sid, n in counts.items())
+        _spent(row)
         row['owns_any'] = row['owned_count'] > 0
         # Only worth asking about a model Clay actually has, and only while
         # nobody has answered.
@@ -1749,6 +1841,7 @@ def home_summary(conn):
     a filter half the queries ignore is a collection that over-counts quietly
     for months.
     """
+    credit = effort_credit_sql(conn)
     row = conn.execute(f"""
         SELECT COUNT(m.id)                                          AS models,
                COALESCE(SUM(CASE WHEN st.is_owned THEN 1 ELSE 0 END), 0) AS owned,
@@ -1757,7 +1850,7 @@ def home_summary(conn):
                COALESCE(SUM(CASE WHEN st.is_terminal THEN 1 ELSE 0 END), 0) AS done,
                COALESCE(SUM(CASE WHEN st.is_owned THEN d.effort ELSE 0 END), 0)
                                                                     AS effort_total,
-               COALESCE(SUM(CASE WHEN st.is_terminal THEN d.effort ELSE 0 END), 0)
+               COALESCE(SUM({credit}), 0)
                                                                     AS effort_done
           FROM units u
           JOIN datasheets d ON d.id = u.datasheet_id

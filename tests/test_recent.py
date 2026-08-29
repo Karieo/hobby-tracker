@@ -133,20 +133,25 @@ def test_a_vehicle_walks_its_own_shorter_ladder(conn, stages, sheets):
     Assembled → Primed skips 'Base prepared'. For Boyz that is two of the six
     steps they walk; for a Trukk, which has no base, 'Base prepared' is not on
     its ladder at all, so it is one step of four. Charging every vehicle the
-    full ladder is what would make them look permanently unfinished — the fix
-    `backlog._steps_by_basing` already makes, mirrored here.
+    full ladder is what would make them look permanently unfinished — the
+    reason `col.walks` is keyed by basing at all.
 
     Asserted on `_fraction`, because that is where the claim lives. Going
     through `summary` would multiply by two different efforts and round to one
     decimal, so a passing comparison would say nothing about the ladder.
+
+    `approx` because a move is now the difference between two positions on the
+    ladder rather than a single count, and 3/6 − 1/6 is not bit-for-bit 2/6.
     """
     ladder = col.stage_ladder(conn)
-    walks = recent._walks(conn, ladder)
+    walks = col.walks(conn, ladder)
     assembled, primed = stages['Assembled'], stages['Primed']
     at = {s['id']: s['position'] for s in ladder}
 
-    assert recent._fraction(at[assembled], at[primed], walks['unbased']) == 1 / 4
-    assert recent._fraction(at[assembled], at[primed], walks['based']) == 2 / 6
+    assert recent._fraction(at[assembled], at[primed],
+                            walks['unbased']) == pytest.approx(1 / 4)
+    assert recent._fraction(at[assembled], at[primed],
+                            walks['based']) == pytest.approx(2 / 6)
 
 
 def test_the_shorter_ladder_reaches_the_screen(conn, stages, sheets):

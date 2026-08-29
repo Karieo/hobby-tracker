@@ -24,11 +24,23 @@ wrong, or answering "what next". The run before this one is at the bottom.
 
    A screenshot of `/lists/import` on his phone, keyboard up over a `required`
    name field, with the name three lines below it in the textarea (#65).
+6. > "When importing a list I need to be able to change the number or allow it
+   > to assume 1 = 10 squad."
+
+   A screenshot of three rows reading `1×` that should have read 10 and 20
+   (#66).
+7. > "The effort accrual bug is still live. Killa Kans, Painboy, Wartrakk and
+   > Weirdboy are all built with effort_done at 0, which drags the whole army
+   > to 0/188 and 0%."
+
+   One definition of progress, read by every screen that reports it (#67).
 
 ## 2 · Current state
 
-**`main` is green at `ab2012a`** — PR #63 merged. **939 tests**, ShellCheck
-clean, no open PRs, no branch in flight.
+**`main` is green at `96f2a1e`** — PR #66 merged. **976 tests**, ShellCheck
+clean. #67 is in flight on `claude/new-session-8l17p6`, which was
+fast-forwarded onto the merged main rather than stacked on the already-merged
+commit.
 
 **Deployed state on bastion is four merges behind and the same item is still
 blocking.** Clay has **never run the Kill Team importer**, which is the only
@@ -87,9 +99,39 @@ bullet *nesting* and returned 1 for any flat block — 20 units and 92 models re
 as 20. For the gap report that is a survivable under-count; for `/add`, which
 *writes* the models, it is seventy miniatures silently missing.
 
+**#66 · The count is editable, and a count behind a separator is read.** One
+mis-parse caused both symptoms Clay's screenshot showed: `Boyz (160) · 20x` kept
+the whole suffix in the *name*, so the row matched no datasheet **and** the
+count stayed 1. `_TRAILING_NX` takes it off first, and the separator is required
+— without one the rule would eat the tail of any name ending in a digit and an
+x, and this repo has never read a verified export. The second half of the ask
+already existed: `_clamp_to_minimum` **is** "1 = 10 squad", and the failed name
+match was what stopped it running.
+
+**#67 · There is one definition of progress and every screen reads it.**
+`collection.done_fraction`. `effort_done` used to sum `CASE WHEN st.is_terminal
+THEN d.effort`, so a model earned its effort only at Battle ready — four
+assembled models read 0, and an army mid-build read 0% on the screen that leads
+with the number. Measured on Clay's own units: **0.0 spent against 81.4 left,
+out of 86**. `/backlog` had been crediting partial progress all along, so the
+two screens described the same collection differently.
+
+The rule existed twice already and the rollups were a third reading that was not
+one. Now `backlog` takes `1 -` it, `recent` takes the difference between two,
+and the four SQL rollups sum `effort_credit_sql` — a generated CASE carrying the
+same numbers into the query, because the fraction depends on the *datasheet's*
+basing and a Trukk walks four steps where Boyz walk six. Battle ready is 1.0 by
+construction, so `is_terminal` has left those queries entirely. `_spent` divides
+before it rounds: 1.667 of 8 is 17%, and rounding to 1.7 first reads 21%.
+
 ## 3 · Active files
 
-Nothing is in flight. New this run:
+**#67 is in flight** — `collection.py` (`walks`, `done_fraction`,
+`effort_credit_sql`, `_spent`, and the four rollups), `backlog.py`,
+`recent.py`, `templates/home.html`, `tests/test_collection.py`,
+`tests/test_recent.py`, plus `CLAUDE.md` and the spec.
+
+New this run:
 
 - `recent.py`, `tests/test_recent.py` — **new** (#61). No nav entry; the panel
   lives on Home.
@@ -105,11 +147,17 @@ Nothing is in flight. New this run:
   `templates/list_import*.html`, `static/js/list-import.js` — **new** (#65).
   The commit JS reads the fields rather than the button's data attributes,
   which would carry whatever they said before Clay corrected them.
+- `list_parse._TRAILING_NX`, the count input on both paste-confirm screens,
+  `data-min` on the candidate buttons and the `data-touched` guard in
+  `static/js/add.js` — **new** (#66).
+- `collection.walks` / `done_fraction` / `effort_credit_sql` / `_spent` —
+  **new** (#67). `backlog._steps_by_basing` and `recent._walks` are **gone**,
+  moved up rather than rewritten, so there is no new copy of the basing rule.
 
 ## 4 · Changes made
 
-Merged: #60, #61, #62, #63, #64 (the handoff itself). Test count 864 → 959,
-with #65 open.
+Merged: #60, #61, #62, #63, #64 (the handoff itself), #65, #66. Test count
+864 → 976, with #67 in flight.
 
 ## 5 · Failed attempts
 
@@ -152,18 +200,33 @@ The dev server runs `debug=False`, so Jinja caches templates; the first
 re-render after a template edit was byte-identical. Restart the server before
 believing a render.
 
-**Rendering the page found something in all four PRs.** "10 models finished"
+**A test I wrote for #67 was vacuous against the sabotage it was named for.**
+`test_the_army_rollup_and_the_backlog_never_contradict_each_other` survived
+reverting `done_fraction` to terminal-only, because **both** sides read that
+one function, so they stayed consistent while both being wrong. It bites the
+sabotage it is actually for — the SQL arm drifting from the Python one — and
+the headline test is what pins the bug itself. A consistency test cannot also
+be the correctness test.
+
+**The fix made a caption on the home screen false, and only rendering it
+showed that.** "of everything you own is battle ready" was exact while the
+percentage counted finished models, and a lie the moment a half-built army
+started earning credit: 17% under it, "3 of 79 models" beneath. Changing a
+number's meaning means re-reading every sentence built on it.
+
+**Rendering the page found something in all six PRs.** "10 models finished"
 above "… · 10 battle ready" (one fact twice); a per-game margin line restating
 what "Lost 55–60" already said; a remove control that was the heaviest element
-in every card despite being the rarest action; and "Lines *without* a stage word
-land at Assembled" on a paste where none of them have one.
+in every card despite being the rarest action; "Lines *without* a stage word
+land at Assembled" on a paste where none of them have one; and now a headline
+caption that contradicted the number above it.
 
 **`pkill -f devserver.py` killed my own shell** twice (exit 143). Stop a
 background task with its task id.
 
 ## 6 · Next steps
 
-**On bastion, and the first has now been outstanding for four merges:**
+**On bastion, and the first has now been outstanding for seven merges:**
 
 - **Deploy and run the Kill Team importer.** `git pull && ./deploy.sh`, then
   `docker-compose exec tracker python3 scripts/import_killteam.py`. The service
@@ -189,6 +252,9 @@ aimed at now.
 
 **Asked and unanswered:**
 
+- **Is he happy `/add` got the editable count he did not ask for?** #66 changed
+  both paste-confirm screens because they share `add.js` and doing one would
+  have started them behaving differently. Said so in the PR; no answer.
 - **Should one paste both create a list and add the models?** Today `/add` adds
   models and `/lists/import` makes a list — two doors, two pastes. Clay was
   offered the combination and has not answered.

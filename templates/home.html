@@ -7,11 +7,17 @@
    is dragging" — and then one named unit answers "what do I do now", which is
    the only one of the four that stops the app being a scoreboard. #}
 
+  {# The caption changed with the number on 2026-08-29. It used to read "of
+     everything you own is battle ready", which was true while the percentage
+     counted only finished models — and became a lie the moment a half-built
+     army started earning credit for the half. Rendering the screen is what
+     caught it: 17% under a caption saying "battle ready" above "3 of 79
+     models". The raw count keeps the word instead, where it is still exact. #}
   <section class="headline">
-    <p class="cap">of everything you own is battle ready</p>
+    <p class="cap">of the work on your collection is done</p>
     <b class="big">{{ summary.completion }}%</b>
     <p class="sub">
-      {{ summary.done }} of {{ summary.models }} models
+      {{ summary.done }} of {{ summary.models }} models battle ready
       {%- if summary.sealed %} ·
         <span class="sealed">{{ summary.sealed }}
           box{{ '' if summary.sealed == 1 else 'es' }} still sealed</span>

@@ -67,7 +67,7 @@ def backlog(conn, army_id=None, sort=DEFAULT_SORT):
     """
     ladder = col.stage_ladder(conn)
     rows = _units(conn, army_id)
-    steps = _steps_by_basing(conn, ladder)
+    steps = col.walks(conn, ladder)
 
     out = []
     for row in rows:
@@ -144,40 +144,32 @@ def _units(conn, army_id):
     return list(rows.values())
 
 
-def _steps_by_basing(conn, ladder):
-    """{basing: [positions a model of that kind walks]}.
-
-    Both keys are computed from the ladder rather than written down, so adding
-    a stage to the pipeline cannot leave this quietly measuring the old one.
-    """
-    out = {}
-    for basing in ('based', 'unbased'):
-        walk = [s['position'] for s in col.stages_for(conn, basing, ladder)
-                if s['is_owned']]
-        out[basing] = walk
-    return out
-
-
 def _work_left(stage_rows, walk):
     """How many models are unfinished, and what fraction of the effort remains.
 
-    A model contributes `steps still ahead of it / steps from the start`. One
-    on sprue contributes all of itself; one already based, needing only the
-    final check, contributes a sixth. A model that is battle ready contributes
-    nothing and is not counted as left at all.
+    A model contributes whatever it has *not* yet earned —
+    `1 - col.done_fraction`, the exact complement of what the army and unit
+    rollups report as spent. One on sprue contributes all of itself; one
+    already based, needing only the final check, contributes a sixth. A model
+    that is battle ready contributes nothing and is not counted as left at
+    all.
+
+    This used to count the steps ahead itself. It gave the same answer, and
+    that is the problem: it was a second copy of a rule the rollups then got
+    wrong in their own way, so `/backlog` and `/armies` could describe the
+    same collection differently. One function now, and both directions read
+    off it.
     """
-    total_steps = len(walk) - 1
     models_left = 0
     fraction = 0.0
     for row in stage_rows:
         if not row['is_owned'] or row['is_terminal']:
             continue
-        ahead = len([p for p in walk if p > row['position']])
-        if not ahead:
+        left = 1 - col.done_fraction(row['position'], walk)
+        if not left:
             continue
         models_left += row['n']
-        if total_steps:
-            fraction += row['n'] * ahead / total_steps
+        fraction += row['n'] * left
     return {'models_left': models_left, '_fraction': fraction}
 
 
