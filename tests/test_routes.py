@@ -2425,12 +2425,20 @@ def test_pasting_an_export_into_add_offers_only_its_units(client, army_with_unit
     assert 'Boyz' in body
 
 
-def test_the_preview_says_what_it_read_the_paste_as(client, army_with_unit):
-    """The parser switched itself. A screen that quietly changed how it read
-    your paste is one you stop trusting."""
+def test_the_preview_says_it_recognised_an_export(client, army_with_unit):
+    """The parser switched itself, and a screen that quietly changed how it
+    read your paste is one you stop trusting.
+
+    It says "an app export" rather than naming one. The detector's two names
+    come from samples written to a documented shape, and the only real export
+    this repo has detects as New Recruit while looking like neither — so naming
+    an app to Clay about his own list would be a confident claim with nothing
+    behind it.
+    """
     body = client.post('/add/preview', data={'text': GW_EXPORT}).get_data(as_text=True)
 
-    assert 'Read as the GW app' in body
+    assert 'Read as an app export' in body
+    assert 'New Recruit' not in body
 
 
 def test_a_shelf_paste_says_nothing_about_a_format(client, army_with_unit):

@@ -12,8 +12,15 @@
            The parser switched itself, and a screen that quietly changed how it
            read your paste is one you stop trusting — this is the same sentence
            the list page uses, for the same reason. #}
+        {# Says that it recognised an export, not which app wrote it. The
+           detector's two names come from samples written to a documented shape,
+           and the one real export this repo has — Clay's, in the fixtures —
+           matches neither cleanly while detecting as New Recruit. Telling him
+           his own list came out of an app it may not have come out of is a
+           confident claim with nothing behind it. Name the app here once he
+           says which it is. #}
         {% if source_format and source_format != 'unknown' %}
-          Read as {{ 'New Recruit' if source_format == 'newrecruit' else 'the GW app' }} ·
+          Read as an app export ·
         {% endif %}
         {{ rows|length }} unit{{ '' if rows|length == 1 else 's' }},
         {{ rows|length - unresolved }} matched{% if unresolved %},

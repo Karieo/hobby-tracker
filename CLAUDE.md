@@ -352,7 +352,41 @@ and the screen says so in those words rather than "lines without a stage word",
 which implies some have one. Found by rendering it: a 2000-point paste is fifty
 models arriving somewhere Clay had better have chosen on purpose. `/add` adds
 models to the collection and does **not** create a list — `/lists/import` is
-still the door for that, and the two are separate on purpose. Stdlib `sqlite3` with `sqlite3.Row`, a fresh connection
+still the door for that, and the two are separate on purpose.
+
+**There is one real export in the repo now, and it broke the count rule on
+arrival.** Clay pasted his own 2000-point Ork list on 2026-08-27 — *"Here is the
+format"* — and it is `tests/fixtures/lists/real_orks_2000.txt`, the first
+non-invented sample this repo has ever had. `_newrecruit_count` inferred a
+unit's models from bullet *nesting* and returned 1 for any flat block; his list
+is flat from top to bottom, so **twenty units and ninety-two models read as
+twenty**. The fixtures README had already named that rule "the single thing in
+the parser most likely to be wrong", and it was.
+
+**The undercount was documented as costing nothing, and that reasoning was for
+the wrong door.** It holds for the gap report, where "you need 1 Boy" is
+visibly odd and the opposite error sends Clay shopping. It does not hold for
+`/add`, which *writes* the models: seventy miniatures silently missing from a
+collection, with nothing on any screen to show for it.
+
+**The fix reads the convention off the document, not off recall.** In Clay's
+export a model bullet always carries a count and a wargear bullet never does
+(`• 5x Flash Git` beside `• Supa Snazz-Dakka`); New Recruit counts *everything*
+and separates models from wargear by nesting alone. So `_uncounted_wargear`
+asks whether any bullet in the whole paste is uncounted, and only then may a
+flat block be summed. Where every bullet is counted, nothing changed and
+`synthetic_newrecruit_flat.txt` still reads 1 per unit — that case is genuinely
+ambiguous and must stay that way. Decided **per document**, because `Boyz` with
+one `• 10x Ork Boy` is identical in both conventions and only the rest of the
+file says which it is written in.
+
+**The screen says "Read as an app export" and names no app.** `detect_format`
+calls Clay's list New Recruit, and it matches neither set of samples cleanly —
+and those samples are invented, so they are the weaker evidence. Telling Clay
+his own list came out of an app it may not have come from is a confident claim
+with nothing behind it. `/lists/<id>` still names the app in its "read as" line
+and has the same problem; it predates this and is worth fixing once he says
+which app he exports from. Stdlib `sqlite3` with `sqlite3.Row`, a fresh connection
 per call, foreign keys ON and WAL. No ORM, no SPA framework, no build step.
 
 **Migrations diverge from Remndrs deliberately.** Remndrs creates its schema

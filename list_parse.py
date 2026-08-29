@@ -224,7 +224,21 @@ def _blocks(lines):
     return out
 
 
-def _newrecruit_count(bullets):
+def _uncounted_wargear(lines):
+    """Does this document ever write a bullet without a count?
+
+    That is the tell for the convention where wargear is uncounted and every
+    counted bullet is therefore a model. Read once over the whole paste, since
+    a single block cannot say which convention it is written in.
+    """
+    for line in lines:
+        found = _BULLET.match(line)
+        if found and found.group('body').strip() and not _COUNTED.match(
+                found.group('body').strip()):
+            return True
+    return False
+
+def _newrecruit_count(bullets, uncounted_wargear=False):
     """How many models the bullet block describes.
 
     This is the ambiguous part of the format and the reason the fixtures are
@@ -247,8 +261,39 @@ def _newrecruit_count(bullets):
 
     A flat multi-model block — models listed with no wargear under them — reads
     as 1 here and is the known false negative. It is the safe direction to be
-    wrong in, and the resolved datasheet's `min_models` will catch it in the
-    report rather than sending anyone shopping.
+    wrong in *for a list*, where the resolved datasheet's `min_models` catches
+    it in the report rather than sending anyone shopping.
+
+    It is **not** safe for `/add`, which writes the models. Clay's own 2000-point
+    export (`fixtures/lists/real_orks_2000.txt`, the first real sample in this
+    repo) is flat from top to bottom: twenty units, ninety-two models, and every
+    one of them read as 1.
+
+    `uncounted_wargear` is what rescues it, and the signal comes from that real
+    export rather than from anything a model recalls about either app. In it,
+    a model bullet always carries a count and a wargear bullet never does:
+
+        Flash Gitz (170 points)        Boyz (75 points)
+          • 5x Flash Git    <- models    • 10x Ork Boy   <- models
+          • Supa Snazz-Dakka <- wargear
+
+    Where New Recruit counts *everything* and separates models from wargear by
+    nesting alone:
+
+        Warboss (65 Points)            Boyz (180 Points)
+          • 1x Attack squig             • 19x Ork Boy
+          • 1x Kombi-weapon                ◦ 19x Choppa
+          • 1x Power klaw               • 1x Boss Nob
+
+    So when a document contains any uncounted bullet, its convention is the
+    first one, a counted bullet is a model, and a flat block can be summed with
+    confidence. When every bullet in the document is counted, nothing has
+    changed and the flat case still reads 1 — `synthetic_newrecruit_flat.txt`
+    is genuinely ambiguous and must stay that way.
+
+    Decided per document, never per block: `Boyz` with one `• 10x Ork Boy` is
+    identical in both conventions, and only the rest of the file says which it
+    is written in.
     """
     depths = {}
     for line in bullets:
@@ -260,19 +305,20 @@ def _newrecruit_count(bullets):
         depths.setdefault(depth, []).append(int(counted.group('count')))
     if not depths:
         return 1
-    if len(depths) == 1:
+    if len(depths) == 1 and not uncounted_wargear:
         return 1
     return sum(depths[min(depths)])
 
 
 def _parse_newrecruit(lines):
     entries = []
+    uncounted = _uncounted_wargear(lines)
     for header, bullets in _blocks(lines):
         found = _NAMED_POINTS.match(header)
         name = found.group('name').strip() if found else header
         points = int(found.group('points')) if found else None
-        entries.append(ParsedEntry(name, _newrecruit_count(bullets), points,
-                                   len(entries)))
+        entries.append(ParsedEntry(
+            name, _newrecruit_count(bullets, uncounted), points, len(entries)))
     return entries
 
 
