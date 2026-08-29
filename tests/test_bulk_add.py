@@ -369,3 +369,99 @@ def test_a_one_letter_typo_suggests_the_right_unit_first(conn, sheets):
 
     assert rows[0]['datasheet_id'] is None, 'a typo is not a match'
     assert rows[0]['candidates'][0]['name'] == 'Killa Kans'
+
+
+# ── Two shapes of paste, one door ────────────────────────
+#
+# Clay: "I want to be able to paste in a list and it reconcile against the
+# datasheets and add." An app's export is the other thing people paste, and the
+# shelf grammar mangles it — measured below, because the count is the argument.
+
+FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        'fixtures', 'lists')
+
+
+def fixture(name):
+    with open(os.path.join(FIXTURES, name)) as handle:
+        return handle.read()
+
+
+def test_the_shelf_parser_really_does_mangle_an_export():
+    """The measurement the feature exists for, pinned so it cannot quietly
+    stop being true. Seven of fifteen rows are the list's name, its faction,
+    its battle size, its detachment and three section headings — every one
+    offered to Clay as a unit needing a datasheet, which is exactly how he
+    would learn to ignore the unresolved rows."""
+    rows = bulk_add.parse_lines(fixture('synthetic_gwapp_orks.txt'))
+    names = [r['name'] for r in rows]
+
+    assert 'Da Green Tide' in names and 'CHARACTERS' in names
+    assert len(rows) == 15
+
+
+def test_an_export_comes_back_as_its_units_and_nothing_else():
+    fmt, rows = bulk_add.parse_paste(fixture('synthetic_gwapp_orks.txt'))
+
+    assert fmt == 'gw_app'
+    assert [(r['count'], r['name']) for r in rows] == [
+        (1, 'Warboss'), (1, 'Painboss'), (20, 'Boyz'), (20, 'Boyz'),
+        (10, 'Gretchin'), (3, 'Killa Kans'), (3, 'Deffkoptas'), (1, 'Trukk')]
+
+
+def test_the_other_export_format_is_read_too():
+    fmt, rows = bulk_add.parse_paste(fixture('synthetic_newrecruit_orks.txt'))
+
+    assert fmt == 'newrecruit'
+    assert (20, 'Boyz') in [(r['count'], r['name']) for r in rows]
+
+
+def test_a_shelf_typed_from_memory_still_gets_the_shelf_parser():
+    """The two parsers are not merged, and this is the half that would be lost:
+    stage words exist only in the grammar people type, never in an export."""
+    fmt, rows = bulk_add.parse_paste('20 Boyz built\n3 Meganobz primed\nTrukk')
+
+    assert fmt == 'unknown'
+    assert [(r['count'], r['name'], r['stage_word']) for r in rows] == [
+        (20, 'Boyz', 'built'), (3, 'Meganobz', 'primed'), (1, 'Trukk', None)]
+
+
+def test_a_retyped_sheet_is_not_mistaken_for_an_export():
+    """"Boyz x20 - 180" is someone retyping a list by hand. It carries no
+    format markers and must not be detected as an export on the strength of
+    looking list-shaped — the preview would then tell Clay it read his own
+    typing as "the GW app", which is simply untrue.
+
+    This cannot test the *routing*: measured, both parsers return the same
+    eight rows for this input, so sending it either way looks identical. What
+    it pins is the detection, and the label that follows from it. The stage-word
+    test above is the one that catches a mis-route.
+    """
+    fmt, rows = bulk_add.parse_paste(fixture('unknown_retyped_sheet.txt'))
+
+    assert fmt == 'unknown'
+    assert (20, 'Boyz') in [(r['count'], r['name']) for r in rows]
+
+
+def test_an_export_carries_no_stage_words(conn, sheets):
+    """So every model from one takes the batch default — the honest reading of
+    pasting a list here: "I own all of this, and it is all at about here.\""""
+    _, rows = bulk_add.parse_paste(fixture('synthetic_gwapp_orks.txt'))
+
+    assert all(r['stage_word'] is None for r in rows)
+
+
+def test_an_exported_list_resolves_against_the_datasheets(conn, sheets):
+    """The whole ask, end to end: paste an export, and the units in it come
+    back matched to real datasheets rather than as a screen of unknowns."""
+    _, parsed = bulk_add.parse_paste(
+        '10x Boyz [90pts]\n1x Trukk [70pts]\n3x Nobz [105pts]')
+    rows = bulk_add.match_lines(conn, parsed, game_system='wh40k')
+
+    assert [r['datasheet_name'] for r in rows] == ['Boyz', 'Trukk', 'Nobz']
+    assert [r['count'] for r in rows] == [10, 1, 3]
+
+
+def test_nothing_readable_is_still_nothing(conn):
+    fmt, rows = bulk_add.parse_paste('')
+
+    assert rows == []

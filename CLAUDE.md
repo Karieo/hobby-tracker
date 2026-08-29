@@ -331,10 +331,76 @@ the rest rather than under a `gap_checker/`.
 `bulk_add.parse_lines` reads a shelf typed from memory: it takes stage words
 ("20 Boyz built") and may skip a line it cannot use. `list_parse.parse` reads
 an app's export: it carries points and position, detects the format, and may
-never skip anything. `/lists/import` uses the second now, so a real export's preamble
-is dropped rather than reported as four unknown units; `/add` still uses the
-first, which is right for it. The scaffolding patterns are shared
-(`bulk_add.SECTION_RE`, `TOTAL_RE`, `POINTS_RE`) so the two cannot drift. Stdlib `sqlite3` with `sqlite3.Row`, a fresh connection
+never skip anything. The scaffolding patterns are shared
+(`bulk_add.SECTION_RE`, `TOTAL_RE`, `POINTS_RE`) so the two cannot drift.
+
+**`/add` now picks between them by looking at the paste**, because Clay asked
+to *"paste in a list and it reconcile against the datasheets and add"* and the
+shelf grammar mangles an export. Measured on a real GW app export: fifteen rows,
+**seven of them junk** — the list name, the faction, the battle size, the
+detachment and three section headings, each offered as a unit needing a
+datasheet. That is how he would learn to ignore the unresolved rows, which are
+the one thing on that screen he must not learn to ignore.
+`bulk_add.parse_paste` asks `list_parse.detect_format` and dispatches; the
+parsers stay separate, since merging them would cost the shelf its stage words
+and the export its refusal to skip. `list_parse` imports the shared patterns
+from `bulk_add`, so that one import is local — the arrow is deliberate and is
+not rearranged to suit a single function.
+
+**An export carries no stage words, so all of it lands on the batch default**,
+and the screen says so in those words rather than "lines without a stage word",
+which implies some have one. Found by rendering it: a 2000-point paste is fifty
+models arriving somewhere Clay had better have chosen on purpose. `/add` adds
+models to the collection and does **not** create a list — `/lists/import` is
+still the door for that, and the two are separate on purpose.
+
+**A pasted list broke the count rule, and I mislabelled where it came from.**
+Clay pasted a 2000-point Ork list on 2026-08-27 — *"Here is the format"* — and I
+filed it as the repo's first real export. It is not one. He said next: **"I
+pasted from Claude trying to make a list."** The text was written by a model, so
+treating it as evidence about any app's format was the exact laundering this
+repo forbids everywhere else — fluent, plausible, unsourceable, and believed
+because it arrived through a paste rather than a seed file. It is
+`tests/fixtures/lists/pasted_orks_2000.txt` now, and **this repo has still never
+read a verified export.**
+
+**The bug it exposed was real even though its provenance was not.**
+`_newrecruit_count` inferred a unit's models from bullet *nesting* and returned
+1 for any flat block; that list is flat top to bottom, so **twenty units and
+ninety-two models read as twenty**. The fixtures README had already named that
+rule "the single thing in the parser most likely to be wrong", and it was.
+
+**The undercount was documented as costing nothing, and that reasoning was for
+the wrong door.** It holds for the gap report, where "you need 1 Boy" is
+visibly odd and the opposite error sends Clay shopping. It does not hold for
+`/add`, which *writes* the models: seventy miniatures silently missing from a
+collection, with nothing on any screen to show for it.
+
+**The fix reads a convention off the document, and the convention is
+unverified.** In that file a model bullet always carries a count and a wargear
+bullet never does (`• 5x Flash Git` beside `• Supa Snazz-Dakka`), where the
+invented New Recruit samples count *everything* and separate models from wargear
+by nesting alone. So `_uncounted_wargear` asks whether any bullet in the whole
+paste is uncounted, and only then may a flat block be summed. Where every bullet
+is counted, nothing changed and `synthetic_newrecruit_flat.txt` still reads 1
+per unit — genuinely ambiguous, and it stays that way. Decided **per
+document**, because `Boyz` with one `• 10x Ork Boy` is identical in both
+conventions and only the rest of the file says which it is written in.
+
+**It is kept because the input is real even though the format claim is not.**
+Clay pastes model-written lists into this app; that is a thing it has to handle,
+and reading them as one model per unit is badly wrong for him. But no verified
+export has ever been read here, so nothing establishes that a real one never
+mixes the two conventions. A real sample could disprove the rule, and would be
+the first evidence of any kind.
+
+**The screen says "Read as an app export" and names no app.** `detect_format`
+calls Clay's list New Recruit, and it matches neither set of samples cleanly —
+and those samples are invented, so they are the weaker evidence. Telling Clay
+his own list came out of an app it may not have come from is a confident claim
+with nothing behind it. `/lists/<id>` still names the app in its "read as" line
+and has the same problem; it predates this and is worth fixing once he says
+which app he exports from. Stdlib `sqlite3` with `sqlite3.Row`, a fresh connection
 per call, foreign keys ON and WAL. No ORM, no SPA framework, no build step.
 
 **Migrations diverge from Remndrs deliberately.** Remndrs creates its schema

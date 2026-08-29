@@ -1289,10 +1289,15 @@ def add_preview():
     text = request.form.get('text') or ''
     system = request.form.get('game_system') or None
     with _read() as conn:
-        rows = bulk_add.match_lines(conn, bulk_add.parse_lines(text),
-                                    game_system=system)
+        # Which parser reads it is decided by the paste, not by Clay picking a
+        # mode: an export and a shelf typed from memory are told apart by
+        # looking at them, and being asked which kind of paste you are holding
+        # is a question the screen can answer itself.
+        source_format, parsed = bulk_add.parse_paste(text)
+        rows = bulk_add.match_lines(conn, parsed, game_system=system)
         return render_template(
             'add_preview.html', rows=rows, text=text, game_system=system,
+            source_format=source_format,
             stages=col.stage_ladder(conn),
             stage_words=sorted(set(bulk_add.STAGE_WORDS)),
             army_id=_int(request.form.get('army_id')),

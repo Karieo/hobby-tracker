@@ -8,7 +8,21 @@
       <p class="crumb"><a href="/add">← Back to the paste</a></p>
       <h1>Check these</h1>
       <p class="hint">
-        {{ rows|length }} line{{ '' if rows|length == 1 else 's' }},
+        {# Say what it was read as when it was recognised as an app's export.
+           The parser switched itself, and a screen that quietly changed how it
+           read your paste is one you stop trusting — this is the same sentence
+           the list page uses, for the same reason. #}
+        {# Says that it recognised an export, not which app wrote it. The
+           detector's two names come from samples written to a documented shape,
+           and the one real export this repo has — Clay's, in the fixtures —
+           matches neither cleanly while detecting as New Recruit. Telling him
+           his own list came out of an app it may not have come out of is a
+           confident claim with nothing behind it. Name the app here once he
+           says which it is. #}
+        {% if source_format and source_format != 'unknown' %}
+          Read as an app export ·
+        {% endif %}
+        {{ rows|length }} unit{{ '' if rows|length == 1 else 's' }},
         {{ rows|length - unresolved }} matched{% if unresolved %},
         <b>{{ unresolved }} need{{ 's' if unresolved == 1 }} a decision</b>{% endif %}.
       </p>
@@ -81,8 +95,13 @@
         </button>
         <a class="ghost" href="/add">Start over</a>
       </div>
+      {# "Lines without a stage word" implies some have one. An app's export
+         carries none at all, so every model in it lands on the default — and
+         with a 2000-point list that is fifty-odd models arriving somewhere Clay
+         had better have chosen on purpose. Say which case he is in. #}
+      {% set worded = rows | selectattr('stage_word') | list | length %}
       <p class="hint">
-        Lines without a stage word land at
+        {% if worded %}Lines without a stage word land{% else %}All of it lands{% endif %} at
         <b>{% for s in stages %}{% if s.id == stage_id %}{{ s.name }}{% endif %}{% endfor %}</b>{% if army_id %},
         in {% for a in armies %}{% if a.id == army_id %}{{ a.name }}{% endif %}{% endfor %}{% endif %}.
       </p>

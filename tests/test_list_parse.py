@@ -222,17 +222,29 @@ Warboss (65 Points)
 
 
 def test_a_flat_multi_model_block_undercounts_and_that_is_the_safe_direction():
-    """KNOWN FALSE NEGATIVE, pinned deliberately.
+    """KNOWN FALSE NEGATIVE, pinned deliberately — but no longer "free".
 
-    Models listed with no wargear under them are indistinguishable from one
-    model's kit, so this reads 20 Boyz as 1. It is wrong, and it is wrong in
-    the direction that costs nothing: "you need 1 Boy" is visibly odd, while
-    "you need 3 Warbosses" sends him to a shop for two he already has.
+    Where every bullet in a document is counted, a model and a weapon are the
+    same shape, so this reads 20 Boyz as 1. It stays 1 because it is the only
+    honest answer when the text genuinely does not say.
 
-    Replace `synthetic_newrecruit_flat.txt` with a real export and this test is
-    the one to check first — if New Recruit really does write flat blocks, the
-    fix is to clamp the count with the resolved datasheet's `min_models`, which
-    the rules data already carries.
+    **The old justification here was that it costs nothing**, and that was
+    argued for the gap report, where "you need 1 Boy" is visibly odd and the
+    opposite error sends Clay shopping for Warbosses he owns. It does not hold
+    for `/add`, which *writes* the models: an undercount there silently records
+    a collection as smaller than it is, with nothing on any screen to show for
+    it. Measured on Clay's real list: 92 models would have been recorded as 20.
+
+    A flat list did arrive on 2026-08-27 and this test was indeed the one to
+    check first — but it was model-written text Clay pasted, not an export, so
+    it did not make the flat case answerable either. It uses a different
+    convention, where wargear carries no count, and `_uncounted_wargear` reads
+    that convention off the document. Where it is absent, this case is still
+    unanswerable.
+
+    Clamping with the resolved datasheet's `min_models` remains the idea worth
+    trying, and still needs a verified New Recruit export to justify. This repo
+    has never seen one.
     """
     parsed = list_parse.parse(sample('synthetic_newrecruit_flat.txt'))
     assert counts(parsed) == {'Boyz': 1, 'Gretchin': 1}
@@ -246,9 +258,122 @@ def test_every_fixture_parses_without_raising():
             list_parse.parse(sample(name))
 
 
-def test_the_fixtures_say_they_are_synthetic():
+def test_the_readme_says_which_samples_are_invented():
     """The one thing that must not rot: a synthetic sample quietly becoming
-    'the format', so a parser bug looks like correct behaviour."""
+    "the format", so a parser bug looks like correct behaviour.
+
+    This used to assert the README shouted SYNTHETIC about the whole directory,
+    The wording changed twice: once when a paste was mistaken for a real export,
+    and once when that was corrected. The invariant never moved — every sample
+    here is invented and has to say so — so what is asserted is that the README
+    labels them, not any particular sentence.
+    """
     readme = sample('README.md')
-    assert 'SYNTHETIC' in readme
-    assert any(n.startswith('synthetic_') for n in os.listdir(FIXTURES))
+    invented = [n for n in os.listdir(FIXTURES) if n.startswith('synthetic_')]
+
+    assert invented, 'the synthetic samples are still what most of this is'
+    assert 'synthetic' in readme.lower()
+    assert 'real' in readme.lower(), 'and it has to say which ones are not'
+
+
+def test_a_sample_without_the_prefix_is_documented():
+    """The prefix is the whole labelling scheme, so nothing may sit in here
+    unlabelled. A file that is neither `synthetic_` nor `unknown_` needs its
+    provenance written down — which is how a model-written paste came to be
+    filed as a real export for two days."""
+    readme = sample('README.md')
+    for name in sorted(os.listdir(FIXTURES)):
+        if not name.endswith('.txt'):
+            continue
+        if name.startswith(('synthetic_', 'unknown_')):
+            continue
+        assert name in readme, f'{name} has no provenance in the README'
+
+
+# ── The list Clay pasted ─────────────────────────────────
+#
+# Pasted on 2026-08-27 with "Here is the format", and filed as this repo's
+# first real export. It is not one — he said next: "I pasted from Claude trying
+# to make a list." Model-written text, believed because it arrived through a
+# paste instead of a seed file.
+#
+# It stays, because it is a real *input*: Clay pastes model-written lists into
+# this app and the parser has to read them. It is not evidence about any app's
+# format, and these tests do not claim it is.
+
+def _pasted_orks():
+    import os
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        'fixtures', 'lists', 'pasted_orks_2000.txt')
+    with open(path) as handle:
+        return handle.read()
+
+
+def test_the_pasted_list_counts_its_models():
+    """Twenty units, ninety-two models. Every unit read as 1 before the
+    document-level wargear rule, because the list is flat from top to bottom.
+
+    A regression fixture for what Clay actually pastes, not a specimen of any
+    app's export format."""
+    parsed = list_parse.parse(_pasted_orks())
+    counts = {}
+    for entry in parsed.entries:
+        counts.setdefault(entry.raw_name, []).append(entry.model_count)
+
+    assert len(parsed.entries) == 20
+    assert sum(e.model_count for e in parsed.entries) == 92
+    assert counts['Boyz'] == [10, 10]
+    assert counts['Trukk'] == [1, 1, 1], 'no bullets at all is one model'
+    assert counts['Ghazghkull Thraka'] == [1]
+
+
+def test_a_wargear_bullet_is_not_a_model():
+    """`Flash Gitz` has "5x Flash Git" and "Supa Snazz-Dakka" under it. Five
+    models, and the uncounted line is a gun."""
+    parsed = list_parse.parse(_pasted_orks())
+    gitz = [e for e in parsed.entries if e.raw_name == 'Flash Gitz']
+
+    assert [e.model_count for e in gitz] == [5, 5]
+
+
+def test_a_character_with_only_wargear_is_one_model():
+    """`Beastboss` carries "• Kaptin's Hat" and nothing else."""
+    parsed = list_parse.parse(_pasted_orks())
+    boss = [e for e in parsed.entries if e.raw_name == 'Beastboss']
+
+    assert [e.model_count for e in boss] == [1]
+
+
+def test_the_preamble_and_the_headings_are_not_units():
+    """Five preamble lines and four section headings in this one, including
+    "Priority Assets" and "DEDICATED TRANSPORTS"."""
+    names = [e.raw_name for e in list_parse.parse(_pasted_orks()).entries]
+
+    for junk in ('Da Wrecka Krew', 'Orks', 'Strike Force', 'Priority Assets',
+                 'Wreckas + Shoota Boyz + Da Big Hunt', 'CHARACTERS',
+                 'DEDICATED TRANSPORTS', 'Total: 1980 points'):
+        assert junk not in names, f'{junk!r} is not a unit'
+
+
+def test_new_recruits_flat_ambiguity_is_untouched():
+    """Where every bullet is counted there is nothing to tell a model from a
+    weapon, and reading 1 stays the safe answer. Changing this would make the
+    fix a guess rather than a reading."""
+    import os
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        'fixtures', 'lists', 'synthetic_newrecruit_flat.txt')
+    with open(path) as handle:
+        parsed = list_parse.parse(handle.read())
+
+    assert [e.model_count for e in parsed.entries] == [1, 1]
+
+
+def test_the_signal_is_read_per_document_not_per_block():
+    """"Boyz / • 10x Ork Boy" is identical in both conventions. Only the rest
+    of the file says which one it is written in, so a lone block must not
+    decide for itself."""
+    alone = "Boyz (75 points)\n  • 10x Ork Boy\n"
+    with_wargear = alone + "Flash Gitz (170 points)\n  • 5x Flash Git\n  • Supa Snazz-Dakka\n"
+
+    assert [e.model_count for e in list_parse.parse(alone).entries] == [1]
+    assert [e.model_count for e in list_parse.parse(with_wargear).entries] == [10, 5]
