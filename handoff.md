@@ -23,7 +23,7 @@ wrong, or answering "what next". The run before this one is at the bottom.
    > me add after and before fully saved."
 
    A screenshot of `/lists/import` on his phone, keyboard up over a `required`
-   name field, with the name three lines below it in the textarea (#64).
+   name field, with the name three lines below it in the textarea (#65).
 
 ## 2 · Current state
 
@@ -67,7 +67,7 @@ column. The 0–100 range is his number, pinned as data like `BATTLE_SIZES`, and
 deliberately not scoped by game system. Outcomes only: he plays in Battlebase,
 "playing the game is a whole other thing".
 
-**#64 · An export names itself, so `/lists/import` stopped asking.**
+**#65 · An export names itself, so `/lists/import` stopped asking.**
 `list_parse.preamble` reads the block `_split` already isolates and returns the
 name, leaving the rest as candidates — nothing in an export says which line is
 the faction and which the detachment. `lists.read_preamble` applies the app's
@@ -102,13 +102,14 @@ Nothing is in flight. New this run:
 - `lists.py`, `templates/list.html`, `templates/lists.html` — editing, the games
   section, the record on the index.
 - `list_parse.preamble` / `_split`, `lists.read_preamble`,
-  `templates/list_import*.html`, `static/js/list-import.js` — **new** (#64).
+  `templates/list_import*.html`, `static/js/list-import.js` — **new** (#65).
   The commit JS reads the fields rather than the button's data attributes,
   which would carry whatever they said before Clay corrected them.
 
 ## 4 · Changes made
 
-Merged: #60, #61, #62, #63. Test count 864 → 939.
+Merged: #60, #61, #62, #63, #64 (the handoff itself). Test count 864 → 959,
+with #65 open.
 
 ## 5 · Failed attempts
 
@@ -171,7 +172,7 @@ background task with its task id.
 - **Revoke the API token pasted into chat.** `scripts/api_token.py --list`, then
   `--revoke <id>`.
 
-**Two more tests that were not checking, both in #64.** One did
+**Two more tests that were not checking, both in #65.** One did
 `' '.join(a_string)`, which spaces out every character and made
 `'out of the paste' not in body` true no matter what. The other asserted around
 the sentence it cared about rather than on it. Caught by reading them back, not
