@@ -205,6 +205,13 @@ footer button.linkish:hover { color: var(--ink); }
 .addrow { margin-bottom: .6rem; }
 .addrow .what { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; }
 .addrow .row { align-items: end; }
+/* The count, editable in place. Clay: "I need to be able to change the number."
+   Sized to its content rather than stretching like every other input on the
+   page — it holds "20", and a full-width box for two digits reads as the most
+   important thing in the row when it is the thing that is usually already
+   right. 44px tall because it is tapped on a phone. */
+.addrow .count { width: 3.6rem; min-height: 44px; text-align: center;
+                 font-size: 1rem; font-variant-numeric: tabular-nums; }
 .skipbox { display: flex; align-items: center; gap: .4rem; min-height: 44px;
            font-size: .9rem; color: var(--muted); }
 .skipbox input { width: 1.15rem; height: 1.15rem; }

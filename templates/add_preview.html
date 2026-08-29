@@ -47,7 +47,14 @@
         <div class="panel addrow {% if not row.datasheet_id %}warn{% endif %}"
              data-count="{{ row.count }}" data-stage-word="{{ row.stage_word or '' }}">
           <div class="what">
-            <b>{{ row.count }}×</b>
+            {# The same editable count as the list import, because this is the
+               same screen doing the same job. Clay asked for it on that one;
+               making its sibling read-only for no reason is how two screens
+               that were built together start behaving differently. #}
+            <label class="sr-only" for="n-{{ loop.index }}">Models</label>
+            <input class="count" id="n-{{ loop.index }}" type="number" min="1"
+                   inputmode="numeric" value="{{ row.count }}">
+            <b>×</b>
             {% if row.datasheet_id %}
               {{ row.datasheet_name }}
               {% if row.faction_name %}<span class="muted">{{ row.faction_name }}</span>{% endif %}
@@ -78,6 +85,7 @@
                 Did you mean:
                 {% for c in row.candidates[:5] %}
                   <button type="button" class="link pick" data-id="{{ c.id }}"
+                          data-min="{{ c.min_models or '' }}"
                           data-name="{{ c.name }}">{{ c.name }}</button>{% if not loop.last %} · {% endif %}
                 {% endfor %}
               </p>

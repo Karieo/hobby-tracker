@@ -440,3 +440,82 @@ def test_the_preamble_never_eats_a_unit():
     claimed = {pre['name'], *(r['text'] for r in pre['lines'])}
 
     assert not (names & claimed)
+
+
+# ── A count written after the name ───────────────────────
+#
+# Clay, 2026-08-29, with a screenshot of the import preview: "When importing a
+# list I need to be able to change the number or allow it to assume 1 = 10
+# squad." Three rows in it read "1×" that should have read 10 and 20.
+
+def test_a_count_behind_a_separator_is_read():
+    """"Boyz (160) · 20x". Leaving the suffix on cost twice: the count read as
+    1, and the leftover kept the name from matching any datasheet at all."""
+    entries = list_parse.parse('Boyz (160) · 20x\n').entries
+
+    assert [(e.raw_name, e.model_count, e.points) for e in entries] == [
+        ('Boyz', 20, 160)]
+
+
+def test_a_tag_after_the_count_does_not_stick_to_the_name():
+    """"… · 10x [BUY]" — the tag is an annotation, not part of a unit name."""
+    entries = list_parse.parse('Beast Snagga Boyz (90) · 10x [BUY]\n').entries
+
+    assert [(e.raw_name, e.model_count) for e in entries] == [
+        ('Beast Snagga Boyz', 10)]
+
+
+def test_the_whole_screenshot_reads_correctly():
+    """Every row Clay could see, in one go."""
+    text = """Weirdboy
+Painboy (90)
+Bannernob (50)
+Beast Snagga Boyz (90) · 10x
+Beast Snagga Boyz (90) · 10x [BUY]
+Boyz (160) · 20x
+"""
+    assert [(e.raw_name, e.model_count) for e in list_parse.parse(text).entries] == [
+        ('Weirdboy', 1), ('Painboy', 1), ('Bannernob', 1),
+        ('Beast Snagga Boyz', 10), ('Beast Snagga Boyz', 10), ('Boyz', 20)]
+
+
+def test_a_separatorless_trailing_count_is_left_alone():
+    """"Boyz 10x" reads as one model called "Boyz 10x", and that is the
+    conservative call rather than an oversight.
+
+    The separator is what makes "· 10x" unambiguously an annotation. Without
+    one the rule would swallow the tail of any name ending in a digit and an x,
+    and nothing in this repo has ever read a verified export — so it fires only
+    on the shape actually seen. "Boyz x20", which is what people type, is read
+    by the pattern that predates this.
+
+    If a real paste turns up writing counts without a separator, this is the
+    test to change, and it should change on that evidence rather than on a
+    guess about what someone might write.
+    """
+    entries = list_parse.parse('Boyz 10x\nOrk Boy 10x\nBoyz x20\n').entries
+
+    assert [(e.raw_name, e.model_count) for e in entries] == [
+        ('Boyz 10x', 1), ('Ork Boy 10x', 1), ('Boyz', 20)]
+
+
+def test_the_separator_count_beats_a_leading_one():
+    """A line carrying both is not a licence to multiply them together."""
+    entries = list_parse.parse('2 Trukk · 6x\n').entries
+
+    assert entries[0].model_count == 6
+
+
+def test_no_fixture_changed_shape():
+    """The suffix rule is additive: nothing that parsed before parses
+    differently now."""
+    counts = {}
+    for name in sorted(os.listdir(FIXTURES)):
+        if name.endswith('.txt'):
+            parsed = list_parse.parse(sample(name))
+            counts[name] = sum(e.model_count for e in parsed.entries)
+
+    assert counts['pasted_orks_2000.txt'] == 92
+    assert counts['synthetic_gwapp_orks.txt'] == 59
+    assert counts['unknown_retyped_sheet.txt'] == 62
+    assert counts['synthetic_newrecruit_flat.txt'] == 2

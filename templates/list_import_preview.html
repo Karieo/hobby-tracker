@@ -40,7 +40,20 @@
              data-points="{{ row.points or '' }}"
              data-resolved="{{ row.resolved_by or '' }}">
           <div class="what">
-            <b>{{ row.model_count }}×</b>
+            {# Clay: "I need to be able to change the number." The count came
+               out of a parser reading someone else's formatting, and when it
+               was wrong there was nothing on this screen that could fix it —
+               the only way out was editing the paste and starting again.
+
+               What the box says is what gets stored. `_clamp_to_minimum`
+               already raises an auto-resolved row to the datasheet's minimum
+               before it reaches here, so the number shown is the number saved
+               and nothing is applied behind it. #}
+            <label class="sr-only" for="n-{{ loop.index }}">Models</label>
+            <input class="count" id="n-{{ loop.index }}" type="number" min="1"
+                   inputmode="numeric" value="{{ row.model_count }}"
+                   data-min="{{ row.min_models or '' }}">
+            <b>×</b>
             {% if row.datasheet_id %}
               {{ row.datasheet_name }}
               {% if row.faction_name %}<span class="muted">{{ row.faction_name }}</span>{% endif %}
@@ -84,7 +97,13 @@
               <p class="hint">
                 Did you mean:
                 {% for c in row.candidates[:5] %}
+                  {# `data-min` so picking a candidate fills the count the way
+                     `_clamp_to_minimum` fills an auto-resolved one. Without it a
+                     row resolved by hand kept the parser's 1 while the identical
+                     row resolved automatically got 10 — the same unit, two
+                     answers, decided by which route it took. #}
                   <button type="button" class="link pick" data-id="{{ c.id }}"
+                          data-min="{{ c.min_models or '' }}"
                           data-name="{{ c.name }}">{{ c.name }}</button>{% if not loop.last %} · {% endif %}
                 {% endfor %}
               </p>

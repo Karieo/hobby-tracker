@@ -89,6 +89,19 @@ _BULLET = re.compile(r'^(?P<indent>\s*)(?P<marker>[•·▪◦‣*\-–])\s*(?P<
 # "19x Ork Boy" inside a bullet.
 _COUNTED = re.compile(r'^(?P<count>\d+)\s*x\s+(?P<name>.+)$', re.IGNORECASE)
 
+# A count written after the name behind a separator: "Boyz (160) · 20x", and
+# optionally with a tag after it: "… · 10x [BUY]". Seen in a list Clay pasted on
+# 2026-08-29, where twenty Boyz were reading as one and the leftover "(160) ·
+# 20x" kept the name from matching any datasheet at all.
+#
+# The separator is required. Without one this would swallow the tail of any name
+# ending in a number, and "10x" alone after a bare space is already ambiguous
+# with a name — the existing trailing pattern handles "Boyz x20", which is the
+# shape people type.
+_TRAILING_NX = re.compile(
+    r'^(?P<name>.*\S)\s*[·•|;,\-–—]\s*(?P<count>\d+)\s*[x×]'
+    r'\s*(?:\[[^\]]*\])?\s*$', re.IGNORECASE)
+
 # The declared total, which is the export's own arithmetic rather than ours.
 _DECLARED_TOTAL = re.compile(
     r'\(\s*(?P<points>\d+)\s*(?:points?|pts?)\s*\)', re.IGNORECASE)
@@ -419,6 +432,15 @@ def _permissive_entry(line, bullets, position):
         return ParsedEntry(gw.group('name').strip(), int(gw.group('count')),
                            int(gw.group('points')), position)
 
+    # Taken off first, so what is left is the shape the rest of this function
+    # already reads: "Beast Snagga Boyz (90) · 10x" becomes "Beast Snagga Boyz
+    # (90)", which then yields its points and a clean name. Leaving it on cost
+    # both — the count read as 1 and the name matched no datasheet.
+    suffix_count = None
+    nx = _TRAILING_NX.match(line)
+    if nx:
+        line, suffix_count = nx.group('name'), int(nx.group('count'))
+
     points = None
     named = _NAMED_POINTS.match(line)
     if named:
@@ -433,10 +455,12 @@ def _permissive_entry(line, bullets, position):
             points = int(found.group(1)) if found else None
             line = stripped.strip()
 
-    count = 1
+    count = suffix_count or 1
     leading = re.match(r'^(\d+)\s*[x×]?\s+(.*)$', line, re.IGNORECASE)
     trailing = re.match(r'^(.*?)\s*[x×]\s*(\d+)$', line, re.IGNORECASE)
-    if leading:
+    if suffix_count:
+        pass                      # the separator said so; nothing else may
+    elif leading:
         count, line = int(leading.group(1)), leading.group(2)
     elif trailing:
         line, count = trailing.group(1), int(trailing.group(2))

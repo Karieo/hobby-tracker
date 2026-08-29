@@ -2565,3 +2565,82 @@ def test_the_preview_offers_the_battle_size_picker(client, army_with_unit):
     assert 'id="list-details"' in body
     assert 'Strike Force (2000 pts)' in body
     assert 'name="points_limit"' in body
+
+
+# ── The count is editable on the import preview ──────────
+#
+# Clay: "When importing a list I need to be able to change the number or allow
+# it to assume 1 = 10 squad."
+
+def test_the_import_preview_offers_an_editable_count(client, gap_list):
+    body = client.post('/lists/import/preview',
+                       data={'text': 'Boyz (160) · 20x'}).get_data(as_text=True)
+
+    assert 'class="count"' in body
+    assert 'type="number"' in body
+
+
+def test_the_count_box_shows_what_will_be_stored(client, army_with_unit):
+    """`_clamp_to_minimum` raises a resolved row to the datasheet's minimum
+    before it reaches the screen, so the box shows the clamped number rather
+    than the parsed one. What is on screen is what gets saved."""
+    with db.connect(db.DB_PATH) as conn:
+        conn.execute('UPDATE datasheets SET min_models = 10 WHERE id = ?',
+                     (army_with_unit['datasheet_id'],))
+
+    body = client.post('/lists/import/preview',
+                       data={'text': 'Boyz'}).get_data(as_text=True)
+
+    assert 'value="10"' in body
+
+
+def test_a_candidate_carries_the_minimum_it_would_set(client, army_with_unit):
+    """Picking a datasheet by hand must land on the same count an automatic
+    match would have — without `data-min` the identical line got 10 or 1
+    depending only on which route resolved it."""
+    with db.connect(db.DB_PATH) as conn:
+        conn.execute('UPDATE datasheets SET min_models = 10 WHERE id = ?',
+                     (army_with_unit['datasheet_id'],))
+
+    body = client.post('/lists/import/preview',
+                       data={'text': 'Boyz Mob'}).get_data(as_text=True)
+
+    assert 'class="link pick"' in body
+    assert 'data-min="10"' in body
+
+
+def test_the_commit_stores_the_count_it_was_given(client, army_with_unit):
+    """No clamping behind the screen — the number Clay saw is the number
+    saved."""
+    res = client.post('/api/lists/import', json={
+        'name': 'Hand set',
+        'rows': [{'datasheet_id': army_with_unit['datasheet_id'],
+                  'model_count': 7}]})
+
+    assert res.status_code == 201
+    with db.connect(db.DB_PATH) as conn:
+        n = conn.execute('SELECT model_count FROM list_entries').fetchone()
+    assert n['model_count'] == 7
+
+
+def test_the_collection_paste_count_is_editable_too(client, army_with_unit):
+    """The same screen doing the same job. Clay asked for it on the list
+    import; leaving its sibling read-only is how two screens built together
+    start behaving differently."""
+    body = client.post('/add/preview',
+                       data={'text': '20 Boyz built'}).get_data(as_text=True)
+
+    assert 'class="count"' in body
+    assert 'value="20"' in body
+
+
+def test_the_collection_paste_commits_the_count_it_was_given(client, army_with_unit):
+    res = client.post('/api/add/commit', json={
+        'rows': [{'datasheet_id': army_with_unit['datasheet_id'], 'count': 4}]})
+
+    assert res.status_code == 200
+    with db.connect(db.DB_PATH) as conn:
+        n = conn.execute(
+            'SELECT COUNT(*) n FROM models m JOIN units u ON u.id = m.unit_id '
+            ' WHERE u.id = (SELECT MAX(id) FROM units)').fetchone()['n']
+    assert n == 4
