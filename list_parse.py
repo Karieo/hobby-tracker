@@ -114,7 +114,56 @@ def parse(text):
 
 
 def _body(lines, fmt):
-    """Drop the preamble — everything before the units start.
+    """The units half of `_split`. See it for where the line is drawn."""
+    return _split(lines, fmt)[1]
+
+
+def preamble(text):
+    """What an export says about *itself*, before the units start.
+
+    ``{'name': str|None, 'lines': [{'text': str, 'points': int|None}, ...]}``
+
+    Clay, looking at `/lists/import` on his phone with the paste already in the
+    box: *"Pull the title, battle size from the list import."* Every one of the
+    fields the form was asking him to type is sitting in the text three lines
+    above it —
+
+        Da Wrecka Krew (2000 points)   <- the name
+        Orks                           <- the faction
+        Strike Force (2000 points)     <- the battle size
+        Wreckas + Shoota Boyz + ...    <- the detachment
+
+    — and `_split` already knows where that block ends, because dropping it is
+    how the preamble stops being reported as four unknown units.
+
+    **The name is the first line and the rest are unlabelled.** Nothing in the
+    text says which line is the faction and which the detachment, so this
+    returns them as candidates with any `(N points)` figure read off, and the
+    caller decides: `lists.read_preamble` matches them against real faction rows
+    and the two battle sizes, and leaves a field blank rather than guess. Keeping
+    that here would mean this module knowing the app's vocabulary, and matching
+    a faction needs the database anyway.
+    """
+    lines = (text or '').splitlines()
+    head = _split(lines, detect_format(lines))[0]
+    rows = []
+    for line in head:
+        stripped = line.strip()
+        if not stripped or _is_scaffolding(stripped) or _BULLET.match(line):
+            continue
+        found = _DECLARED_TOTAL.search(stripped)
+        points = int(found.group('points')) if found else None
+        label = _DECLARED_TOTAL.sub('', stripped).strip(' -–—,') or stripped
+        rows.append({'text': label, 'points': points})
+    if not rows:
+        return {'name': None, 'lines': []}
+    # The name is positional and always first — it is the only line in the block
+    # whose meaning the format guarantees.
+    return {'name': rows[0]['text'], 'lines': rows[1:]}
+
+
+def _split(lines, fmt):
+    """``(preamble, body)`` — everything before the units, and the units.
 
     Both real formats open with the list's name, its faction, its battle size
     and its detachment. None of those are units, and reporting four of them as
@@ -139,14 +188,15 @@ def _body(lines, fmt):
     """
     for i, line in enumerate(lines):
         if _HEADING.match(line.strip()):
-            return lines[i + 1:]
+            return lines[:i], lines[i + 1:]
     if fmt == UNKNOWN:
-        return lines
+        return [], lines
     for i, line in enumerate(lines):
         stripped = line.strip()
         if _GW_ENTRY.match(stripped) or _BULLET.match(line):
-            return lines[i:] if _GW_ENTRY.match(stripped) else lines[max(0, i - 1):]
-    return lines
+            cut = i if _GW_ENTRY.match(stripped) else max(0, i - 1)
+            return lines[:cut], lines[cut:]
+    return [], lines
 
 
 def detect_format(lines):

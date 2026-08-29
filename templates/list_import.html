@@ -20,9 +20,17 @@
     </div>
   </header>
 
+  {# Clay: "Pull the title, battle size from the list import." An export names
+     itself, its faction and its battle size in its first four lines, so none of
+     these is required to get to the next screen — what is blank here is read
+     out of the paste, shown filled in, and still editable there.
+
+     `autofocus` moved to the textarea with the same change. It was on the name,
+     which put a phone keyboard over the form before Clay had done the one thing
+     this screen is for. #}
   <form class="panel stack" method="post" action="/lists/import/preview">
     <label>List name
-      <input name="name" required autofocus placeholder="Saturday at the club">
+      <input name="name" placeholder="Read from the paste if you leave it">
     </label>
 
     <div class="row">
@@ -52,7 +60,7 @@
     </div>
 
     <label>The list
-      <textarea name="text" rows="12" required
+      <textarea name="text" rows="12" required autofocus
                 placeholder="1x Captain (95)&#10;10x Intercessor Squad (200)&#10;5x Assault Terminators (185)"></textarea>
     </label>
 

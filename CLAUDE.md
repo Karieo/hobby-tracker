@@ -394,6 +394,36 @@ export has ever been read here, so nothing establishes that a real one never
 mixes the two conventions. A real sample could disprove the rule, and would be
 the first evidence of any kind.
 
+**An export names itself, so `/lists/import` stopped asking.** Clay, looking at
+the form on his phone with the paste already in the box: *"Pull the title,
+battle size from the list import. If I don't give it let me add after and
+before fully saved."* All three were sitting three lines above the fields —
+`Da Wrecka Krew (2000 points)` / `Orks` / `Strike Force (2000 points)` — and the
+name input was `required`, so he could not reach the preview without retyping
+what he had already pasted.
+
+`list_parse.preamble` reads the block `_split` already isolates (dropping it is
+how a preamble stops being reported as four unknown units, so there is one
+answer to where it ends). **It returns the name and leaves the rest as
+candidates**, because nothing in an export labels which line is the faction and
+which the detachment.
+
+`lists.read_preamble` applies the app's vocabulary: a battle size only by
+matching `BATTLE_SIZES` by name, a faction only by matching a real row,
+**exactly** — `Waaagh! Tribe` and `Priority Assets` look exactly like factions
+to anything willing to approximate, and a list filed under the wrong army is
+worse than one filed under none. The limit stored is the size's own number, not
+the paste's: "Strike Force" is 2000 here, and an export claiming 1980 is
+reporting what it added up to, which `points_total` already keeps.
+
+**Typed always beats parsed, and the screen says what it filled in.** A blank is
+filled from the paste; a field Clay set is never overridden. All three are
+editable on the preview — the last screen before the list exists — which is the
+"before fully saved" half of his ask; the list page's edit form is the after.
+`autofocus` moved from the name to the textarea in the same change: it was
+putting a phone keyboard over the form before he had done the one thing the
+screen is for.
+
 **The screen says "Read as an app export" and names no app.** `detect_format`
 calls Clay's list New Recruit, and it matches neither set of samples cleanly —
 and those samples are invented, so they are the weaker evidence. Telling Clay

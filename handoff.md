@@ -19,6 +19,11 @@ wrong, or answering "what next". The run before this one is at the bottom.
 
    The `/add` paste door, a real count bug behind it, and a correction to a
    claim I had already written into the repo (#63).
+5. > "Pull the title, battle size from the list import. If I don't give it let
+   > me add after and before fully saved."
+
+   A screenshot of `/lists/import` on his phone, keyboard up over a `required`
+   name field, with the name three lines below it in the textarea (#64).
 
 ## 2 · Current state
 
@@ -62,6 +67,15 @@ column. The 0–100 range is his number, pinned as data like `BATTLE_SIZES`, and
 deliberately not scoped by game system. Outcomes only: he plays in Battlebase,
 "playing the game is a whole other thing".
 
+**#64 · An export names itself, so `/lists/import` stopped asking.**
+`list_parse.preamble` reads the block `_split` already isolates and returns the
+name, leaving the rest as candidates — nothing in an export says which line is
+the faction and which the detachment. `lists.read_preamble` applies the app's
+vocabulary: a battle size only by matching `BATTLE_SIZES` by name, a faction
+only by matching a real row, **exactly**. Typed always beats parsed, the screen
+names what it filled in, and all three stay editable on the preview. The `name`
+input lost its `required`; `autofocus` moved to the textarea.
+
 **#63 · `/add` takes an app export, and counts it properly.** Measured first: a
 GW-style export through the shelf parser gave fifteen rows, **seven of them
 junk**. `bulk_add.parse_paste` now asks `list_parse.detect_format` and
@@ -87,6 +101,10 @@ Nothing is in flight. New this run:
   invented format.** See §5.
 - `lists.py`, `templates/list.html`, `templates/lists.html` — editing, the games
   section, the record on the index.
+- `list_parse.preamble` / `_split`, `lists.read_preamble`,
+  `templates/list_import*.html`, `static/js/list-import.js` — **new** (#64).
+  The commit JS reads the fields rather than the button's data attributes,
+  which would carry whatever they said before Clay corrected them.
 
 ## 4 · Changes made
 
@@ -152,6 +170,21 @@ background task with its task id.
 - **Confirm the backup cron took** — `crontab -l`.
 - **Revoke the API token pasted into chat.** `scripts/api_token.py --list`, then
   `--revoke <id>`.
+
+**Two more tests that were not checking, both in #64.** One did
+`' '.join(a_string)`, which spaces out every character and made
+`'out of the paste' not in body` true no matter what. The other asserted around
+the sentence it cared about rather than on it. Caught by reading them back, not
+by the suite.
+
+**A sabotage that was too weak to trip the test it aimed at.** Loose faction
+matching on a two-character prefix changed nothing, because no detachment in the
+fixture started with the same two letters as a faction. The lesson is the same
+shape as before: **a sabotage that fires and changes no outcome has not tested
+anything.** The guarantee turned out not to come from match strictness at all —
+it comes from matching against *real faction rows*, so the sabotage that breaks
+it is one that **invents** a faction from the line, and that is what the test is
+aimed at now.
 
 **Asked and unanswered:**
 

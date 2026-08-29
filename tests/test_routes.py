@@ -2488,3 +2488,80 @@ def test_a_shelf_paste_still_talks_about_lines_without_a_stage_word(client, army
                     .get_data(as_text=True).split())
 
     assert 'Lines without a stage word land at' in body
+
+
+# ── The import form fills itself from the paste ──────────
+#
+# Clay: "Pull the title, battle size from the list import. If I don't give it
+# let me add after and before fully saved."
+
+ORK_EXPORT = """Da Wrecka Krew (2000 points)
+
+Orks
+Strike Force (2000 points)
+Wreckas + Shoota Boyz + Da Big Hunt
+
+BATTLELINE
+
+Boyz (75 points)
+  • 10x Ork Boy
+"""
+
+
+def test_the_preview_fills_name_faction_and_size_from_the_paste(client, army_with_unit):
+    body = client.post('/lists/import/preview',
+                       data={'text': ORK_EXPORT}).get_data(as_text=True)
+
+    assert 'value="Da Wrecka Krew"' in body
+    assert 'Read the name, faction, battle size out of the paste' in \
+        ' '.join(body.split())
+
+
+def test_what_clay_typed_beats_what_the_paste_says(client, army_with_unit):
+    """The paste fills blanks. It never overrides a decision he made."""
+    body = client.post('/lists/import/preview',
+                       data={'text': ORK_EXPORT,
+                             'name': 'Saturday at the club'}).get_data(as_text=True)
+
+    assert 'value="Saturday at the club"' in body
+    assert 'Da Wrecka Krew' not in body.split('<textarea')[0]
+
+
+def test_only_the_fields_actually_filled_are_named(client, army_with_unit):
+    """Saying it read a name it did not read would be worse than saying
+    nothing. Clay supplied the name, so only the other two are claimed."""
+    body = ' '.join(client.post('/lists/import/preview', data={
+        'text': ORK_EXPORT, 'name': 'Mine'}).get_data(as_text=True).split())
+
+    assert 'Read the faction, battle size out of the paste' in body
+    assert 'Read the name' not in body
+
+
+def test_a_paste_that_declares_nothing_says_nothing(client, army_with_unit):
+    """A retyped sheet has no reliable preamble, so nothing is claimed."""
+    body = client.post('/lists/import/preview', data={
+        'text': 'Boyz x20 - 180', 'name': 'Retyped'}).get_data(as_text=True)
+
+    assert 'out of the paste' not in body
+    assert 'value="Retyped"' in body
+
+
+def test_the_name_is_no_longer_required_to_reach_the_preview(client, army_with_unit):
+    """The wall Clay hit: a required field he could not fill without reading
+    it off the text he had already pasted."""
+    page = client.get('/lists/import').get_data(as_text=True)
+    form = page.split('<textarea')[0]
+
+    assert 'name="name" required' not in form
+    assert 'name="name"' in form
+
+
+def test_the_preview_offers_the_battle_size_picker(client, army_with_unit):
+    """Editable on the last screen before the list exists — the "let me add
+    after and before fully saved" half of the ask."""
+    body = client.post('/lists/import/preview',
+                       data={'text': ORK_EXPORT}).get_data(as_text=True)
+
+    assert 'id="list-details"' in body
+    assert 'Strike Force (2000 pts)' in body
+    assert 'name="points_limit"' in body

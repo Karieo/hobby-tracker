@@ -37,14 +37,29 @@ document.addEventListener('click', async (e) => {
     return;
   }
 
+  // Read from the fields rather than from the button. They are pre-filled from
+  // the paste and editable right up to this click, so a data attribute stamped
+  // at render time would send whatever they said before he corrected them.
+  const details = document.querySelector('#list-details');
+  const field = (n) => (details && details.elements[n]
+    ? details.elements[n].value.trim() : '');
+
+  // Checked here rather than left to the server, so the button never goes
+  // disabled on the one mistake he can fix without leaving the screen.
+  if (!field('name')) {
+    toast('The list needs a name', 'warn');
+    if (details) details.elements.name.focus();
+    return;
+  }
+
   button.disabled = true;
   try {
     const raw = document.querySelector('#raw-text');
     const data = await post('/api/lists/import', {
       rows,
-      name: button.dataset.name,
-      faction_id: button.dataset.faction || null,
-      points_limit: button.dataset.points || null,
+      name: field('name'),
+      faction_id: field('faction_id') || null,
+      points_limit: field('points_limit') || null,
       // Kept so the parser getting better does not mean pasting it again.
       raw_text: raw ? raw.value : null,
       source_format: button.dataset.format || null,

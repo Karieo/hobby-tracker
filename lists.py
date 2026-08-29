@@ -23,6 +23,7 @@ becomes an allocation problem, and this is deliberately not that yet.
 import collection as col
 import database as db
 import list_allocate
+from names import norm
 
 
 #: The battle sizes the game actually offers, and the points limit each one
@@ -42,6 +43,54 @@ BATTLE_SIZES = (
 )
 
 
+
+def read_preamble(conn, preamble):
+    """``{'name', 'faction_id', 'points_limit'}`` — what the paste says it is.
+
+    Clay: *"Pull the title, battle size from the list import."* He was looking
+    at a form asking him to type a name, a faction and a battle size with all
+    three sitting in the textarea below it.
+
+    `list_parse.preamble` reads the block as text and stops there, because
+    nothing in an export labels which line is the faction and which the
+    detachment. This is where the app's own vocabulary gets applied: a candidate
+    becomes a battle size only by matching one of `BATTLE_SIZES` by name, and a
+    faction only by matching a real row.
+
+    **Anything that does not match is left blank rather than guessed.** A
+    detachment ("Waaagh! Tribe", "Priority Assets") looks exactly like a faction
+    to anything willing to approximate, and a list filed under the wrong army
+    is worse than one filed under none — the collection filter is built on it.
+
+    The limit stored is the size's **own** number, not the paste's. "Strike
+    Force" is 2000 here because that is what this app means by it; an export
+    claiming 1980 is reporting what it added up to, which is a different fact
+    and already kept as `points_total`.
+    """
+    out = {'name': (preamble.get('name') or '').strip() or None,
+           'faction_id': None, 'points_limit': None}
+    candidates = list(preamble.get('lines') or [])
+
+    sizes = {norm(label): limit for label, limit in BATTLE_SIZES}
+    remaining = []
+    for row in candidates:
+        limit = sizes.get(norm(row['text']))
+        if limit is not None and out['points_limit'] is None:
+            out['points_limit'] = limit
+        else:
+            remaining.append(row)
+
+    # Exact on the folded name, never fuzzy. `import_killteam.match_faction`
+    # already carries the scar: widening a faction match is how a team gets
+    # filed under an army it does not belong to.
+    factions = {norm(f['name']): f['id'] for f in conn.execute(
+        'SELECT id, name FROM factions')}
+    for row in remaining:
+        found = factions.get(norm(row['text']))
+        if found:
+            out['faction_id'] = found
+            break
+    return out
 def battle_size(points_limit):
     """The name for a limit, or None if it is not one of the two.
 

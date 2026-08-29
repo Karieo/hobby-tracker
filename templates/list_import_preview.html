@@ -94,15 +94,49 @@
       {% endfor %}
     </form>
 
+    {# Clay: "Pull the title, battle size from the list import. If I don't give
+       it let me add after and before fully saved."
+
+       The export declares its own name, faction and battle size, so the form on
+       the way in no longer has to be filled to get here. All three are editable
+       *on this screen* because this is the last moment before the list exists —
+       and they stay editable afterwards through the list page's own edit form,
+       which is the other half of what he asked for. #}
     <div class="panel">
+      <form class="stack" id="list-details">
+        <label>List name<input name="name" required value="{{ name }}"></label>
+        <label>Faction
+          <select name="faction_id">
+            <option value="">—</option>
+            {% for f in factions %}
+              <option value="{{ f.id }}"
+                      {% if f.id == faction_id %}selected{% endif %}>{{ f.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Battle size
+          <select name="points_limit">
+            <option value="">—</option>
+            {% for label, limit in battle_sizes %}
+              <option value="{{ limit }}"
+                      {% if limit == points_limit %}selected{% endif %}>{{ label }} ({{ limit }} pts)</option>
+            {% endfor %}
+          </select>
+        </label>
+      </form>
+      {# Say which of them the app filled in, so nothing appears in a field he
+         did not type it into without explanation. #}
+      {% if from_paste %}
+        <p class="hint">
+          Read the {{ from_paste | join(', ') }} out of the paste. Change
+          anything that is wrong.
+        </p>
+      {% endif %}
       <div class="actions">
         <button class="go" id="commit-list"
-                data-name="{{ name }}"
-                data-faction="{{ faction_id or '' }}"
-                data-points="{{ points_limit or '' }}"
                 data-format="{{ parsed.source_format }}"
                 data-declared="{{ parsed.points_total or '' }}">
-          Create “{{ name }}” →
+          Create the list →
         </button>
         <a class="ghost" href="/lists/import">Start over</a>
       </div>
