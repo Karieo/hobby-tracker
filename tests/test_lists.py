@@ -838,3 +838,85 @@ def test_editing_a_list_leaves_its_entries_alone(conn, sheets):
     lists.update_list(conn, list_id, points_limit=2000, name='Sunday')
 
     assert lists.list_lists(conn)[0]['entry_count'] == 1
+
+
+# ── Reading a paste's own preamble ───────────────────────
+
+def _pre(name=None, lines=()):
+    return {'name': name, 'lines': [
+        {'text': t, 'points': pts} for t, pts in lines]}
+
+
+def test_a_declared_battle_size_is_matched_by_name(conn):
+    read = lists.read_preamble(conn, _pre('Da Wrecka Krew', [
+        ('Strike Force', 2000)]))
+
+    assert read['points_limit'] == 2000
+    assert read['name'] == 'Da Wrecka Krew'
+
+
+def test_the_limit_stored_is_the_apps_number_not_the_pastes(conn):
+    """"Strike Force" means 2000 here. An export claiming it added up to 1980
+    is reporting a different fact, and `points_total` already keeps that."""
+    read = lists.read_preamble(conn, _pre('X', [('Strike Force', 1980)]))
+
+    assert read['points_limit'] == 2000
+
+
+def test_a_size_this_app_does_not_offer_is_left_blank(conn):
+    """`BATTLE_SIZES` is two entries Clay took off a screenshot. A third name
+    is not turned into a limit on the strength of carrying a number."""
+    read = lists.read_preamble(conn, _pre('X', [('Onslaught', 3000)]))
+
+    assert read['points_limit'] is None
+
+
+def test_a_declared_faction_is_matched_against_a_real_row(conn):
+    orks = db.upsert_faction(conn, 'Orks', 'orks')
+
+    read = lists.read_preamble(conn, _pre('X', [('Orks', None)]))
+
+    assert read['faction_id'] == orks
+
+
+def test_a_detachment_that_looks_like_a_faction_is_still_not_one(conn):
+    """A detachment sits in the same block as the faction and is unlabelled, so
+    the only thing keeping them apart is that the match is exact.
+
+    "Ork Hunters" is the case that matters: it contains a real faction's name
+    and any substring or fuzzy match would file the list under Orks. A list
+    filed under the wrong army is worse than one filed under none — the
+    collection filter is built on it. `import_killteam.match_faction` carries
+    the same scar.
+    """
+    db.upsert_faction(conn, 'Orks', 'orks')
+
+    read = lists.read_preamble(conn, _pre('X', [
+        ('Waaagh! Tribe', None), ('Ork Hunters', None),
+        ('Priority Assets', None)]))
+
+    assert read['faction_id'] is None
+
+
+def test_the_faction_is_found_wherever_it_sits_in_the_block(conn):
+    """Nothing labels the lines, so order is not relied on."""
+    orks = db.upsert_faction(conn, 'Orks', 'orks')
+
+    read = lists.read_preamble(conn, _pre('X', [
+        ('Waaagh! Tribe', None), ('Strike Force', 2000), ('Orks', None)]))
+
+    assert (read['faction_id'], read['points_limit']) == (orks, 2000)
+
+
+def test_punctuation_and_case_do_not_stop_a_faction_matching(conn):
+    tau = db.upsert_faction(conn, "T'au Empire", 'tau-empire')
+
+    read = lists.read_preamble(conn, _pre('X', [('T\u2019AU EMPIRE', None)]))
+
+    assert read['faction_id'] == tau
+
+
+def test_an_empty_preamble_resolves_to_nothing(conn):
+    read = lists.read_preamble(conn, _pre(None, []))
+
+    assert read == {'name': None, 'faction_id': None, 'points_limit': None}

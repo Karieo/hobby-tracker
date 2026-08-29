@@ -1354,14 +1354,30 @@ def import_list_preview():
         # Pointing this door at the weaker parser is why pasting a real export
         # here used to report its preamble as four unknown units.
         parsed = list_parse.parse(text)
+        # Clay: "Pull the title, battle size from the list import." The export
+        # names itself three lines above the form that was asking him to type
+        # it. Anything he did type wins; a blank is filled from the paste, and
+        # all three stay editable on the screen below.
+        declared = army_lists.read_preamble(conn, list_parse.preamble(text))
+        name = (request.form.get('name') or '').strip() or declared['name'] or ''
+        faction_id = faction_id or declared['faction_id']
+        points_limit = (_int(request.form.get('points_limit'))
+                        or declared['points_limit'])
+        from_paste = [what for what, given, found in (
+            ('name', (request.form.get('name') or '').strip(), declared['name']),
+            ('faction', _int(request.form.get('faction_id')),
+             declared['faction_id']),
+            ('battle size', _int(request.form.get('points_limit')),
+             declared['points_limit'])) if not given and found]
+
         rows = [r._asdict() for r in list_resolve.resolve_entries(
             conn, parsed.entries, faction_id=faction_id, game_system=system)]
         return render_template(
             'list_import_preview.html', rows=rows, text=text,
             game_system=system, parsed=parsed,
-            name=(request.form.get('name') or '').strip(),
-            points_limit=_int(request.form.get('points_limit')),
-            faction_id=faction_id,
+            name=name, points_limit=points_limit, faction_id=faction_id,
+            from_paste=from_paste,
+            battle_sizes=army_lists.BATTLE_SIZES,
             factions=col.list_factions(conn),
             unresolved=sum(1 for r in rows if not r['datasheet_id']))
 

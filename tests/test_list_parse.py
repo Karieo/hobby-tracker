@@ -377,3 +377,66 @@ def test_the_signal_is_read_per_document_not_per_block():
 
     assert [e.model_count for e in list_parse.parse(alone).entries] == [1]
     assert [e.model_count for e in list_parse.parse(with_wargear).entries] == [10, 5]
+
+
+# ── What an export says about itself ─────────────────────
+#
+# Clay, on his phone with the paste already in the box: "Pull the title, battle
+# size from the list import. If I don't give it let me add after and before
+# fully saved."
+
+def test_the_preamble_gives_up_the_name_and_the_rest_as_candidates():
+    """The name is the only line whose meaning the format guarantees, so it is
+    the only one returned as itself. Faction and detachment are unlabelled and
+    come back for the caller to match."""
+    pre = list_parse.preamble(_pasted_orks())
+
+    assert pre['name'] == 'Da Wrecka Krew'
+    assert [row['text'] for row in pre['lines']] == [
+        'Orks', 'Strike Force', 'Wreckas + Shoota Boyz + Da Big Hunt',
+        'Priority Assets']
+
+
+def test_a_points_figure_is_read_off_each_preamble_line():
+    """"Strike Force (2000 points)" carries both halves, and the caller needs
+    the label to know it is a battle size at all."""
+    rows = {r['text']: r['points'] for r in list_parse.preamble(_pasted_orks())['lines']}
+
+    assert rows['Strike Force'] == 2000
+    assert rows['Orks'] is None
+
+
+def test_the_name_loses_its_own_points_figure():
+    """"Da Wrecka Krew (2000 points)" is a name, not a name and a number."""
+    assert '2000' not in list_parse.preamble(_pasted_orks())['name']
+    assert '(' not in list_parse.preamble(_pasted_orks())['name']
+
+
+def test_both_invented_formats_declare_themselves_too():
+    gw = list_parse.preamble(sample('synthetic_gwapp_marines.txt'))
+    nr = list_parse.preamble(sample('synthetic_newrecruit_orks.txt'))
+
+    assert gw['name'] == 'Fifth Company Strike'
+    assert ('Incursion', 1000) in [(r['text'], r['points']) for r in gw['lines']]
+    assert nr['name'] == 'Da Green Tide'
+    assert ('Strike Force', 2000) in [(r['text'], r['points']) for r in nr['lines']]
+
+
+def test_a_paste_with_no_preamble_declares_nothing():
+    """A retyped sheet or a chat message has no reliable preamble, and guessing
+    at one there costs a unit — `_split` already refuses to, and this inherits
+    that refusal rather than repeating the reasoning."""
+    pre = list_parse.preamble('Boyz x20 - 180\nKilla Kans x3 - 140')
+
+    assert pre['name'] is None or pre['lines'] == []
+
+
+def test_the_preamble_never_eats_a_unit():
+    """The split is shared with `_body`, so a line cannot be both. Every unit
+    the parser found has to be absent from what the preamble claims."""
+    text = _pasted_orks()
+    names = {e.raw_name for e in list_parse.parse(text).entries}
+    pre = list_parse.preamble(text)
+    claimed = {pre['name'], *(r['text'] for r in pre['lines'])}
+
+    assert not (names & claimed)
