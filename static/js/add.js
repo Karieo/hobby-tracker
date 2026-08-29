@@ -15,6 +15,17 @@ document.addEventListener('click', (e) => {
   row.querySelector('.ds').value = button.dataset.id;
   const picker = row.querySelector('.picker');
   if (picker) picker.value = button.dataset.name;
+
+  // Raise the count to the datasheet's minimum unit size, the same thing
+  // `list_resolve._clamp_to_minimum` does for a row that resolved on its own —
+  // without this the identical line got 10 or 1 depending only on whether the
+  // name happened to match. Only ever upward, and never over a number Clay has
+  // touched: `data-touched` is set the moment he edits the box.
+  const count = row.querySelector('.count');
+  const min = Number(button.dataset.min) || 0;
+  if (count && min && !count.dataset.touched && Number(count.value) < min) {
+    count.value = min;
+  }
   row.classList.remove('warn');
   const skip = row.querySelector('.skip');
   if (skip) skip.checked = false;
@@ -33,7 +44,10 @@ document.addEventListener('click', async (e) => {
 
   const rows = [...document.querySelectorAll('.addrow')].map((row) => ({
     datasheet_id: Number(row.querySelector('.ds').value) || null,
-    count: Number(row.dataset.count) || 1,
+    // What the box says. Editable since 2026-08-29, the same as the list
+    // import's, so the number on screen is the number written.
+    count: Number((row.querySelector('.count') || {}).value)
+      || Number(row.dataset.count) || 1,
     stage_word: row.dataset.stageWord || null,
     skip: !!(row.querySelector('.skip') || {}).checked,
   }));
@@ -61,3 +75,9 @@ document.addEventListener('click', async (e) => {
   }
 });
 })();
+
+/* A count Clay has typed is his, and nothing may raise it afterwards. */
+document.addEventListener('input', (e) => {
+  const count = e.target.closest('.count');
+  if (count) count.dataset.touched = '1';
+});

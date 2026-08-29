@@ -394,6 +394,39 @@ export has ever been read here, so nothing establishes that a real one never
 mixes the two conventions. A real sample could disprove the rule, and would be
 the first evidence of any kind.
 
+**The count on both paste-confirm screens is editable, and what it says is
+what gets stored.** Clay, with a screenshot of three rows reading `1×` that
+should have read 10 and 20: *"When importing a list I need to be able to change
+the number or allow it to assume 1 = 10 squad."* There was no way to correct a
+count on that screen — the only route was editing the paste and starting again.
+
+**The second half of his ask already existed**, and was blocked by the first.
+`list_resolve._clamp_to_minimum` raises a resolved row to the datasheet's
+`min_models`, which *is* "1 = 10 squad". It never ran on those rows because the
+name never matched.
+
+**A count written behind a separator is read now.** `Boyz (160) · 20x` kept the
+whole suffix in the *name*, so the row matched no datasheet and the count stayed
+1 — one mis-parse causing both symptoms. `_TRAILING_NX` takes it off first, and
+a trailing `[TAG]` with it. **The separator is required**: without one the rule
+would swallow the tail of any name ending in a digit and an x, and this repo has
+never read a verified export, so it fires only on the shape actually seen.
+`Boyz x20`, which is what people type, is read by the pattern that predates it.
+
+**Picking a candidate by hand now lands on the same count an automatic match
+would have.** `data-min` on the candidate buttons, applied in `add.js`. Without
+it the identical line got 10 or 1 depending only on which route resolved it —
+the same unit, two answers. It only ever raises, and never over a number Clay
+has touched (`data-touched`).
+
+**Nothing is clamped behind the screen.** The commit sends what the box says.
+`_clamp_to_minimum` runs before the row is rendered, so the number shown is the
+number saved — the `parsed_count`/`model_count` split still shows its working.
+
+**`/add` got the same box in the same change.** It is the same screen doing the
+same job with the same shared `add.js`; making one editable and its sibling
+read-only is how two screens built together start behaving differently.
+
 **An export names itself, so `/lists/import` stopped asking.** Clay, looking at
 the form on his phone with the paste already in the box: *"Pull the title,
 battle size from the list import. If I don't give it let me add after and

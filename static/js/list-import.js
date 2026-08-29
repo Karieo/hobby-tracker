@@ -16,7 +16,10 @@ document.addEventListener('click', async (e) => {
 
   const rows = [...document.querySelectorAll('.addrow')].map((row) => ({
     datasheet_id: Number(row.querySelector('.ds').value) || null,
-    model_count: Number(row.dataset.count) || 1,
+    // What the box says, because it is what Clay is looking at. The server
+    // stores this verbatim — nothing is clamped behind the screen.
+    model_count: Number((row.querySelector('.count') || {}).value)
+      || Number(row.dataset.count) || 1,
     // The line it came from travels with it, so a datasheet Clay picked here
     // teaches the alias table and the same spelling is never asked about
     // twice. A row that arrived already resolved has nothing to teach.
