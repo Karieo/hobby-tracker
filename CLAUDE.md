@@ -354,14 +354,21 @@ models arriving somewhere Clay had better have chosen on purpose. `/add` adds
 models to the collection and does **not** create a list — `/lists/import` is
 still the door for that, and the two are separate on purpose.
 
-**There is one real export in the repo now, and it broke the count rule on
-arrival.** Clay pasted his own 2000-point Ork list on 2026-08-27 — *"Here is the
-format"* — and it is `tests/fixtures/lists/real_orks_2000.txt`, the first
-non-invented sample this repo has ever had. `_newrecruit_count` inferred a
-unit's models from bullet *nesting* and returned 1 for any flat block; his list
-is flat from top to bottom, so **twenty units and ninety-two models read as
-twenty**. The fixtures README had already named that rule "the single thing in
-the parser most likely to be wrong", and it was.
+**A pasted list broke the count rule, and I mislabelled where it came from.**
+Clay pasted a 2000-point Ork list on 2026-08-27 — *"Here is the format"* — and I
+filed it as the repo's first real export. It is not one. He said next: **"I
+pasted from Claude trying to make a list."** The text was written by a model, so
+treating it as evidence about any app's format was the exact laundering this
+repo forbids everywhere else — fluent, plausible, unsourceable, and believed
+because it arrived through a paste rather than a seed file. It is
+`tests/fixtures/lists/pasted_orks_2000.txt` now, and **this repo has still never
+read a verified export.**
+
+**The bug it exposed was real even though its provenance was not.**
+`_newrecruit_count` inferred a unit's models from bullet *nesting* and returned
+1 for any flat block; that list is flat top to bottom, so **twenty units and
+ninety-two models read as twenty**. The fixtures README had already named that
+rule "the single thing in the parser most likely to be wrong", and it was.
 
 **The undercount was documented as costing nothing, and that reasoning was for
 the wrong door.** It holds for the gap report, where "you need 1 Boy" is
@@ -369,16 +376,23 @@ visibly odd and the opposite error sends Clay shopping. It does not hold for
 `/add`, which *writes* the models: seventy miniatures silently missing from a
 collection, with nothing on any screen to show for it.
 
-**The fix reads the convention off the document, not off recall.** In Clay's
-export a model bullet always carries a count and a wargear bullet never does
-(`• 5x Flash Git` beside `• Supa Snazz-Dakka`); New Recruit counts *everything*
-and separates models from wargear by nesting alone. So `_uncounted_wargear`
-asks whether any bullet in the whole paste is uncounted, and only then may a
-flat block be summed. Where every bullet is counted, nothing changed and
-`synthetic_newrecruit_flat.txt` still reads 1 per unit — that case is genuinely
-ambiguous and must stay that way. Decided **per document**, because `Boyz` with
-one `• 10x Ork Boy` is identical in both conventions and only the rest of the
-file says which it is written in.
+**The fix reads a convention off the document, and the convention is
+unverified.** In that file a model bullet always carries a count and a wargear
+bullet never does (`• 5x Flash Git` beside `• Supa Snazz-Dakka`), where the
+invented New Recruit samples count *everything* and separate models from wargear
+by nesting alone. So `_uncounted_wargear` asks whether any bullet in the whole
+paste is uncounted, and only then may a flat block be summed. Where every bullet
+is counted, nothing changed and `synthetic_newrecruit_flat.txt` still reads 1
+per unit — genuinely ambiguous, and it stays that way. Decided **per
+document**, because `Boyz` with one `• 10x Ork Boy` is identical in both
+conventions and only the rest of the file says which it is written in.
+
+**It is kept because the input is real even though the format claim is not.**
+Clay pastes model-written lists into this app; that is a thing it has to handle,
+and reading them as one model per unit is badly wrong for him. But no verified
+export has ever been read here, so nothing establishes that a real one never
+mixes the two conventions. A real sample could disprove the rule, and would be
+the first evidence of any kind.
 
 **The screen says "Read as an app export" and names no app.** `detect_format`
 calls Clay's list New Recruit, and it matches neither set of samples cleanly —

@@ -2429,11 +2429,12 @@ def test_the_preview_says_it_recognised_an_export(client, army_with_unit):
     """The parser switched itself, and a screen that quietly changed how it
     read your paste is one you stop trusting.
 
-    It says "an app export" rather than naming one. The detector's two names
-    come from samples written to a documented shape, and the only real export
-    this repo has detects as New Recruit while looking like neither — so naming
-    an app to Clay about his own list would be a confident claim with nothing
-    behind it.
+    It says "an app export" rather than naming one, and that turned out to be
+    the right call for a stronger reason than the one it was made for. This repo
+    has never read a verified export from any app: the format samples are
+    written to a documented shape, and the one list that looked like real
+    evidence was model-written text Clay pasted. Naming an app would be a
+    confident claim with nothing at all behind it.
     """
     body = client.post('/add/preview', data={'text': GW_EXPORT}).get_data(as_text=True)
 

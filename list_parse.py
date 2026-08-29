@@ -264,14 +264,17 @@ def _newrecruit_count(bullets, uncounted_wargear=False):
     wrong in *for a list*, where the resolved datasheet's `min_models` catches
     it in the report rather than sending anyone shopping.
 
-    It is **not** safe for `/add`, which writes the models. Clay's own 2000-point
-    export (`fixtures/lists/real_orks_2000.txt`, the first real sample in this
-    repo) is flat from top to bottom: twenty units, ninety-two models, and every
-    one of them read as 1.
+    It is **not** safe for `/add`, which writes the models. The 2000-point list
+    in `fixtures/lists/pasted_orks_2000.txt` is flat from top to bottom: twenty
+    units, ninety-two models, and every one of them read as 1.
 
-    `uncounted_wargear` is what rescues it, and the signal comes from that real
-    export rather than from anything a model recalls about either app. In it,
-    a model bullet always carries a count and a wargear bullet never does:
+    `uncounted_wargear` is what rescues it. **The signal is unverified**, and
+    honestly so: that fixture is text Clay pasted, and he said afterwards it came
+    out of a Claude conversation rather than out of an app. It is a real input —
+    he really does paste model-written lists here — and it is no evidence at all
+    about what New Recruit or the GW app actually writes. Nothing in this repo
+    has ever read a verified export. In that file a model bullet always carries
+    a count and a wargear bullet never does:
 
         Flash Gitz (170 points)        Boyz (75 points)
           • 5x Flash Git    <- models    • 10x Ork Boy   <- models
@@ -285,11 +288,15 @@ def _newrecruit_count(bullets, uncounted_wargear=False):
           • 1x Kombi-weapon                ◦ 19x Choppa
           • 1x Power klaw               • 1x Boss Nob
 
-    So when a document contains any uncounted bullet, its convention is the
-    first one, a counted bullet is a model, and a flat block can be summed with
-    confidence. When every bullet in the document is counted, nothing has
-    changed and the flat case still reads 1 — `synthetic_newrecruit_flat.txt`
-    is genuinely ambiguous and must stay that way.
+    So when a document contains any uncounted bullet, its convention is taken to
+    be the first one, a counted bullet is a model, and a flat block is summed.
+    When every bullet in the document is counted, nothing has changed and the
+    flat case still reads 1 — `synthetic_newrecruit_flat.txt` is genuinely
+    ambiguous and must stay that way.
+
+    The rule is conservative rather than proven: it fires only on positive
+    evidence of the uncounted convention, and it is wrong if a real export ever
+    mixes the two. A real sample would settle it, and would be the first.
 
     Decided per document, never per block: `Boyz` with one `• 10x Ork Boy` is
     identical in both conventions, and only the rest of the file says which it

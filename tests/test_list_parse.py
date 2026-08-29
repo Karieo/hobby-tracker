@@ -235,13 +235,16 @@ def test_a_flat_multi_model_block_undercounts_and_that_is_the_safe_direction():
     a collection as smaller than it is, with nothing on any screen to show for
     it. Measured on Clay's real list: 92 models would have been recorded as 20.
 
-    That real export arrived on 2026-08-27 and this test was indeed the one to
-    check first — but it did not make the flat case answerable. It turned out
-    to be written in a different convention entirely, where wargear carries no
-    count, and `_uncounted_wargear` reads that convention off the document.
-    Where the convention is absent, this case is still unanswerable. Clamping
-    with the resolved datasheet's `min_models` remains the idea worth trying
-    for it, and would need a real New Recruit export to justify.
+    A flat list did arrive on 2026-08-27 and this test was indeed the one to
+    check first — but it was model-written text Clay pasted, not an export, so
+    it did not make the flat case answerable either. It uses a different
+    convention, where wargear carries no count, and `_uncounted_wargear` reads
+    that convention off the document. Where it is absent, this case is still
+    unanswerable.
+
+    Clamping with the resolved datasheet's `min_models` remains the idea worth
+    trying, and still needs a verified New Recruit export to justify. This repo
+    has never seen one.
     """
     parsed = list_parse.parse(sample('synthetic_newrecruit_flat.txt'))
     assert counts(parsed) == {'Boyz': 1, 'Gretchin': 1}
@@ -260,9 +263,10 @@ def test_the_readme_says_which_samples_are_invented():
     "the format", so a parser bug looks like correct behaviour.
 
     This used to assert the README shouted SYNTHETIC about the whole directory,
-    which stopped being true the day Clay pasted a real export. The invariant it
-    was protecting did not change — every invented sample still has to be
-    labelled — so what is asserted is the labelling, not the old wording.
+    The wording changed twice: once when a paste was mistaken for a real export,
+    and once when that was corrected. The invariant never moved — every sample
+    here is invented and has to say so — so what is asserted is that the README
+    labels them, not any particular sentence.
     """
     readme = sample('README.md')
     invented = [n for n in os.listdir(FIXTURES) if n.startswith('synthetic_')]
@@ -272,37 +276,46 @@ def test_the_readme_says_which_samples_are_invented():
     assert 'real' in readme.lower(), 'and it has to say which ones are not'
 
 
-def test_a_sample_without_the_prefix_is_claimed_to_be_real():
+def test_a_sample_without_the_prefix_is_documented():
     """The prefix is the whole labelling scheme, so nothing may sit in here
-    unlabelled. A file that is neither `synthetic_` nor `unknown_` is asserting
-    it came out of a real app, and the README has to name it."""
+    unlabelled. A file that is neither `synthetic_` nor `unknown_` needs its
+    provenance written down — which is how a model-written paste came to be
+    filed as a real export for two days."""
     readme = sample('README.md')
     for name in sorted(os.listdir(FIXTURES)):
         if not name.endswith('.txt'):
             continue
         if name.startswith(('synthetic_', 'unknown_')):
             continue
-        assert name in readme, f'{name} claims to be real and is undocumented'
+        assert name in readme, f'{name} has no provenance in the README'
 
 
-# ── Clay's real export ───────────────────────────────────
+# ── The list Clay pasted ─────────────────────────────────
 #
-# Pasted into the conversation on 2026-08-27: "Here is the format." The first
-# real sample this repo has had, and it proved the nesting rule wrong on
-# arrival — which is exactly what the fixtures README had been asking for.
+# Pasted on 2026-08-27 with "Here is the format", and filed as this repo's
+# first real export. It is not one — he said next: "I pasted from Claude trying
+# to make a list." Model-written text, believed because it arrived through a
+# paste instead of a seed file.
+#
+# It stays, because it is a real *input*: Clay pastes model-written lists into
+# this app and the parser has to read them. It is not evidence about any app's
+# format, and these tests do not claim it is.
 
-def _real_orks():
+def _pasted_orks():
     import os
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        'fixtures', 'lists', 'real_orks_2000.txt')
+                        'fixtures', 'lists', 'pasted_orks_2000.txt')
     with open(path) as handle:
         return handle.read()
 
 
-def test_clays_real_list_counts_its_models():
+def test_the_pasted_list_counts_its_models():
     """Twenty units, ninety-two models. Every unit read as 1 before the
-    document-level wargear rule, because the list is flat from top to bottom."""
-    parsed = list_parse.parse(_real_orks())
+    document-level wargear rule, because the list is flat from top to bottom.
+
+    A regression fixture for what Clay actually pastes, not a specimen of any
+    app's export format."""
+    parsed = list_parse.parse(_pasted_orks())
     counts = {}
     for entry in parsed.entries:
         counts.setdefault(entry.raw_name, []).append(entry.model_count)
@@ -317,7 +330,7 @@ def test_clays_real_list_counts_its_models():
 def test_a_wargear_bullet_is_not_a_model():
     """`Flash Gitz` has "5x Flash Git" and "Supa Snazz-Dakka" under it. Five
     models, and the uncounted line is a gun."""
-    parsed = list_parse.parse(_real_orks())
+    parsed = list_parse.parse(_pasted_orks())
     gitz = [e for e in parsed.entries if e.raw_name == 'Flash Gitz']
 
     assert [e.model_count for e in gitz] == [5, 5]
@@ -325,7 +338,7 @@ def test_a_wargear_bullet_is_not_a_model():
 
 def test_a_character_with_only_wargear_is_one_model():
     """`Beastboss` carries "• Kaptin's Hat" and nothing else."""
-    parsed = list_parse.parse(_real_orks())
+    parsed = list_parse.parse(_pasted_orks())
     boss = [e for e in parsed.entries if e.raw_name == 'Beastboss']
 
     assert [e.model_count for e in boss] == [1]
@@ -334,7 +347,7 @@ def test_a_character_with_only_wargear_is_one_model():
 def test_the_preamble_and_the_headings_are_not_units():
     """Five preamble lines and four section headings in this one, including
     "Priority Assets" and "DEDICATED TRANSPORTS"."""
-    names = [e.raw_name for e in list_parse.parse(_real_orks()).entries]
+    names = [e.raw_name for e in list_parse.parse(_pasted_orks()).entries]
 
     for junk in ('Da Wrecka Krew', 'Orks', 'Strike Force', 'Priority Assets',
                  'Wreckas + Shoota Boyz + Da Big Hunt', 'CHARACTERS',
