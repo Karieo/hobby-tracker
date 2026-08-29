@@ -2,6 +2,7 @@
 
 import pytest
 
+import backlog
 import collection as col
 import database as db
 
@@ -290,6 +291,123 @@ def test_progress_is_effort_weighted_not_model_counted(conn, orks, stages):
     assert stats['effort_done'] == 8
     assert stats['completion'] == 50, \
         '8 of 9 models done is 50% of the effort, not 89%'
+
+
+def test_a_built_model_has_earned_some_of_its_effort(conn, orks, stages):
+    """The bug Clay reported on 2026-08-29, in his own numbers.
+
+    "Killa Kans, Painboy, Wartrakk and Weirdboy are all built with effort_done
+    at 0, which drags the whole army to 0/188 and 0%. Four assembled models
+    are invisible to your progress metric."
+
+    They were: `effort_done` summed only models at the **terminal** stage, so
+    an evening spent assembling a whole army moved the number not at all. One
+    step of six is not much, but it is not nothing, and a screen that reports
+    an evening's work as nothing is the abandonment failure this app is built
+    against.
+    """
+    army_id = col.create_army(conn, 'Da Wrecka Krew')
+    unit_id = col.create_unit(conn, orks['Deff Dread'], 1, army_id=army_id)
+    col.set_models_stage(conn, [m['id'] for m in col.unit_models(conn, unit_id)],
+                         stages['Assembled']['id'])
+
+    stats = col.army_stats(conn, army_id)
+    assert stats['done_count'] == 0, 'still nothing finished — that was never wrong'
+    assert stats['effort_done'] == pytest.approx(8 / 6, abs=0.05), \
+        'one step of the six it walks, at effort 8'
+    assert stats['completion'] == 17
+
+    unit = [u for u in col.list_units(conn, army_id=army_id)][0]
+    assert unit['effort_done'] == pytest.approx(8 / 6, abs=0.05), \
+        'the unit row says the same thing the army header does'
+
+
+def test_the_army_rollup_and_the_backlog_never_contradict_each_other(
+        conn, orks, stages):
+    """Spent plus still-to-spend is the whole job, on the same collection.
+
+    These were two readings of one sentence and they disagreed: `/backlog`
+    already credited partial progress while `/armies` credited none, so the
+    same half-built army was 0% done on one screen and most of the way
+    through a chunk of work on the other. Both go through
+    `col.done_fraction` now, and this is the arithmetic that says so.
+    """
+    army_id = col.create_army(conn, 'Da Boyz')
+    boyz = col.create_unit(conn, orks['Boyz'], 10, army_id=army_id)
+    dread = col.create_unit(conn, orks['Deff Dread'], 1, army_id=army_id)
+    col.set_models_stage(conn, [m['id'] for m in col.unit_models(conn, boyz)],
+                         stages['Painted']['id'])
+    col.set_models_stage(conn, [m['id'] for m in col.unit_models(conn, dread)],
+                         stages['Assembled']['id'])
+
+    stats = col.army_stats(conn, army_id)
+    left = backlog.totals(backlog.backlog(conn, army_id=army_id))['effort_left']
+    assert stats['effort_done'] + left == pytest.approx(stats['effort_total'],
+                                                        abs=0.15)
+
+
+def test_a_model_with_no_base_earns_more_from_the_same_step(conn, stages):
+    """A Trukk walks four steps, not six, so each one is worth a quarter.
+
+    The ladder is per model — `stages_for` has known that since migration 004
+    — and charging every vehicle the full ladder is what makes them look
+    permanently unfinished. The rollups read the datasheet's basing for the
+    same reason `/backlog` does.
+    """
+    faction_id = db.upsert_faction(conn, 'Orks', 'orks')
+    ids = {}
+    for name, basing in (('Trukk', 'unbased'), ('Nobz', 'based')):
+        cur = conn.execute(
+            'INSERT INTO datasheets (bsdata_id, name, faction_id, effort, '
+            'basing, created_at, updated_at) VALUES (?, ?, ?, 4, ?, ?, ?)',
+            (name.lower(), name, faction_id, basing, db.now(), db.now()))
+        ids[name] = cur.lastrowid
+
+    done = {}
+    for name in ('Trukk', 'Nobz'):
+        army_id = col.create_army(conn, f'{name} army')
+        unit_id = col.create_unit(conn, ids[name], 1, army_id=army_id)
+        col.set_models_stage(conn,
+                             [m['id'] for m in col.unit_models(conn, unit_id)],
+                             stages['Assembled']['id'])
+        done[name] = col.army_stats(conn, army_id)['effort_done']
+
+    assert done['Trukk'] == pytest.approx(4 / 4, abs=0.05)
+    assert done['Nobz'] == pytest.approx(4 / 6, abs=0.05)
+
+
+def test_buying_something_is_not_progress(conn, orks, stages):
+    """A wishlist model has earned nothing, and neither has one on sprue.
+
+    The walk begins at On sprue, so Wishlist → On sprue crosses no step — the
+    same line `backlog._work_left` draws when it refuses to call a wishlist
+    model backlog, and `recent.py` when it refuses to call buying work.
+    """
+    army_id = col.create_army(conn, 'Da Boyz')
+    col.create_unit(conn, orks['Deff Dread'], 1, army_id=army_id)
+    assert col.army_stats(conn, army_id)['effort_done'] == 0
+
+    unit_id = col.create_unit(conn, orks['Deff Dread'], 1, army_id=army_id)
+    col.set_models_stage(conn, [m['id'] for m in col.unit_models(conn, unit_id)],
+                         stages['Wishlist']['id'])
+    assert col.army_stats(conn, army_id)['effort_done'] == 0
+
+
+def test_the_inventory_credits_partial_progress_too(conn, orks, stages):
+    """The front door counts it in Python; it must still say the same number.
+
+    `inventory` has the per-stage counts to hand and does the sum
+    itself rather than in SQL. Two implementations of one rule is exactly how
+    the screens drifted apart in the first place, so this pins them together.
+    """
+    unit_id = col.create_unit(conn, orks['Deff Dread'], 1)
+    col.set_models_stage(conn, [m['id'] for m in col.unit_models(conn, unit_id)],
+                         stages['Painted']['id'])
+
+    row = [r for r in col.inventory(conn)
+           if r['datasheet_id'] == orks['Deff Dread']][0]
+    assert row['effort_done'] == pytest.approx(8 * 4 / 6, abs=0.05)
+    assert row['effort_done'] == col.army_stats(conn, None)['effort_done']
 
 
 # ── Armies are not factions ──────────────────────────────

@@ -108,7 +108,7 @@ def summary(conn, days=WINDOW_DAYS, today=None):
     things to keep in step.
     """
     ladder = col.stage_ladder(conn)
-    walks = _walks(conn, ladder)
+    walks = col.walks(conn, ladder)
     since = _since(days, today)
 
     reached = {}          # stage position -> {model_id}
@@ -151,33 +151,19 @@ def _since(days, today=None):
     return str((today or date.today()) - timedelta(days=days - 1))
 
 
-def _walks(conn, ladder):
-    """{basing: [positions a model of that kind actually walks]}.
-
-    Derived from the ladder rather than written down, exactly as
-    `backlog._steps_by_basing` does it — adding a stage to the pipeline must not
-    leave this measuring the old one.
-    """
-    return {basing: [s['position']
-                     for s in col.stages_for(conn, basing, ladder)
-                     if s['is_owned']]
-            for basing in ('based', 'unbased')}
-
-
 def _fraction(from_position, to_position, walk):
     """How much of a model's total effort one move represents.
 
-    The mirror of `backlog._work_left`, and clamped at the bottom for the same
-    reason it skips unowned models: the walk begins at On sprue, so buying
-    something crosses no step. A move that skips a stage — an unbased model
-    going Assembled straight to Primed — crosses the steps its own ladder has
-    between them, which is why the walk is per basing.
+    The difference between what the model had earned at each end —
+    `col.done_fraction`, the same function the rollups sum and `/backlog`
+    takes the complement of. Buying crosses no step, because the walk begins
+    at On sprue and `done_fraction` counts nothing below it. A move that skips
+    a stage — an unbased model going Assembled straight to Primed — crosses
+    the steps its own ladder has between them, which is why the walk is per
+    basing.
     """
-    total = len(walk) - 1
-    if total < 1:
-        return 0.0
-    low = max(from_position, walk[0])
-    return len([p for p in walk if low < p <= to_position]) / total
+    return (col.done_fraction(to_position, walk)
+            - col.done_fraction(from_position, walk))
 
 
 def _survivors(conn, since):

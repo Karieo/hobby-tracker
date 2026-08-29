@@ -136,6 +136,40 @@ ladder is per model — `stages_for` — so a Trukk is four steps from done and 
 six, and vehicles do not look permanently unfinished. Wishlist models are not
 backlog: they are not on the shelf.
 
+**There is one definition of progress, `collection.done_fraction`, and every
+surface reads it.** Clay, 2026-08-29: *"Killa Kans, Painboy, Wartrakk and
+Weirdboy are all built with effort_done at 0, which drags the whole army to
+0/188 and 0%. Four assembled models are invisible to your progress metric."*
+They were. `effort_done` summed `CASE WHEN st.is_terminal THEN d.effort`, so a
+model earned its effort only at Battle ready and an evening spent assembling an
+army moved the number not at all — the abandonment failure this app is designed
+against, on the screen that leads with the number.
+
+**The rule already existed twice and the rollups were a third reading that was
+not one.** `/backlog` credited partial progress and `recent.py` credited each
+step, so the same half-built army was 0% done on `/armies` and most of the way
+through a chunk of work on `/backlog`. Measured on Clay's own units before the
+fix: 0.0 spent against 81.4 left, out of 86. Now 4.7 and 81.4, which add up.
+
+`done_fraction(position, walk)` is the single sentence: what a model has earned
+by reaching a stage. `backlog` takes `1 -` it, `recent` takes the difference
+between two, and the four SQL rollups sum `effort_credit_sql` — a generated
+CASE carrying the same numbers into the query, because the fraction depends on
+the *datasheet's* basing and a Trukk walks four steps where Boyz walk six.
+Battle ready is 1.0 by construction, so the terminal stage no longer appears in
+any of those queries.
+
+**The percentage comes off the exact figure and the figure is rounded after.**
+`_spent` does both, in that order: a lone assembled Deff Dread has earned 1.667
+of its 8, which is 17%; round it to 1.7 first and the same model reads 21%.
+
+**The home caption was a lie the moment the number changed, and rendering the
+screen is what caught it.** "of everything you own is battle ready" over 17%
+with "3 of 79 models" beneath it. It says "of the work on your collection is
+done" now, and the raw count keeps the words "battle ready", where they are
+still exact. Sixth session running that the rendered page found what the suite
+did not.
+
 **The home screen says what you got done, and never answers with a zero.**
 `recent.py` and the "Last 30 days" panel (spec §5.1) — the second thing to read
 `stage_events` back, after `journey.py`. Models finished is the number the spec
@@ -529,9 +563,14 @@ anyone notices.
   remove models" was true while the route sat there answering. `POST
   /api/units/<id>/models` is still in that state. Grep the templates and
   `static/js/` before believing a capability exists.
-- **Every progress figure is effort-weighted.** A Knight and a Termagant are
-  both "1 model", which makes model-count percentages meaningless. Raw counts
-  show alongside, never instead.
+- **Every progress figure is effort-weighted, through one function.** A Knight
+  and a Termagant are both "1 model", which makes model-count percentages
+  meaningless. Raw counts show alongside, never instead. And "how far along"
+  is `collection.done_fraction` everywhere — `/backlog`, `/armies`, the unit
+  rows, the inventory, the home headline and `recent.py`. A second
+  implementation of it is how two screens came to describe the same collection
+  differently for months, so a new surface that reports progress calls it
+  rather than counting steps of its own.
 
 ## Designing against abandonment
 

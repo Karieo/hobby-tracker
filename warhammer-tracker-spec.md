@@ -169,7 +169,10 @@ silently, months before anyone notices. Full reasoning in `CLAUDE.md`.
 - **No scraping** GW for prices, eBay for resale, or any site for points.
 - **`box_state` is not a model stage.**
 - **Disposals are status changes, never deletions.**
-- **Every progress figure is effort-weighted**, with raw counts alongside.
+- **Every progress figure is effort-weighted**, with raw counts alongside,
+  and every one of them goes through `collection.done_fraction` — one
+  definition of how far along a model is, read forwards by the rollups and
+  backwards by the backlog.
 
 ## 5 · Where the app stands against this
 
