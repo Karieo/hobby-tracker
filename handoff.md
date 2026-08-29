@@ -2,238 +2,197 @@
 
 ## 1 · Goal
 
-Seven PRs, and not one of them was a feature request in the ordinary sense.
-They came from Clay opening the app on his phone and saying what was wrong, or
-from asking him what to do next and building his answer.
+Four more PRs, all of them started by Clay opening the app and saying what was
+wrong, or answering "what next". The run before this one is at the bottom.
 
-The thread, in order:
+1. > "I just need to be able to track models here… I do need to edit lists.
+   > Spend and kits are obsolete."
 
-1. **`/shopping`** (#53) — chosen from the §9 audit as the last big gap in the
-   buying half of the loop. Merged before this run's handoff was written.
-2. > "No way to delete list."
+   List editing, and the money off every screen (#60).
+2. **The home dashboard** (#61) — chosen from spec §9 when asked what to build.
+3. > "games played by list, win/loss and point difference 0-100"
 
-   A screenshot of an empty Imperial Knights list. The delete control was the
-   easy half; **the pool bug behind it** was the reason it could not just be
-   wired up (#54).
-3. **`/sale`** (#55) — chosen from §9. `models.for_sale_on` had existed since
-   migration 011 and nothing ever *fed* it.
-4. > "There are only 2 list battle sizes for list. Unit composition shall not
-   > exceed."
+   Games per list (#62).
+4. > "I want to be able to paste in a list and it reconcile against the
+   > datasheets and add." … "Here is the format." … **"I pasted from Claude
+   > trying to make a list."**
 
-   A screenshot of the 40,000 app's own picker (#56).
-5. > "Can you do a full code review" … "fix 1, 2 and 4" … "What else?"
-
-   A full-repo sweep, eight findings, shipped in two halves (#57, #58).
-6. > "How often are we updating all of the data." … "New points came out
-   > today."
-
-   Investigated; the app was already current. The *check* was not (#59).
-7. > "I'll play games in another app, it's called Battlebase. So I just need to
-   > be able to track models here… I do need to edit lists. Spend and kits are
-   > obsolete."
-
-   List editing, and the money off every screen (#60, **open**).
+   The `/add` paste door, a real count bug behind it, and a correction to a
+   claim I had already written into the repo (#63).
 
 ## 2 · Current state
 
-**`main` is green at `1a282e3`** — PR #59 merged. **PR #60 is open and draft**
-on `claude/new-session-8l17p6` at `3392987`, two commits, all four CI checks
-green, `mergeable_state: clean`. **864 tests**, ShellCheck clean.
+**`main` is green at `ab2012a`** — PR #63 merged. **939 tests**, ShellCheck
+clean, no open PRs, no branch in flight.
 
-**Deployed state on bastion is still behind, and one item is still blocking.**
-Clay has **never run the Kill Team importer**, which is the only thing that
-fixes the faction filtering — there is no migration, the fix arrives with the
+**Deployed state on bastion is four merges behind and the same item is still
+blocking.** Clay has **never run the Kill Team importer**, which is the only
+thing that fixes the faction filtering — no migration, the fix arrives with the
 importer alone. His Orks filter reads 23 where it should read 62.
 
 ### What landed
 
-**#54 · Deleting a list re-points its wishlist models rather than clearing
-them.** `DELETE /api/lists/<id>` and `lists.delete_list` had both shipped and
-nothing called either — the endpoint-with-no-caller pattern, third instance.
-Wiring the button up first meant fixing what it would have done: `delete_list`
-predates migration 012 and cleared `wishlist_source_list_id` for every model the
-list raised, which marks *the pool* — so deleting one list dropped models
-**another live list still claimed** and the next raise bought them again.
-Measured: Saturday raises 20, Sunday claims the same 20, delete Saturday and the
-pool is empty with Sunday's 20 claims standing; Monday's raise took the wishlist
-to 40. The exact over-buying `wishlist_claims` exists to stop, through the
-delete door. It cannot simply keep the old id — the column is a plain
-`REFERENCES` with no `ON DELETE`, so a surviving reference restricts the delete
-outright, which is *why* the blanket clear was there.
+**#60 · Lists are editable, and the paste behind them is not.** `update_list`
+takes `**fields` against a `_LIST_FIELDS` allowlist. `raw_text`,
+`source_format` and `points_total` are outside it on purpose: they record what
+was *pasted*, `reparse` reads them, and a form that could rewrite them would let
+a typo erase provenance nothing can rebuild.
 
-**#55 · The sale screen proposes; the shortlist decides.** Two sections, because
-a sealed box and a loose model are different objects. **"Needed" is the maximum
-any one list asks, never the sum** — the same rule the wishlist deduplicates on.
-Summing is the dangerous direction here: it inflates what looks needed, hides
-real surplus, and makes the screen recommend nothing, which is a quiet failure
-nobody notices. A sealed box is **held back whole** if any datasheet in it is
-wanted, and held-back boxes are *named* — "nothing sealed worth selling" and
-"four sealed boxes and every one is spoken for" are different facts.
-
-**#56 · Battle size is a picker of two, and the two came off a screenshot.**
-`lists.BATTLE_SIZES` is Incursion (1000) and Strike Force (2000), taken from the
-40,000 app's own picker — not from anything a model recalls about the game,
-which is the distinction this repo cares most about. No migration:
-`army_lists.points_limit` already holds the number. **And `SELECT l.*` collided
-with `AS points_total`** — `army_lists` has a column of that name, so the
-aggregate came back second and `sqlite3.Row` hands `dict()` the first. Every
-list on `/lists` showed the word "None" where its points belong.
-
-**#57 and #58 · The eight review findings.** The one that mattered:
-`home_summary` had `_ACTIVE_UNIT` and no `_LIVE_MODEL`, so the home screen's
-headline went on counting sold models while every other surface had dropped
-them. **CLAUDE.md had cited the test that would have caught it, by name, for
-months before it existed.** It exists now and walks every ownership surface.
-Also: `/lists` showing 0 for an unpriced list, the Kill Team points nag, a way
-to sign out at all (`POST /api/auth/logout` shipped in the first commit and
-nothing ever called it), and two more disposal filters.
-
-**#59 · A moved pin is not stale data, and the check now says which.** Measured,
-both directions wrong: the MFM pin had moved on a `chore(deps)` CI bump with the
-points files **byte-identical**, and BSData had moved by 35 genuine data commits
-— 805 inserted lines in `Orks.json` alone — that changed **two rows** of what
-this app imports, both keyword-only, in armies Clay does not play. `check_pins`
-separates `moved` from `stale`, and for BSData and Kill Team `stale` is **None,
-not False**: "not established" and "no" are different answers and only one is
-honest.
-
-### What is open on #60
-
-**Lists are editable, and the paste behind them is not.** `update_list` takes
-`**fields` against a `_LIST_FIELDS` allowlist. `raw_text`, `source_format` and
-`points_total` are **outside it on purpose** — they record what was *pasted*,
-`reparse` reads them, and a form that could rewrite them would let a typo erase
-provenance nothing can rebuild.
-
-**There is no money anywhere on screen.** No RRP field on `/templates`, no "paid
+**And there is no money anywhere on screen.** No RRP on `/templates`, no "paid
 £X" on `/sale`, no cost on `/gallery`, no totals on `/shopping`. `rrp_cents` and
-`cost_cents` **stay in the schema, unread** — the same bargain migration 010's
-disposal columns made. But the *code* behind the prices went rather than being
-left computing: a figure nothing renders drifts out of step with the catalogue
-and nobody notices. What survived is the half that was never about money —
-which boxes, and how much spare they arrive with. The overage is now the only
-cost anything reports, which is why it sits directly behind coverage in the
-tie-break.
+`cost_cents` stay in the schema unread — the bargain migration 010's disposal
+columns already made — but the *code* behind the prices went rather than being
+left computing: a figure nothing renders drifts out of step and nobody notices.
+
+**#61 · The home screen says what you got done, and never answers with a zero.**
+`recent.py` and the "Last 30 days" panel, the second thing to read
+`stage_events` back after `journey.py`. Models finished is what §5.1 asks for
+and reads **zero** for a month spent priming sixty Boyz — so the headline falls
+back to what did move, with `effort_done` alongside in the same currency
+`/backlog` reports what is left in. Arrivals are excluded *structurally* (an
+inner join on the from-stage), so typing in a painted collection does not report
+itself as a month's work. It is the one counting surface that does **not**
+filter disposals: it counts what Clay did, not what he has.
+
+**#62 · Games are recorded per list, and nothing derived is stored.** `games.py`
+and migration 013. Asked which way round, Clay chose **both scores** over a
+difference — one more number typed, and it is what tells "lost 85–90" from
+"lost 45–90". Result and margin both fall out of the pair, so neither is a
+column. The 0–100 range is his number, pinned as data like `BATTLE_SIZES`, and
+deliberately not scoped by game system. Outcomes only: he plays in Battlebase,
+"playing the game is a whole other thing".
+
+**#63 · `/add` takes an app export, and counts it properly.** Measured first: a
+GW-style export through the shelf parser gave fifteen rows, **seven of them
+junk**. `bulk_add.parse_paste` now asks `list_parse.detect_format` and
+dispatches; the two parsers stay separate because merging costs the shelf its
+stage words and the export its refusal to skip.
+
+Behind it was a real bug. `_newrecruit_count` inferred a unit's models from
+bullet *nesting* and returned 1 for any flat block — 20 units and 92 models read
+as 20. For the gap report that is a survivable under-count; for `/add`, which
+*writes* the models, it is seventy miniatures silently missing.
 
 ## 3 · Active files
 
-**In flight on `claude/new-session-8l17p6` (PR #60):**
+Nothing is in flight. New this run:
 
-- `lists.py` — `update_list`, `_LIST_FIELDS`, `battle_size`, `BATTLE_SIZES`,
-  `points_headline`, `delete_list`.
-- `templates/list.html` — the `<details id="edit-list">` form and the
-  `#delete-list` danger button.
-- `shopping.py`, `templates/shopping.html` — the price apparatus removed.
-- `templates/sale.html`, `gallery.html`, `template.html`, `templates.html` —
-  money removed.
-- `CLAUDE.md` — the two sections promising price honesty **deleted rather than
-  edited**; they described behaviour that no longer exists.
-
-**Landed this run and worth knowing about:**
-
-- `sale.py`, `templates/sale.html`, `tests/test_sale.py` — **new** (#55).
-- `templates/base.html` — the footer owner name is now the sign-out button
-  (#58). No nav entry: it sits where you would look to check who you are
-  signed in as.
-- `rules_data.py` — `mfm_upstream()` reads the MFM's `DATA-CHANGELOG.md`;
-  `check_pins` separates `moved` from `stale` (#59).
-- `collection.py` — `home_summary`, `list_for_sale`, `stalled_unit` all gained
-  the disposal filter (#57, #58).
-- `tests/test_collection.py::test_every_ownership_surface_drops_a_disposed_model`
-  — **new**, and the one to add to when a new screen counts ownership.
+- `recent.py`, `tests/test_recent.py` — **new** (#61). No nav entry; the panel
+  lives on Home.
+- `games.py`, `migrations/013_games.sql`, `tests/test_games.py` — **new** (#62).
+- `bulk_add.parse_paste` and `list_parse._uncounted_wargear` — **new** (#63).
+  `list_parse` imports the shared scaffolding patterns from `bulk_add`, so
+  `parse_paste`'s import of `list_parse` is local and says why.
+- `tests/fixtures/lists/pasted_orks_2000.txt` — Clay's paste. **Real input,
+  invented format.** See §5.
+- `lists.py`, `templates/list.html`, `templates/lists.html` — editing, the games
+  section, the record on the index.
 
 ## 4 · Changes made
 
-Merged to `main`: #54, #55, #56, #57, #58, #59. Open: #60. Test count
-791 → 864.
+Merged: #60, #61, #62, #63. Test count 864 → 939.
 
 ## 5 · Failed attempts
 
-**A teeth-check harness that proved nothing, five times over.** My bash helper
-passed `-k 'a or b'` through an unquoted `$2`, which word-split into a broken
-pytest expression; pytest errored, and my grep for `^FAILED` found nothing — so
-five sabotages "passed" and I nearly believed them. Quoted properly, all five
-bit. **The tell is the same one this repo keeps re-learning: a sabotage run that
-prints nothing has not checked anything.** Read the sabotage output, do not
-grep it.
+**I filed model-written text as real data, and wrote it into the repo as fact.**
+Clay pasted a 2000-point Ork list with "Here is the format". I took it at face
+value, named the fixture `real_orks_2000.txt`, rewrote the fixtures README around
+it as "the first real export this repo has ever had", and cited it in CLAUDE.md
+and three docstrings as evidence of what an app writes. Two days later: **"I
+pasted from Claude trying to make a list."**
 
-**A vacuous test I wrote and then deleted.** It asserted `/login` carries no
-sign-out control — but `login.html` is standalone and does not extend
-`base.html`, so it could only ever pass. Deleted rather than kept.
+It is the exact laundering this repo forbids everywhere else — fluent,
+plausible, unsourceable — and the seed-data rule has a whole section in
+CLAUDE.md that I walked straight past **because the text arrived from a person
+rather than from a file**. That is the transferable lesson: provenance is about
+where the words were *written*, not who handed them over. Ask.
 
-**Two commit messages with wrong test counts** (862 for 854, 871 for 873).
-Amended before opening the PRs. Count, do not estimate.
+Corrected in `5f3561d`. The bug it exposed was real and the fix stays; what
+changed is that it is documented as an unverified convention a real sample could
+disprove. **This repo has still never read a verified export from any app.**
 
-**`delete_list`'s first fix hit `FOREIGN KEY constraint failed`** and that
-failure was the useful part — it is *why* the destructive blanket clear existed.
-Re-pointing rather than retaining was the fix.
+**Two vacuous tests, both caught by the teeth check, both in #61.** The
+window-edge test pinned a day *inside* the window rather than the boundary, so
+widening the window by a day still passed. The distinctness test had its second
+event cancelled by the retreat before it, so it never exercised distinctness at
+all. Both rebuilt.
 
-**An autouse `_no_network` fixture shadowed `mfm_upstream`** for the three tests
-that exercise it. Fixed by capturing `_REAL_MFM_UPSTREAM` before the fixture.
+**A third overclaiming test, in #63.** `test_a_retyped_sheet_is_a_shelf_not_an_export`
+passed under the sabotage that broke routing entirely — because, measured, both
+parsers return identical rows for a retyped sheet. Renamed to claim only the
+detection.
 
-**`shopping.html` left unbalanced** after I removed a block containing an
-`{% endif %}`. Caught with an opens/closes balance check across every touched
-template — worth running whenever a block is removed rather than replaced.
+**Two sabotages that were wrong themselves.** One crashed the code (a LEFT JOIN
+leaving `fs.position` NULL) instead of producing a wrong answer, which proves
+nothing about the tests. Another changed only the *lookup* key and not the key
+being built, making it a duplicate of an earlier sabotage. **A sabotage has to
+produce a wrong answer, not an exception.**
 
-**Two bugs found by rendering the real screen, not by a green suite.** The sale
-screen offered the same sealed Gorkanaut box twice — once as a box, once as "2
-spare" models that cannot be sold loose anyway. And the list index showed the
-word "None". **Neither had a failing test; both were obvious on sight.** Render
-the page.
+**A screenshot that looked unchanged was not proof the change had not landed.**
+The dev server runs `debug=False`, so Jinja caches templates; the first
+re-render after a template edit was byte-identical. Restart the server before
+believing a render.
 
-**I misreported PR #53 as closed-unmerged and asked Clay if it was a misclick.**
-It had merged five seconds earlier. Every check-in since verifies against
-`origin/main` with git — the history is the primary source, the API's `merged`
-flag near a state transition is not.
+**Rendering the page found something in all four PRs.** "10 models finished"
+above "… · 10 battle ready" (one fact twice); a per-game margin line restating
+what "Lost 55–60" already said; a remove control that was the heaviest element
+in every card despite being the rarest action; and "Lines *without* a stage word
+land at Assembled" on a paste where none of them have one.
 
-**I misquoted the BSData target SHA** as `04c62fcd` from a stale note; the live
-check said `46d8cc50`. Do not quote a pin from memory when a script reads it.
-
-**A stop-hook "1 unpushed commit" warning was a false positive** — a stale local
-ref for a branch GitHub deleted on merge. `git fetch --prune` cleared it.
+**`pkill -f devserver.py` killed my own shell** twice (exit 143). Stop a
+background task with its task id.
 
 ## 6 · Next steps
 
-**On bastion, and the first is still blocking a complaint Clay has raised three
-times:**
+**On bastion, and the first has now been outstanding for four merges:**
 
 - **Deploy and run the Kill Team importer.** `git pull && ./deploy.sh`, then
-  `docker-compose exec tracker python3 scripts/import_killteam.py`. The faction
-  filtering stays broken until this runs. `under Orks` should go 23 → 62.
-  (The service is `tracker`, not `app`.)
-- **Confirm the backup cron took** — `crontab -l`. Never confirmed after the
-  `0: command not found` mishap.
+  `docker-compose exec tracker python3 scripts/import_killteam.py`. The service
+  is `tracker`, not `app`. `under Orks` should go 23 → 62.
+- **Confirm the backup cron took** — `crontab -l`.
 - **Revoke the API token pasted into chat.** `scripts/api_token.py --list`, then
-  `--revoke <id>`, then mint a fresh one.
+  `--revoke <id>`.
 
-**Floated, not commissioned:**
+**Asked and unanswered:**
 
-- > "I guess I could keep track of wins by list in the app just for posterity."
-
-  Thinking aloud, and treated as such. Do not build it without asking.
+- **Should one paste both create a list and add the models?** Today `/add` adds
+  models and `/lists/import` makes a list — two doors, two pastes. Clay was
+  offered the combination and has not answered.
+- **Which app does he export from?** Nothing knows. `/add` says "Read as an app
+  export" and names nothing, which is right until there is evidence.
+  `/lists/<id>` still names an app in its own "read as" line and has the same
+  problem; it predates this and is worth fixing once he says.
 
 **Decisions owed, none urgent:**
 
-- **`BACKUP_DEST` is still unset**, so both copies live on the same Jetson. An
-  off-box target is the remaining gap that loses data. Clay asked for a path to
-  be wired and has not named a host.
-- **Weekly sweep DST shift** — `0 14 * * 1` → `0 15 * * 1` after 1 November.
-  The existing DST-fix Routine covers Morning Brief, Evening Wind-down and D&D
-  Prep but **not** the sweep.
-- **The rules pins.** `check_rules_pins.py` now reports `moved` without crying
-  stale, so there is nothing to react to — bumping either is a deliberate call.
-- `barcodes` and `scan_queue` still have no readers. Dropping them destroys the
-  codes already linked to templates — Clay's decision, not a tidy-up.
+- **`BACKUP_DEST` is still unset**, so both copies live on the same Jetson.
+- **Weekly sweep DST shift** — `0 14 * * 1` → `0 15 * * 1` after 1 November. The
+  existing DST-fix Routine covers Morning Brief, Evening Wind-down and D&D Prep
+  but **not** the sweep.
+- `barcodes` and `scan_queue` still have no readers.
 
-**Still unbuilt from spec §9**, in the order I would take them:
+**Still unbuilt from spec §9:**
 
-- **Dashboard** (§5.1) — models finished in the last 30 days from
-  `stage_events`. The spend half is dropped; #60 took the money off the screens.
 - **Sharing models between lists** (§7) — the quiet note, *"3 Killa Kans also
   appear in Speed Freeks 1000"*. Explicitly **not** allocation across lists.
 - **Admin overrides UI** (§5.9) — `datasheet_points.manual_override` and
   `datasheets.effort_is_override` are respected by the importer and settable by
   nothing.
 - **List export as text and JSON** (§10).
-- **Importing a list from a file or a URL** (§2.7) — gated on a source; every
-  candidate host is refused by egress policy. Pasting never was.
+- **Importing a list from a file or a URL** (§2.7) — gated on egress policy.
+  Pasting never was.
+
+---
+
+## Previous run (six PRs, #48–#53)
+
+Kept because its §5 is still the best statement of this repo's most recurring
+failure. **"A check that isn't checking" happened five times in that run**, and
+the tell is that **the sabotage run prints nothing**. Also from it: the
+zero-coverage guard in `shopping._cover` is what makes the loop terminate —
+remove it and the page *hangs* rather than failing, which no suite reports as
+red. `BACKUP_DIR` is the local snapshot directory; `BACKUP_DEST` is an off-box
+`user@host:path`. `docker-compose exec app` does not work — the service is
+`tracker`. And PR #53 was reported as closed-unmerged when it had merged five
+seconds earlier: **check the branch against `origin/main` with git before
+believing a `merged` flag near a state transition.**
