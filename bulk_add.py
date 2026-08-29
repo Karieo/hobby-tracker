@@ -22,6 +22,31 @@ line is a shortfall discovered at the till months later.
 Ambiguity is treated the same as no match. "Boyz" exists in both 40k and Kill
 Team, and several names repeat across factions — picking one because it sorted
 first is exactly the silent corruption the rules-data importer refuses to do.
+
+Two shapes of paste, and the door picks the parser
+--------------------------------------------------
+Clay: *"I want to be able to paste in a list and it reconcile against the
+datasheets and add."* The shelf grammar above is one thing people paste; an
+app's export is the other, and `parse_lines` mangles it. Measured on a real GW
+app export: fifteen rows out of it, of which **seven were junk** — the list
+name, the faction, the battle size, the detachment and three section headings,
+every one of them offered to Clay as a unit needing a datasheet.
+
+That is the failure the unresolved list exists to avoid. `CLAUDE.md` already
+names it for the other door: reporting a preamble as unknown units on every
+paste "would teach Clay to ignore the unresolved rows, which are the one thing
+in this feature he must not learn to ignore."
+
+So `parse_paste` asks `list_parse.detect_format` which shape it is holding and
+hands it to the parser built for it. **The two parsers are not merged**, which
+is deliberate and stated: `parse_lines` reads a shelf typed from memory and may
+skip a line it cannot use; `list_parse.parse` reads an export, carries points
+and position, and may never skip anything. They answer different questions and
+merging them would cost both.
+
+An export carries no stage words, so every row from one takes the batch default
+stage — which is the honest reading of pasting a list into this screen: "I own
+all of this, and it is all at about here."
 """
 
 import re
@@ -133,6 +158,31 @@ def parse_lines(text):
                        'points_hint': points_hint})
     return parsed
 
+
+
+def parse_paste(text):
+    """``(source_format, rows)`` — read either shape of paste into match rows.
+
+    `list_parse` imports the scaffolding patterns from this module, so importing
+    it at the top would close a cycle. The arrow is deliberate — those patterns
+    are shared precisely so the two parsers cannot drift about what a section
+    heading looks like — so the import is local rather than the dependency being
+    rearranged to suit one function.
+    """
+    import list_parse
+
+    fmt = list_parse.detect_format((text or '').splitlines())
+    if fmt == list_parse.UNKNOWN:
+        return fmt, parse_lines(text)
+
+    parsed = list_parse.parse(text)
+    return parsed.source_format, [
+        # `raw_name` fills both: an export's line *is* the unit name, where the
+        # shelf grammar has to strip a count and a stage word off it first.
+        {'raw': entry.raw_name, 'name': entry.raw_name,
+         'count': max(1, entry.model_count), 'stage_word': None,
+         'points_hint': entry.points}
+        for entry in parsed.entries]
 
 def match_lines(conn, parsed, game_system=None):
     """Resolve each parsed line to a datasheet, or report why it could not be.

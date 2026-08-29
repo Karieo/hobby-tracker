@@ -331,10 +331,28 @@ the rest rather than under a `gap_checker/`.
 `bulk_add.parse_lines` reads a shelf typed from memory: it takes stage words
 ("20 Boyz built") and may skip a line it cannot use. `list_parse.parse` reads
 an app's export: it carries points and position, detects the format, and may
-never skip anything. `/lists/import` uses the second now, so a real export's preamble
-is dropped rather than reported as four unknown units; `/add` still uses the
-first, which is right for it. The scaffolding patterns are shared
-(`bulk_add.SECTION_RE`, `TOTAL_RE`, `POINTS_RE`) so the two cannot drift. Stdlib `sqlite3` with `sqlite3.Row`, a fresh connection
+never skip anything. The scaffolding patterns are shared
+(`bulk_add.SECTION_RE`, `TOTAL_RE`, `POINTS_RE`) so the two cannot drift.
+
+**`/add` now picks between them by looking at the paste**, because Clay asked
+to *"paste in a list and it reconcile against the datasheets and add"* and the
+shelf grammar mangles an export. Measured on a real GW app export: fifteen rows,
+**seven of them junk** — the list name, the faction, the battle size, the
+detachment and three section headings, each offered as a unit needing a
+datasheet. That is how he would learn to ignore the unresolved rows, which are
+the one thing on that screen he must not learn to ignore.
+`bulk_add.parse_paste` asks `list_parse.detect_format` and dispatches; the
+parsers stay separate, since merging them would cost the shelf its stage words
+and the export its refusal to skip. `list_parse` imports the shared patterns
+from `bulk_add`, so that one import is local — the arrow is deliberate and is
+not rearranged to suit a single function.
+
+**An export carries no stage words, so all of it lands on the batch default**,
+and the screen says so in those words rather than "lines without a stage word",
+which implies some have one. Found by rendering it: a 2000-point paste is fifty
+models arriving somewhere Clay had better have chosen on purpose. `/add` adds
+models to the collection and does **not** create a list — `/lists/import` is
+still the door for that, and the two are separate on purpose. Stdlib `sqlite3` with `sqlite3.Row`, a fresh connection
 per call, foreign keys ON and WAL. No ORM, no SPA framework, no build step.
 
 **Migrations diverge from Remndrs deliberately.** Remndrs creates its schema

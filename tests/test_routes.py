@@ -2391,3 +2391,91 @@ def test_a_game_can_be_removed(client, gap_list):
 
     assert client.delete(f'/api/games/{game_id}').status_code == 200
     assert client.delete(f'/api/games/{game_id}').status_code == 404
+
+
+# ── /add takes an app export too ─────────────────────────
+#
+# Clay: "I want to be able to paste in a list and it reconcile against the
+# datasheets and add."
+
+GW_EXPORT = """Da Green Tide (2000 points)
+Orks
+Strike Force (2000 points)
+Waaagh! Tribe
+
+CHARACTERS
+
+Warboss (65 points)
+
+BATTLELINE
+
+20x Boyz [180pts]
+"""
+
+
+def test_pasting_an_export_into_add_offers_only_its_units(client, army_with_unit):
+    """The preamble and the section headings are not units. Offering seven of
+    them as unknowns on every paste is how Clay learns to ignore the unresolved
+    rows, which are the one thing here he must not learn to ignore."""
+    body = client.post('/add/preview', data={'text': GW_EXPORT}).get_data(as_text=True)
+
+    assert 'Da Green Tide' not in body
+    assert 'Waaagh! Tribe' not in body
+    assert 'CHARACTERS' not in body
+    assert 'Boyz' in body
+
+
+def test_the_preview_says_what_it_read_the_paste_as(client, army_with_unit):
+    """The parser switched itself. A screen that quietly changed how it read
+    your paste is one you stop trusting."""
+    body = client.post('/add/preview', data={'text': GW_EXPORT}).get_data(as_text=True)
+
+    assert 'Read as the GW app' in body
+
+
+def test_a_shelf_paste_says_nothing_about_a_format(client, army_with_unit):
+    """There is no format to name, and "Read as unknown" would be noise."""
+    body = client.post('/add/preview',
+                       data={'text': '20 Boyz built'}).get_data(as_text=True)
+
+    assert 'Read as' not in body
+    assert 'Boyz' in body
+
+
+def test_an_exported_unit_commits_at_the_batch_stage(client, army_with_unit):
+    """An export carries no stage words, so the batch default is what every
+    model from one arrives at."""
+    with db.connect(db.DB_PATH) as conn:
+        stages = {s['name']: s['id'] for s in col.stage_ladder(conn)}
+        before = conn.execute('SELECT COUNT(*) n FROM models').fetchone()['n']
+
+    res = client.post('/api/add/commit', json={
+        'stage_id': stages['Painted'],
+        'rows': [{'datasheet_id': army_with_unit['datasheet_id'], 'count': 20}]})
+
+    assert res.status_code == 200
+    with db.connect(db.DB_PATH) as conn:
+        after = conn.execute(
+            'SELECT COUNT(*) n FROM models m JOIN stages s ON s.id = m.stage_id '
+            " WHERE s.name = 'Painted'").fetchone()['n']
+        total = conn.execute('SELECT COUNT(*) n FROM models').fetchone()['n']
+    assert after == 20 and total == before + 20
+
+
+def test_an_export_says_all_of_it_lands_at_one_stage(client, army_with_unit):
+    """"Lines without a stage word" implies some have one. An export carries
+    none, and a 2000-point paste is fifty-odd models arriving somewhere Clay
+    had better have chosen on purpose."""
+    body = ' '.join(client.post('/add/preview', data={'text': GW_EXPORT})
+                    .get_data(as_text=True).split())
+
+    assert 'All of it lands at' in body
+    assert 'Lines without a stage word' not in body
+
+
+def test_a_shelf_paste_still_talks_about_lines_without_a_stage_word(client, army_with_unit):
+    body = ' '.join(client.post('/add/preview',
+                                data={'text': '20 Boyz built\n1 Trukk'})
+                    .get_data(as_text=True).split())
+
+    assert 'Lines without a stage word land at' in body
